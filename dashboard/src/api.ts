@@ -1,0 +1,89 @@
+export type Scope = 'event' | 'person'
+export type Op = 'eq' | 'neq' | 'contains' | 'not_contains' | 'in' | 'is_set' | 'is_not_set'
+export type Metric = 'total' | 'unique_users'
+export type Interval = 'hour' | 'day' | 'week' | 'month'
+
+export interface Filter { scope: Scope; property: string; op: Op; value?: string }
+export interface Breakdown { scope: Scope; property: string; limit?: number }
+export interface Series { event: string; metric: Metric }
+
+export interface TrendResult { event: string; metric: Metric; breakdown_value: string | null; total: number; data: { bucket: string; count: number }[] }
+export interface TrendResponse { interval: Interval; timezone: string; results: TrendResult[]; took_ms: number }
+
+export interface FunnelStepResult { step: number; event: string; count: number; conversion_from_first: number; conversion_from_previous: number }
+export interface FunnelResponse { window_seconds: number; results: { breakdown_value: string | null; steps: FunnelStepResult[] }[]; took_ms: number }
+
+export interface EventRow {
+  event_id: string; event: string; timestamp: string; distinct_id: string; resolved_person_id: string
+  columns: Record<string, string>; properties: Record<string, unknown> | null
+}
+export interface Person { id: string; is_identified: boolean; created_at: string; distinct_ids: string[]; properties: Record<string, unknown> }
+export interface Metadata {
+  events: { name: string; count: number }[]
+  event_columns: string[]
+  event_properties: { name: string; count: number }[]
+  person_properties: { name: string; count: number }[]
+}
+
+const KEY_STORAGE = 'reapdeep.apiKey'
+
+export function getApiKey(): string {
+  try {
+    return localStorage.getItem(KEY_STORAGE) ?? ''
+  } catch {
+    return ''
+  }
+}
+
+export function setApiKey(key: string) {
+  try {
+    localStorage.setItem(KEY_STORAGE, key)
+  } catch {
+  }
+}
+
+export class ApiError extends Error {
+  constructor(public status: number, message: string) {
+    super(message)
+  }
+}
+
+async function request<T>(method: 'GET' | 'POST', path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(path, {
+    method,
+    signal,
+    headers: { Authorization: `Bearer ${getApiKey()}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  if (!res.ok) {
+    let msg = `HTTP ${res.status}`
+    try {
+      msg = ((await res.json()) as { error?: string }).error ?? msg
+    } catch {
+    }
+    throw new ApiError(res.status, msg)
+  }
+  return (await res.json()) as T
+}
+
+const qs = (params: object) => {
+  const p = new URLSearchParams()
+  for (const [k, v] of Object.entries(params)) if (v !== undefined && v !== '') p.set(k, String(v))
+  return p.toString()
+}
+
+export interface DateRange { date_from?: string; date_to?: string }
+
+export const api = {
+  health: () => fetch('/healthz').then((r) => r.ok),
+  metadata: (signal?: AbortSignal) => request<Metadata>('GET', '/api/v1/metadata', undefined, signal),
+  trends: (body: { series: Series[]; interval: Interval; filters: Filter[]; breakdown?: Breakdown; deduplicate: boolean } & DateRange, signal?: AbortSignal) =>
+    request<TrendResponse>('POST', '/api/v1/query/trends', body, signal),
+  funnels: (body: { steps: { event: string }[]; window_seconds: number; filters: Filter[]; breakdown?: Breakdown } & DateRange, signal?: AbortSignal) =>
+    request<FunnelResponse>('POST', '/api/v1/query/funnels', body, signal),
+  events: (params: { event?: string; distinct_id?: string; person_id?: string; limit?: number } & DateRange, signal?: AbortSignal) =>
+    request<{ events: EventRow[]; took_ms: number }>('GET', `/api/v1/events?${qs(params)}`, undefined, signal),
+  persons: (params: { search?: string; cursor?: string; limit?: number; identified?: boolean }, signal?: AbortSignal) =>
+    request<{ persons: Person[]; next_cursor: string | null }>('GET', `/api/v1/persons?${qs(params)}`, undefined, signal),
+  person: (id: string, signal?: AbortSignal) => request<Person>('GET', `/api/v1/persons/${encodeURIComponent(id)}`, undefined, signal),
+}

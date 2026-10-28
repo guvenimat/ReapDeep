@@ -1,0 +1,200 @@
+name: reapdeep
+
+x-postgres-connection: &postgres-connection Host=postgres;Database=reapdeep;Username=reapdeep;Password=${POSTGRES_PASSWORD:?Missing .env - run run-local.ps1 or copy .env.example to .env}
+
+services:
+  kafka:
+    image: apache/kafka:4.1.0
+    container_name: reapdeep-kafka
+    ports:
+      - "127.0.0.1:9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:29092,CONTROLLER://:9093,EXTERNAL://:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:29092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      KAFKA_LOG_RETENTION_HOURS: 168
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:29092 > /dev/null 2>&1"]
+      interval: 10s
+      timeout: 10s
+      retries: 12
+      start_period: 20s
+
+  kafka-init:
+    image: apache/kafka:4.1.0
+    container_name: reapdeep-kafka-init
+    depends_on:
+      kafka:
+        condition: service_healthy
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        T=/opt/kafka/bin/kafka-topics.sh
+        $$T --bootstrap-server kafka:29092 --create --if-not-exists --topic events         --partitions 6 --replication-factor 1
+        $$T --bootstrap-server kafka:29092 --create --if-not-exists --topic person_updates --partitions 6 --replication-factor 1
+        $$T --bootstrap-server kafka:29092 --create --if-not-exists --topic person_distinct_id_updates --partitions 6 --replication-factor 1
+        $$T --bootstrap-server kafka:29092 --list
+    restart: "no"
+
+  starrocks:
+    image: starrocks/allin1-ubuntu:4.0.8
+    container_name: reapdeep-starrocks
+    ports:
+      - "127.0.0.1:9030:9030"
+      - "127.0.0.1:8030:8030"
+      - "127.0.0.1:8040:8040"
+    volumes:
+      - starrocks-fe-meta:/data/deploy/starrocks/fe/meta
+      - starrocks-be-storage:/data/deploy/starrocks/be/storage
+    healthcheck:
+      test: ["CMD-SHELL", "mysql -h127.0.0.1 -P9030 -uroot -e 'SHOW BACKENDS\\G' | grep -q 'Alive: true'"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 60s
+
+  starrocks-init:
+    image: mysql:8.4
+    container_name: reapdeep-starrocks-init
+    depends_on:
+      starrocks:
+        condition: service_healthy
+      kafka-init:
+        condition: service_completed_successfully
+    volumes:
+      - ./starrocks:/init:ro
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -e
+        for f in /init/*.sql; do
+          echo "Running: $$f"
+          ok=0
+          for attempt in 1 2 3 4 5; do
+            out=$$(grep -v '^[[:space:]]*--' "$$f" | mysql -h starrocks -P9030 -uroot 2>&1) && ok=1
+            if [ "$$ok" -eq 1 ]; then break; fi
+            echo "$$out"
+            if echo "$$out" | grep -qi 'already used\|already exists'; then
+              echo "  already exists, skipping."
+              ok=1
+              break
+            fi
+            echo "  attempt $$attempt failed, retrying in 5s..."
+            sleep 5
+          done
+          if [ "$$ok" -ne 1 ]; then
+            echo "ERROR: failed to run $$f."
+            exit 1
+          fi
+        done
+    restart: "no"
+
+  postgres:
+    image: postgres:17
+    container_name: reapdeep-postgres
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_DB: reapdeep
+      POSTGRES_USER: reapdeep
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Missing .env - run run-local.ps1 or copy .env.example to .env}
+      READ_API_KEY: ${READ_API_KEY:?Missing .env - run run-local.ps1 or copy .env.example to .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./postgres:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U reapdeep -d reapdeep"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ingestion:
+    build: ../../src/ReapDeep.Ingestion
+    image: reapdeep-ingestion
+    container_name: reapdeep-ingestion
+    profiles: ["app"]
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      Kafka__BootstrapServers: kafka:29092
+      ConnectionStrings__Postgres: *postgres-connection
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+
+  person-worker:
+    build: ../../src/ReapDeep.PersonWorker
+    image: reapdeep-person-worker
+    container_name: reapdeep-person-worker
+    profiles: ["app"]
+    environment:
+      Kafka__BootstrapServers: kafka:29092
+      ConnectionStrings__Postgres: *postgres-connection
+    depends_on:
+      kafka-init:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  query-api:
+    build: ../../src/ReapDeep.QueryApi
+    image: reapdeep-query-api
+    container_name: reapdeep-query-api
+    profiles: ["app"]
+    ports:
+      - "127.0.0.1:8001:8080"
+    environment:
+      ConnectionStrings__Postgres: *postgres-connection
+      ConnectionStrings__StarRocks: Server=starrocks;Port=9030;User ID=root;Database=analytics;ConnectionReset=false;Pooling=true;MaximumPoolSize=50
+      QueryApi__AllowExplain: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      starrocks:
+        condition: service_healthy
+
+  dashboard:
+    build: ../../dashboard
+    image: reapdeep-dashboard
+    container_name: reapdeep-dashboard
+    profiles: ["app"]
+    ports:
+      - "127.0.0.1:3000:80"
+    depends_on:
+      - query-api
+
+  kafka-ui:
+    image: provectuslabs/kafka-ui:latest
+    container_name: reapdeep-kafka-ui
+    profiles: ["tools"]
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+volumes:
+  kafka-data:
+  starrocks-fe-meta:
+  starrocks-be-storage:
+  postgres-data:

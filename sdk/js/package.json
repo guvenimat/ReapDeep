@@ -1,0 +1,23 @@
+{
+  "name": "@reapdeep/js",
+  "version": "0.1.0",
+  "description": "ReapDeep web analytics SDK",
+  "private": true,
+  "type": "module",
+  "main": "dist/reapdeep.esm.js",
+  "module": "dist/reapdeep.esm.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist"],
+  "sideEffects": false,
+  "scripts": {
+    "build": "node build.mjs && tsc -p tsconfig.json --emitDeclarationOnly",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.2",
+    "jsdom": "^30.1.3",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.5"
+  }
+}

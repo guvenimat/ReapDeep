@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>ReapDeep SDK demo</title>
+</head>
+<body>
+  <h1>ReapDeep SDK demo</h1>
+  <p>Ingestion API: <code>http://localhost:8000</code> · key: <code>pk_dev_local</code></p>
+  <button id="buy">Purchase</button>
+  <button id="login">Log in</button>
+  <button id="nav">SPA: go to /cart</button>
+  <pre id="out"></pre>
+
+  <script src="/dist/reapdeep.min.js"></script>
+  <script>
+    const params = new URLSearchParams(location.search)
+    const rd = reapdeep.init('pk_dev_local', { apiHost: 'http://localhost:8000', flushInterval: 1000, debug: true })
+    const out = document.getElementById('out')
+    const show = () => (out.textContent = 'distinct_id: ' + rd.getDistinctId())
+    show()
+
+    document.getElementById('buy').onclick = () => rd.capture('purchase', { product: 'Pro plan', amount: 499 })
+    document.getElementById('login').onclick = () => { rd.identify('demo_user_1', { email: 'demo@example.com' }); show() }
+    document.getElementById('nav').onclick = () => history.pushState(null, '', '/cart')
+
+    const tag = params.get('e2e')
+    if (tag) {
+      rd.register({ e2e: tag })
+      rd.capture('purchase', { product: 'Pro plan', amount: 499 })
+      rd.identify('e2e_user_' + tag, { email: 'e2e@example.com' })
+      history.pushState(null, '', '/cart?e2e=' + tag)
+      setTimeout(() => {
+        rd.capture('sent_with_beacon', {})
+        window.dispatchEvent(new Event('pagehide'))
+        document.title = 'e2e-done'
+      }, 1500)
+    }
+  </script>
+</body>
+</html>
