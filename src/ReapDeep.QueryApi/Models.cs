@@ -18,11 +18,11 @@ public sealed record TrendResponse(string Interval, string Timezone, List<TrendR
 public sealed record FunnelStep(string Event, List<Filter>? Filters);
 public sealed record FunnelRequest(
     List<FunnelStep>? Steps, string? DateFrom, string? DateTo, long? WindowSeconds,
-    List<Filter>? Filters, Breakdown? Breakdown, bool Explain);
+    List<Filter>? Filters, Breakdown? Breakdown, double? Sampling, bool Explain);
 
 public sealed record FunnelStepResult(int Step, string Event, long Count, double ConversionFromFirst, double ConversionFromPrevious);
 public sealed record FunnelResult(string? BreakdownValue, List<FunnelStepResult> Steps);
-public sealed record FunnelResponse(long WindowSeconds, List<FunnelResult> Results, double TookMs);
+public sealed record FunnelResponse(long WindowSeconds, double Sampling, List<FunnelResult> Results, double TookMs);
 
 public sealed record EventRow(
     string EventId, string Event, DateTime Timestamp, string DistinctId, string ResolvedPersonId,

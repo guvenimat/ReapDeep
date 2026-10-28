@@ -4,11 +4,14 @@ import { ms, num, pct } from './format'
 import { readState, toDateRange, type rangeFromParams } from './route'
 import { BreakdownEditor, completeBreakdown, completeFilters, FilterEditor, Status, useDebounced, useQuery } from './ui'
 
-interface FunnelState { steps: string[]; window_seconds: number; filters: Filter[]; breakdown?: Breakdown }
+interface FunnelState { steps: string[]; window_seconds: number; filters: Filter[]; breakdown?: Breakdown; sampling: number }
 
-const DEFAULT: FunnelState = { steps: ['$pageview', '$identify'], window_seconds: 7 * 86400, filters: [] }
+const DEFAULT: FunnelState = { steps: ['$pageview', '$identify'], window_seconds: 7 * 86400, filters: [], sampling: 1 }
 const WINDOWS = [
   { s: 3600, label: '1 hour' }, { s: 86400, label: '1 day' }, { s: 7 * 86400, label: '7 days' }, { s: 30 * 86400, label: '30 days' },
+]
+const SAMPLING = [
+  { v: 1, label: 'Exact' }, { v: 0.25, label: 'Fast 25%' }, { v: 0.1, label: 'Fast 10%' },
 ]
 
 export function Funnels({ params, range, onChange }: {
@@ -25,6 +28,7 @@ export function Funnels({ params, range, onChange }: {
     window_seconds: state.window_seconds,
     filters: completeFilters(state.filters),
     breakdown: completeBreakdown(state.breakdown),
+    sampling: state.sampling,
     ...toDateRange(range),
   }))
   const q = useQuery((signal) => {
@@ -63,6 +67,14 @@ export function Funnels({ params, range, onChange }: {
             ))}
           </div>
         </div>
+        <div className="editor-block">
+          <div className="editor-title">Precision</div>
+          <div className="segmented" role="group" aria-label="Sampling">
+            {SAMPLING.map((x) => (
+              <button key={x.v} className={state.sampling === x.v ? 'active' : ''} onClick={() => set({ sampling: x.v })}>{x.label}</button>
+            ))}
+          </div>
+        </div>
         <FilterEditor filters={state.filters} onChange={(filters) => set({ filters })} />
         <BreakdownEditor value={state.breakdown} onChange={(breakdown) => set({ breakdown })} />
       </aside>
@@ -72,7 +84,7 @@ export function Funnels({ params, range, onChange }: {
           <div className="card" data-testid="funnel-chart">
             <div className="card-head">
               <h2>Funnel</h2>
-              <span className="muted">{ms(q.data?.took_ms ?? 0)}</span>
+              <span className="muted">{q.data && q.data.sampling < 1 && <span data-testid="funnel-sampled">Sampled: {pct(q.data.sampling)} of persons, counts scaled · </span>}{ms(q.data?.took_ms ?? 0)}</span>
             </div>
             <Legend items={groups.map((g) => ({ label: g.label, colorIndex: g.colorIndex }))} />
             <FunnelChart steps={stepNames} groups={groups} />

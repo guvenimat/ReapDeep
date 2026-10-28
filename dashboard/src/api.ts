@@ -11,7 +11,7 @@ export interface TrendResult { event: string; metric: Metric; breakdown_value: s
 export interface TrendResponse { interval: Interval; timezone: string; results: TrendResult[]; took_ms: number }
 
 export interface FunnelStepResult { step: number; event: string; count: number; conversion_from_first: number; conversion_from_previous: number }
-export interface FunnelResponse { window_seconds: number; results: { breakdown_value: string | null; steps: FunnelStepResult[] }[]; took_ms: number }
+export interface FunnelResponse { window_seconds: number; sampling: number; results: { breakdown_value: string | null; steps: FunnelStepResult[] }[]; took_ms: number }
 
 export interface EventRow {
   event_id: string; event: string; timestamp: string; distinct_id: string; resolved_person_id: string
@@ -79,7 +79,7 @@ export const api = {
   metadata: (signal?: AbortSignal) => request<Metadata>('GET', '/api/v1/metadata', undefined, signal),
   trends: (body: { series: Series[]; interval: Interval; filters: Filter[]; breakdown?: Breakdown; deduplicate: boolean } & DateRange, signal?: AbortSignal) =>
     request<TrendResponse>('POST', '/api/v1/query/trends', body, signal),
-  funnels: (body: { steps: { event: string }[]; window_seconds: number; filters: Filter[]; breakdown?: Breakdown } & DateRange, signal?: AbortSignal) =>
+  funnels: (body: { steps: { event: string }[]; window_seconds: number; filters: Filter[]; breakdown?: Breakdown; sampling: number } & DateRange, signal?: AbortSignal) =>
     request<FunnelResponse>('POST', '/api/v1/query/funnels', body, signal),
   events: (params: { event?: string; distinct_id?: string; person_id?: string; limit?: number } & DateRange, signal?: AbortSignal) =>
     request<{ events: EventRow[]; took_ms: number }>('GET', `/api/v1/events?${qs(params)}`, undefined, signal),

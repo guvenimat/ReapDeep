@@ -121,6 +121,10 @@ Check "funnel breakdown `$browser: Chrome=1/1, Firefox=1/0 -> $fb" ($fb -eq "Chr
 $f = (Call POST "/api/v1/query/funnels" ('{"steps":[{"event":"view_product"},{"event":"purchase"}],"filters":[' + $qtFilter + '],"window_seconds":60}')).Json.results[0].steps
 Check "60s window: purchase (10 min later) is outside the window -> 2/0 -> $(($f | ForEach-Object { $_.count }) -join '/')" ((($f | ForEach-Object { $_.count }) -join '/') -eq "2/0")
 
+$fr = (Call POST "/api/v1/query/funnels" ('{"steps":[{"event":"view_product"},{"event":"add_to_cart"},{"event":"purchase"}],"filters":[' + $qtFilter + '],"sampling":1}')).Json
+Check "sampling=1 equals the exact funnel (2/1/1) and is reported -> $(($fr.results[0].steps | ForEach-Object { $_.count }) -join '/'), sampling $($fr.sampling)" (((($fr.results[0].steps | ForEach-Object { $_.count }) -join '/') -eq "2/1/1") -and $fr.sampling -eq 1)
+Check "invalid sampling -> 400" ((Call POST "/api/v1/query/funnels" '{"steps":[{"event":"a"},{"event":"b"}],"sampling":1.5}').Status -eq 400)
+
 Write-Host "`n5) Events / Persons / Metadata"
 $ev = (Call GET "/api/v1/events?person_id=$personId&limit=50").Json.events
 Check "events by person_id: anonA + user events together -> $($ev.Count)" ($ev.Count -eq 8 -and ($ev.distinct_id | Sort-Object -Unique).Count -eq 2)

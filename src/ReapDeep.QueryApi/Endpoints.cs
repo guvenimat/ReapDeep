@@ -37,6 +37,13 @@ public static class Endpoints
         {
             return Error(ex.Message, StatusCodes.Status400BadRequest);
         }
+        catch (MySqlException ex)
+        {
+            ctx.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("ReapDeep.QueryApi").LogError(ex, "StarRocks query failed");
+            return ex.Message.Contains("exceed", StringComparison.OrdinalIgnoreCase) || ex.Message.Contains("timeout", StringComparison.OrdinalIgnoreCase)
+                ? Error("Query exceeded the database resource limits; narrow the date range or filters", StatusCodes.Status503ServiceUnavailable)
+                : Error("Query failed in the analytics database", StatusCodes.Status502BadGateway);
+        }
     }
 
     static IResult Error(string message, int status) =>
@@ -58,33 +65,40 @@ public static class Endpoints
         var range = TimeRange.Parse(req.DateFrom, req.DateTo, project.TimeZone, TimeSpan.FromDays(7));
         var buckets = range.Buckets(interval);
 
-        var queries = series.Select(s =>
+        SqlBuilder NewBuilder()
         {
             var b = new SqlBuilder(project.ProjectId, range.FromUtc, range.ToUtc);
             b.AddFilters(req.Filters);
-            return (Series: s, Builder: b, Sql: Queries.Trend(b, s, req.Deduplicate, interval, project.TimeZoneId, req.Breakdown));
-        }).ToList();
+            return b;
+        }
+        var plans = series.Select(s => (Series: s, Plan: Queries.Trend(NewBuilder, s, req.Deduplicate, interval, range, project.TimeZoneId, req.Breakdown))).ToList();
 
-        if (req.Explain) return await Explain(db, cfg, queries.Select(q => (q.Sql, q.Builder)), ctx.RequestAborted);
+        if (req.Explain)
+            return await Explain(db, cfg, plans.SelectMany(p => new[] { p.Plan.Buckets, p.Plan.Total }).OfType<Queries.Query>().Select(q => (q.Sql, q.Builder)), ctx.RequestAborted);
 
-        var rows = await Task.WhenAll(queries.Select(q => Run(db, q.Sql, q.Builder, r => (
+        Task<List<(DateTime? Bucket, string? Breakdown, long Count)>> Exec(Queries.Query q) => Run(db, q.Sql, q.Builder, r => (
             Bucket: r.IsDBNull(0) ? (DateTime?)null : r.GetDateTime(0),
             Breakdown: r.IsDBNull(1) ? null : r.GetString(1),
-            Count: r.GetInt64(2),
-            IsTotal: Convert.ToInt64(r.GetValue(3)) == 1), ctx.RequestAborted)));
+            Count: r.GetInt64(2)), ctx.RequestAborted);
+
+        var bucketTasks = plans.Select(p => Exec(p.Plan.Buckets)).ToList();
+        var totalTasks = plans.Select(p => p.Plan.Total is { } t ? Exec(t) : null).ToList();
+        await Task.WhenAll(bucketTasks.Concat(totalTasks.OfType<Task<List<(DateTime?, string?, long)>>>()));
 
         var results = new List<TrendResult>();
-        for (var i = 0; i < queries.Count; i++)
+        for (var i = 0; i < plans.Count; i++)
         {
-            var s = queries[i].Series;
-            var groups = rows[i].GroupBy(r => r.Breakdown).Select(g => (g.Key, Rows: g.ToList())).ToList();
+            var s = plans[i].Series;
+            var rows = bucketTasks[i].Result;
+            var totals = totalTasks[i]?.Result.ToDictionary(r => r.Breakdown ?? "", r => r.Count);
+            var groups = rows.GroupBy(r => r.Breakdown).Select(g => (g.Key, Rows: g.ToList())).ToList();
             if (req.Breakdown is null && groups.Count == 0) groups.Add((null, []));
 
             var seriesResults = new List<TrendResult>();
             foreach (var (key, grp) in groups)
             {
-                var byBucket = grp.Where(r => !r.IsTotal && r.Bucket is not null).ToDictionary(r => r.Bucket!.Value, r => r.Count);
-                var total = grp.FirstOrDefault(r => r.IsTotal).Count;
+                var byBucket = grp.Where(r => r.Bucket is not null).ToDictionary(r => r.Bucket!.Value, r => r.Count);
+                var total = totals is null ? byBucket.Values.Sum() : totals.GetValueOrDefault(key ?? "");
                 seriesResults.Add(new TrendResult(s.Event, s.Metric ?? "total", key, total,
                     buckets.Select(bk => new TrendPoint(TimeRange.Format(bk), byBucket.GetValueOrDefault(bk))).ToList()));
             }
@@ -102,17 +116,20 @@ public static class Endpoints
         if (steps.Any(s => string.IsNullOrEmpty(s.Event))) throw new QueryException("Each step requires an event");
         var window = req.WindowSeconds ?? 7 * 24 * 3600;
         if (window is < 1 or > 90 * 24 * 3600) throw new QueryException("window_seconds must be between 1 second and 90 days");
+        var sampling = req.Sampling ?? 1;
+        if (sampling is < 0.01 or > 1) throw new QueryException("sampling must be between 0.01 and 1");
 
         var range = TimeRange.Parse(req.DateFrom, req.DateTo, project.TimeZone, TimeSpan.FromDays(30));
         var b = new SqlBuilder(project.ProjectId, range.FromUtc, range.ToUtc);
         b.AddFilters(req.Filters);
-        var sql = Queries.Funnel(b, steps, window, req.Breakdown);
+        var sql = Queries.Funnel(b, steps, window, req.Breakdown, sampling);
 
         if (req.Explain) return await Explain(db, cfg, [(sql, b)], ctx.RequestAborted);
 
         var rows = await Run(db, sql, b, r => (
             Breakdown: r.IsDBNull(0) ? null : r.GetString(0),
-            Counts: Enumerable.Range(1, steps.Count).Select(i => r.IsDBNull(i) ? 0L : Convert.ToInt64(r.GetValue(i))).ToArray()), ctx.RequestAborted);
+            Counts: Enumerable.Range(1, steps.Count)
+                .Select(i => r.IsDBNull(i) ? 0L : (long)Math.Round(Convert.ToInt64(r.GetValue(i)) / sampling)).ToArray()), ctx.RequestAborted);
 
         var results = rows.Select(row => new FunnelResult(row.Breakdown, steps.Select((st, i) => new FunnelStepResult(
             Step: i + 1,
@@ -121,7 +138,7 @@ public static class Endpoints
             ConversionFromFirst: Ratio(row.Counts[i], row.Counts[0]),
             ConversionFromPrevious: i == 0 ? 1 : Ratio(row.Counts[i], row.Counts[i - 1]))).ToList())).ToList();
 
-        return Results.Json(new FunnelResponse(window, results, sw.Elapsed.TotalMilliseconds), AppJsonContext.Default.FunnelResponse);
+        return Results.Json(new FunnelResponse(window, sampling, results, sw.Elapsed.TotalMilliseconds), AppJsonContext.Default.FunnelResponse);
     }
 
     static double Ratio(long a, long b) => b == 0 ? 0 : Math.Round((double)a / b, 4);

@@ -2,7 +2,7 @@ using System.Globalization;
 
 namespace ReapDeep.QueryApi;
 
-public readonly record struct TimeRange(DateTime FromUtc, DateTime ToUtc, DateTime FromLocal, DateTime ToLocal)
+public readonly record struct TimeRange(DateTime FromUtc, DateTime ToUtc, DateTime FromLocal, DateTime ToLocal, int? FixedOffsetSeconds)
 {
     public static readonly string[] Intervals = ["hour", "day", "week", "month"];
     const int MaxDays = 366;
@@ -14,7 +14,16 @@ public readonly record struct TimeRange(DateTime FromUtc, DateTime ToUtc, DateTi
         var fromUtc = from is null ? toUtc - defaultSpan : ParseBoundary(from, tz, isEnd: false, nameof(from));
         if (fromUtc >= toUtc) throw new QueryException("date_from must be before date_to");
         if (toUtc - fromUtc > TimeSpan.FromDays(MaxDays)) throw new QueryException($"Date range can be at most {MaxDays} days");
-        return new TimeRange(fromUtc, toUtc, TimeZoneInfo.ConvertTimeFromUtc(fromUtc, tz), TimeZoneInfo.ConvertTimeFromUtc(toUtc, tz));
+        return new TimeRange(fromUtc, toUtc, TimeZoneInfo.ConvertTimeFromUtc(fromUtc, tz), TimeZoneInfo.ConvertTimeFromUtc(toUtc, tz),
+            FixedOffset(tz, fromUtc, toUtc));
+    }
+
+    static int? FixedOffset(TimeZoneInfo tz, DateTime fromUtc, DateTime toUtc)
+    {
+        var offset = tz.GetUtcOffset(fromUtc);
+        for (var t = fromUtc.AddHours(1); t < toUtc; t = t.AddHours(1))
+            if (tz.GetUtcOffset(t) != offset) return null;
+        return tz.GetUtcOffset(toUtc) == offset ? (int)offset.TotalSeconds : null;
     }
 
     static DateTime ParseBoundary(string s, TimeZoneInfo tz, bool isEnd, string name)

@@ -10,6 +10,7 @@ public sealed class SqlBuilder
 
     readonly List<(string Name, object Value)> _params = [];
     readonly List<string> _where = [];
+    readonly List<string> _personWhere = [];
     bool _joinPdi;
     bool _joinPersons;
 
@@ -42,7 +43,7 @@ public sealed class SqlBuilder
     public void AddFilters(IEnumerable<Filter>? filters)
     {
         if (filters is null) return;
-        foreach (var f in filters) _where.Add(Condition(f));
+        foreach (var f in filters) (f.Scope == "person" ? _personWhere : _where).Add(Condition(f));
     }
 
     public string Condition(Filter f)
@@ -64,16 +65,27 @@ public sealed class SqlBuilder
     public string Select(string select, string? groupBy = null, string? orderBy = null, int? limit = null)
     {
         var sb = new StringBuilder("SELECT ").Append(select).Append(" FROM analytics.events e");
-        if (_joinPdi)
-            sb.Append(" LEFT JOIN analytics.person_distinct_ids pdi ON e.project_id = pdi.project_id AND e.distinct_id = pdi.distinct_id AND pdi.is_deleted = 0");
-        if (_joinPersons)
-            sb.Append(" LEFT JOIN analytics.persons p ON e.project_id = p.project_id AND pdi.person_id = p.person_id AND p.is_deleted = 0");
-        sb.Append(" WHERE ").AppendJoin(" AND ", _where);
+        if (_joinPdi) sb.Append(PersonJoins("e"));
+        sb.Append(" WHERE ").AppendJoin(" AND ", _where.Concat(_personWhere));
         if (groupBy is not null) sb.Append(" GROUP BY ").Append(groupBy);
         if (orderBy is not null) sb.Append(" ORDER BY ").Append(orderBy);
         if (limit is not null) sb.Append(" LIMIT ").Append(limit.Value);
         return sb.ToString();
     }
+
+    public string EventsOnly(string select, string groupBy) =>
+        $"SELECT {select} FROM analytics.events e WHERE {string.Join(" AND ", _where)} GROUP BY {groupBy}";
+
+    public string PersonJoins(string alias)
+    {
+        var sb = new StringBuilder(" LEFT JOIN analytics.person_distinct_ids pdi ON ")
+            .Append(alias).Append(".project_id = pdi.project_id AND ").Append(alias).Append(".distinct_id = pdi.distinct_id AND pdi.is_deleted = 0");
+        if (_joinPersons)
+            sb.Append(" LEFT JOIN analytics.persons p ON ").Append(alias).Append(".project_id = p.project_id AND pdi.person_id = p.person_id AND p.is_deleted = 0");
+        return sb.ToString();
+    }
+
+    public string PersonWhere() => _personWhere.Count == 0 ? "" : " WHERE " + string.Join(" AND ", _personWhere);
 
     static string Scalar(Filter f) => f.Value is { } v ? ToText(v) : throw new QueryException($"Filter on '{f.Property}' requires a value");
 
@@ -95,29 +107,68 @@ public static class Queries
 {
     const string None = "$none";
 
-    public static string Trend(SqlBuilder b, Series s, bool dedup, string interval, string tz, Breakdown? bd)
+    public sealed record Query(string Sql, SqlBuilder Builder);
+
+    public static (Query Buckets, Query? Total) Trend(Func<SqlBuilder> builder, Series s, bool dedup, string interval, TimeRange range, string tz, Breakdown? bd)
     {
-        b.Where($"e.event = {b.P(s.Event)}");
-        var bucket = $"date_trunc('{interval}', convert_tz(e.timestamp, 'UTC', {b.P(tz)}))";
-        var value = s.Metric switch
-        {
-            "unique_users" => b.Person(),
-            _ => dedup ? "e.event_id" : null,
-        };
-        var valueCol = value is null ? "" : $", {value} AS v";
-
-        if (bd is null)
-            return $"SELECT bucket, NULL AS bd, {(value is null ? "COUNT(*)" : "COUNT(DISTINCT v)")} AS c, GROUPING(bucket) AS is_total " +
-                   $"FROM ({b.Select($"{bucket} AS bucket{valueCol}")}) s GROUP BY GROUPING SETS ((bucket), ())";
-
-        var bdExpr = $"COALESCE(CAST({ColumnMapper.Expression(b, bd.Scope, bd.Property)} AS VARCHAR), {b.P(None)})";
-        return $"WITH base AS ({b.Select($"{bucket} AS bucket, {bdExpr} AS bd{valueCol}")}), " +
-               $"top AS (SELECT bd FROM base GROUP BY bd ORDER BY COUNT(*) DESC LIMIT {Limit(bd)}) " +
-               $"SELECT base.bucket, base.bd, {(value is null ? "COUNT(*)" : "COUNT(DISTINCT base.v)")} AS c, GROUPING(base.bucket) AS is_total " +
-               $"FROM base JOIN top ON base.bd = top.bd GROUP BY GROUPING SETS ((base.bucket, base.bd), (base.bd))";
+        if (s.Metric == "unique_users")
+            return (UniqueUsers(builder(), s, interval, range, tz, bd, withBucket: true), UniqueUsers(builder(), s, interval, range, tz, bd, withBucket: false));
+        if (dedup)
+            return (EventCount(builder(), s, interval, range, tz, bd, distinct: true, withBucket: true), EventCount(builder(), s, interval, range, tz, bd, distinct: true, withBucket: false));
+        return (EventCount(builder(), s, interval, range, tz, bd, distinct: false, withBucket: true), null);
     }
 
-    public static string Funnel(SqlBuilder b, List<FunnelStep> steps, long windowSeconds, Breakdown? bd)
+    static string Bucket(SqlBuilder b, string interval, TimeRange range, string tz) => range.FixedOffsetSeconds is { } offset
+        ? $"date_trunc('{interval}', seconds_add(e.timestamp, {offset}))"
+        : $"date_trunc('{interval}', convert_tz(e.timestamp, 'UTC', {b.P(tz)}))";
+
+    static Query EventCount(SqlBuilder b, Series s, string interval, TimeRange range, string tz, Breakdown? bd, bool distinct, bool withBucket)
+    {
+        b.Where($"e.event = {b.P(s.Event)}");
+        var bucket = withBucket ? $"{Bucket(b, interval, range, tz)} AS bucket" : "NULL AS bucket";
+        var value = distinct ? ", xx_hash3_64(e.event_id) AS v" : "";
+        var agg = distinct ? "COUNT(DISTINCT v)" : "COUNT(*)";
+
+        if (bd is null)
+            return new($"SELECT bucket, NULL AS bd, {agg} AS c FROM ({b.Select($"{bucket}{value}")}) s GROUP BY bucket", b);
+
+        var bdExpr = $"COALESCE(CAST({ColumnMapper.Expression(b, bd.Scope, bd.Property)} AS VARCHAR), {b.P(None)})";
+        return new($"WITH base AS ({b.Select($"{bucket}, {bdExpr} AS bd{value}")}), " +
+                   $"top AS (SELECT bd FROM base GROUP BY bd ORDER BY COUNT(*) DESC, bd LIMIT {Limit(bd)}) " +
+                   $"SELECT base.bucket, base.bd, {(distinct ? "COUNT(DISTINCT base.v)" : "COUNT(*)")} AS c FROM base JOIN top ON base.bd = top.bd GROUP BY base.bucket, base.bd", b);
+    }
+
+    static Query UniqueUsers(SqlBuilder b, Series s, string interval, TimeRange range, string tz, Breakdown? bd, bool withBucket)
+    {
+        b.Where($"e.event = {b.P(s.Event)}");
+        var inner = new List<string> { "e.project_id", "e.distinct_id" };
+        if (withBucket) inner.Add($"{Bucket(b, interval, range, tz)} AS bucket");
+
+        string? bdOuter = null;
+        if (bd is not null)
+        {
+            var expr = $"COALESCE(CAST({ColumnMapper.Expression(b, bd.Scope, bd.Property)} AS VARCHAR), {b.P(None)})";
+            if (bd.Scope == "person") bdOuter = expr;
+            else
+            {
+                inner.Add($"{expr} AS bd");
+                bdOuter = "d.bd";
+            }
+        }
+
+        var from = $"({b.EventsOnly(string.Join(", ", inner), string.Join(", ", Enumerable.Range(1, inner.Count)))}) d{b.PersonJoins("d")}{b.PersonWhere()}";
+        const string person = "COALESCE(pdi.person_id, d.distinct_id)";
+        var bucketOut = withBucket ? "d.bucket" : "NULL";
+
+        if (bdOuter is null)
+            return new($"SELECT {bucketOut} AS bucket, NULL AS bd, COUNT(DISTINCT {person}) AS c FROM {from}{(withBucket ? " GROUP BY d.bucket" : "")}", b);
+
+        return new($"WITH base AS (SELECT {bucketOut} AS bucket, {bdOuter} AS bd, {person} AS v FROM {from}), " +
+                   $"top AS (SELECT bd FROM base GROUP BY bd ORDER BY COUNT(DISTINCT v) DESC, bd LIMIT {Limit(bd!)}) " +
+                   "SELECT base.bucket, base.bd, COUNT(DISTINCT base.v) AS c FROM base JOIN top ON base.bd = top.bd GROUP BY base.bucket, base.bd", b);
+    }
+
+    public static string Funnel(SqlBuilder b, List<FunnelStep> steps, long windowSeconds, Breakdown? bd, double sampling)
     {
         var conds = steps.Select(st =>
         {
@@ -127,13 +178,14 @@ public static class Queries
         }).ToList();
 
         b.Where($"e.event IN ({string.Join(", ", steps.Select(st => st.Event).Distinct().Select(e => b.P(e)))})");
-        var person = b.Person();
+        var person = $"xx_hash3_64({b.Person()})";
+        if (sampling < 1) b.Where($"abs({person}) % 10000 < {(int)Math.Round(sampling * 10000)}");
 
         var bdSelect = bd is null ? "" :
             $", min_by(COALESCE(CAST({ColumnMapper.Expression(b, bd.Scope, bd.Property)} AS VARCHAR), {b.P(None)}), IF({conds[0]}, e.timestamp, NULL)) AS bd";
 
         var inner = b.Select($"{person} AS person{bdSelect}, window_funnel({windowSeconds}, e.timestamp, 0, [{string.Join(", ", conds)}]) AS lvl",
-            groupBy: person);
+            groupBy: "1");
         var counts = string.Join(", ", steps.Select((_, i) => $"SUM(IF(lvl >= {i + 1}, 1, 0)) AS s{i + 1}"));
 
         return bd is null

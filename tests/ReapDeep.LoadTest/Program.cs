@@ -1,0 +1,60 @@
+﻿using ReapDeep.LoadTest;
+
+if (args.Length == 0)
+{
+    Console.WriteLine("""
+        Usage: ReapDeep.LoadTest <command> [--option value ...]
+
+          setup    --pg <conn> --bench-key <key>
+          ingest   --name <label> --rate <events/s> --seconds <n> --batch <n> --run-id <id> --sr <conn> [--marker]
+          seed     --sr <conn> --pg <conn> [--events 100000000] [--days 30] [--persons 150000] [--report-only]
+          bench    --api <url> --key <read key> [--runs 20]
+          cleanup  --sr <conn> --pg <conn>
+
+        Common: --report <file.md> appends markdown results.
+        """);
+    return 1;
+}
+
+var opts = Options.Parse(args.Skip(1));
+Report.Path = opts.Get("report");
+
+try
+{
+    switch (args[0])
+    {
+        case "setup":
+            await Setup.Run(opts.Require("pg"), opts.Require("bench-key"));
+            break;
+        case "ingest":
+            await Ingest.Run(new IngestRun(
+                opts.Get("name") ?? "ingest",
+                opts.Get("url") ?? "http://localhost:8000/capture",
+                opts.Get("key") ?? Setup.LoadTestPublicKey,
+                opts.Int("rate", 10_000),
+                opts.Int("seconds", 30),
+                opts.Int("batch", 50),
+                opts.Require("run-id"),
+                opts.Require("sr"),
+                opts.Has("marker")));
+            break;
+        case "seed":
+            await Seeder.Run(opts.Require("sr"), opts.Require("pg"), opts.Long("events", 100_000_000), opts.Int("days", 30), opts.Int("persons", 150_000), opts.Has("report-only"));
+            break;
+        case "bench":
+            await Bench.Run(opts.Get("api") ?? "http://localhost:8001", opts.Require("key"), opts.Int("runs", 20));
+            break;
+        case "cleanup":
+            await Setup.Cleanup(opts.Require("sr"), opts.Require("pg"));
+            break;
+        default:
+            Console.Error.WriteLine($"Unknown command: {args[0]}");
+            return 1;
+    }
+    return 0;
+}
+catch (Exception ex)
+{
+    Console.Error.WriteLine($"ERROR: {ex.Message}");
+    return 2;
+}
