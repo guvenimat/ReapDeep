@@ -6,6 +6,7 @@ function Initialize-LocalEnv {
         ADMIN_EMAIL              = { "admin@reapdeep.local" }
         ADMIN_PASSWORD           = { [guid]::NewGuid().ToString('N').Substring(0, 20) }
         STARROCKS_QUERY_PASSWORD = { [guid]::NewGuid().ToString('N') }
+        STARROCKS_JOBS_PASSWORD  = { [guid]::NewGuid().ToString('N') }
     }
     $existing = if (Test-Path $path) { [IO.File]::ReadAllText($path) } else { "" }
     $missing = @($required.Keys | Where-Object { $existing -cnotmatch "(?m)^\s*$_\s*=" })

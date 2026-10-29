@@ -10,5 +10,6 @@ builder.Services.AddSingleton(dataSource.Build());
 builder.Services.AddSingleton<IdentityResolver>();
 builder.Services.AddHostedService<EventConsumer>();
 builder.Services.AddHostedService<OutboxPublisher>();
+builder.Services.AddHostedService<DeletionJob>();
 
 builder.Build().Run();

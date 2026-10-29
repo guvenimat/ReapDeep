@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { api, type Person } from './api'
+import { api, type DeletionRequest, type Person } from './api'
 import { EventsTable } from './Events'
 import { dateTime, num } from './format'
 import { JsonView, Status, useDebounced, useQuery } from './ui'
 
-export function Persons({ id, openPerson }: { id?: string; openPerson: (id?: string) => void }) {
+export function Persons({ id, openPerson, canManage }: { id?: string; openPerson: (id?: string) => void; canManage: boolean }) {
+  const [deletionsVersion, setDeletionsVersion] = useState(0)
   const [search, setSearch] = useState('')
   const [onlyIdentified, setOnlyIdentified] = useState(true)
   const debounced = useDebounced(search)
@@ -41,14 +42,59 @@ export function Persons({ id, openPerson }: { id?: string; openPerson: (id?: str
             </div>
           </div>
         </Status>
+        <DeletionRequests version={deletionsVersion} />
       </div>
-      {id && <PersonDetail id={id} onClose={() => openPerson(undefined)} />}
+      {id && <PersonDetail id={id} onClose={() => openPerson(undefined)} canManage={canManage} onDeletionRequested={() => setDeletionsVersion((v) => v + 1)} />}
     </div>
   )
 }
 
-function PersonDetail({ id, onClose }: { id: string; onClose: () => void }) {
+function DeletionRequests({ version }: { version: number }) {
+  const list = useQuery((signal) => api.deletionRequests(signal), [version])
+  const rows = list.data?.deletion_requests ?? []
+  if (!list.loading && !list.error && rows.length === 0) return null
+  return (
+    <div className="card">
+      <div className="card-head"><h2>Deletion requests</h2><span className="muted small">Processed by a periodic batch job</span></div>
+      <Status state={list}>
+        <div className="table-wrap">
+          <table data-testid="deletion-requests">
+            <thead><tr><th>Target</th><th>Requested</th><th>By</th><th>Status</th></tr></thead>
+            <tbody>
+              {rows.map((r: DeletionRequest) => (
+                <tr key={r.id}>
+                  <td><span className="muted small">{r.target_type}</span> <span className="mono">{r.target_id}</span></td>
+                  <td className="nowrap tabular">{dateTime(r.requested_at)}</td>
+                  <td className="muted">{r.requested_by ?? '-'}</td>
+                  <td className="nowrap">{r.processed_at ? `Deleted ${dateTime(r.processed_at)}` : 'Pending'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Status>
+    </div>
+  )
+}
+
+function PersonDetail({ id, onClose, canManage, onDeletionRequested }: {
+  id: string; onClose: () => void; canManage: boolean; onDeletionRequested: () => void
+}) {
   const person = useQuery((signal) => api.person(id, signal), [id])
+  const [deletion, setDeletion] = useState<{ id: string; state: 'sending' | 'done' | string }>()
+  const deletionState = deletion?.id === id ? deletion.state : undefined
+
+  const requestDeletion = async () => {
+    if (!window.confirm('Delete this person, all of their distinct_ids and all of their events? This cannot be undone.')) return
+    setDeletion({ id, state: 'sending' })
+    try {
+      await api.requestDeletion('person', id)
+      setDeletion({ id, state: 'done' })
+      onDeletionRequested()
+    } catch (err) {
+      setDeletion({ id, state: err instanceof Error ? err.message : String(err) })
+    }
+  }
   const from = new Date(Date.now() - 365 * 86400_000).toISOString()
   const events = useQuery((signal) => api.events({ person_id: id, limit: 200, date_from: from }, signal), [id])
 
@@ -70,6 +116,20 @@ function PersonDetail({ id, onClose }: { id: string; onClose: () => void }) {
             </dl>
             <div className="editor-title">properties</div>
             <JsonView value={person.data.properties} />
+            {canManage && (
+              <div className="danger-zone" data-testid="person-deletion">
+                {deletionState === 'done' ? (
+                  <span className="small">Deletion requested. The person and their events are removed in the next batch run.</span>
+                ) : (
+                  <>
+                    <button className="danger" onClick={requestDeletion} disabled={deletionState === 'sending'} data-testid="request-deletion">
+                      {deletionState === 'sending' ? 'Requesting...' : 'Delete person data'}
+                    </button>
+                    {deletionState && deletionState !== 'sending' && <span className="login-error">{deletionState}</span>}
+                  </>
+                )}
+              </div>
+            )}
           </>
         )}
       </Status>

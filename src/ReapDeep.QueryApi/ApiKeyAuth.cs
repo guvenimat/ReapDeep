@@ -5,17 +5,17 @@ using Npgsql;
 
 namespace ReapDeep.QueryApi;
 
-public sealed record ProjectContext(long ProjectId, string TimeZoneId, TimeZoneInfo TimeZone, string? Role)
+public sealed record ProjectContext(long ProjectId, string TimeZoneId, TimeZoneInfo TimeZone, string? Role, long? UserId)
 {
     public bool CanManage => Role is "owner" or "admin";
 
     public static ProjectContext From(HttpContext ctx) => (ProjectContext)ctx.Items[nameof(ProjectContext)]!;
 
-    public static ProjectContext Create(long projectId, string tzId, string? role, ILogger log)
+    public static ProjectContext Create(long projectId, string tzId, string? role, long? userId, ILogger log)
     {
-        if (TimeZoneInfo.TryFindSystemTimeZoneById(tzId, out var tz)) return new ProjectContext(projectId, tzId, tz, role);
+        if (TimeZoneInfo.TryFindSystemTimeZoneById(tzId, out var tz)) return new ProjectContext(projectId, tzId, tz, role, userId);
         log.LogWarning("Project {Project}: unknown time zone {Tz}, falling back to UTC", projectId, tzId);
-        return new ProjectContext(projectId, "UTC", TimeZoneInfo.Utc, role);
+        return new ProjectContext(projectId, "UTC", TimeZoneInfo.Utc, role, userId);
     }
 }
 
@@ -60,6 +60,6 @@ public sealed class ApiKeyAuth(NpgsqlDataSource db, ILogger<ApiKeyAuth> log)
             """);
         cmd.Parameters.AddWithValue("h", hash);
         await using var r = await cmd.ExecuteReaderAsync(ct);
-        return await r.ReadAsync(ct) ? ProjectContext.Create(r.GetInt64(0), r.GetString(1), null, log) : null;
+        return await r.ReadAsync(ct) ? ProjectContext.Create(r.GetInt64(0), r.GetString(1), null, null, log) : null;
     }
 }

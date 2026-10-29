@@ -117,7 +117,8 @@ sealed class PersonTx(NpgsqlConnection conn, NpgsqlTransaction tx, long projectI
     public async Task Link(string distinctId, Guid personId)
     {
         var changed = await Exec("""
-            INSERT INTO person_distinct_ids (project_id, distinct_id, person_id, version) VALUES (@p, @d, @id, 1)
+            INSERT INTO person_distinct_ids (project_id, distinct_id, person_id, version)
+            VALUES (@p, @d, @id, (extract(epoch FROM clock_timestamp()) * 1000000)::bigint)
             ON CONFLICT (project_id, distinct_id) DO UPDATE
               SET person_id = EXCLUDED.person_id, version = person_distinct_ids.version + 1, updated_at = now()
               WHERE person_distinct_ids.person_id <> EXCLUDED.person_id
@@ -151,7 +152,7 @@ sealed class PersonTx(NpgsqlConnection conn, NpgsqlTransaction tx, long projectI
                                is_identified = true, version = version + 1, updated_at = now()
             WHERE id = @into
             """, ("from", from), ("into", into), ("set", Json(set)));
-        await Exec("UPDATE persons SET is_deleted = true, version = version + 1, updated_at = now() WHERE id = @from", ("from", from));
+        await Exec("UPDATE persons SET is_deleted = true, properties = '{}', version = version + 1, updated_at = now() WHERE id = @from", ("from", from));
         _persons.Add(from);
         _persons.Add(into);
     }

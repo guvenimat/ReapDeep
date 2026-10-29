@@ -10,6 +10,7 @@ add_env READ_API_KEY "rk_$(rand)"
 add_env ADMIN_EMAIL "admin@reapdeep.local"
 add_env ADMIN_PASSWORD "$(rand | cut -c1-20)"
 add_env STARROCKS_QUERY_PASSWORD "$(rand)"
+add_env STARROCKS_JOBS_PASSWORD "$(rand)"
 
 EVENT_ID="smoke-$(date +%s)"
 NOW="$(date -u '+%Y-%m-%d %H:%M:%S')"
