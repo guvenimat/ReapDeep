@@ -1,5 +1,6 @@
 using Dapper;
 using Npgsql;
+using ReapDeep.PersonWorker.Cohorts;
 
 namespace ReapDeep.PersonWorker.Deletion;
 
@@ -54,6 +55,7 @@ public sealed class DeletionJob(NpgsqlDataSource db, StarRocksDeleter? starRocks
         var staticMembers = 0;
         foreach (var project in requests.GroupBy(r => r.ProjectId))
         {
+            await CohortProjectLock.ExcludeRefreshesAsync(conn, tx, project.Key);
             var batch = new DeletionBatch(conn, tx, project.Key, project.ToList());
             await batch.ResolveAndLockAsync();
             await starRocks.DeleteEventsAsync(project.Key, batch.DistinctIds, ct);

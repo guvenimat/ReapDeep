@@ -45,6 +45,7 @@ public sealed class CohortRefreshJob(CohortRepository cohorts, CohortStore? stor
         await using var lockConn = await cohorts.TryLockAsync(cohort.Id, ct);
         if (lockConn is null) return;
 
+        await CohortProjectLock.EnterRefreshAsync(lockConn, cohort.ProjectId);
         var sw = Stopwatch.StartNew();
         var version = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
         try
@@ -67,6 +68,7 @@ public sealed class CohortRefreshJob(CohortRepository cohorts, CohortStore? stor
         }
         finally
         {
+            await CohortProjectLock.ExitRefreshAsync(lockConn, cohort.ProjectId);
             await CohortRepository.UnlockAsync(lockConn, cohort.Id);
         }
     }
