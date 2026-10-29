@@ -6,7 +6,7 @@ namespace ReapDeep.PersonWorker.Deletion;
 
 public sealed record DeletionRequest(long Id, long ProjectId, string TargetType, string TargetId);
 
-public sealed record DeletionResult(int DistinctIds, int Persons);
+public sealed record DeletionResult(int DistinctIds, int Persons, int StaticCohortMembers);
 
 public sealed class DeletionBatch(NpgsqlConnection conn, NpgsqlTransaction tx, long projectId, IReadOnlyList<DeletionRequest> requests)
 {
@@ -58,7 +58,11 @@ public sealed class DeletionBatch(NpgsqlConnection conn, NpgsqlTransaction tx, l
             FROM gone
             """, new { ProjectId = projectId, Affected = affected.ToArray(), Requested = _persons.ToArray() }, tx);
 
-        return new DeletionResult(removed.Count, persons);
+        var staticMembers = await conn.ExecuteAsync(
+            "DELETE FROM cohort_static_members WHERE project_id = @ProjectId AND distinct_id = ANY(@DistinctIds)",
+            new { ProjectId = projectId, DistinctIds = DistinctIds.ToArray() }, tx);
+
+        return new DeletionResult(removed.Count, persons, staticMembers);
     }
 
     async Task ResolveAsync()

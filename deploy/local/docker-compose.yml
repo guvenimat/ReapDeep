@@ -165,6 +165,8 @@ services:
       Deletion__IntervalSeconds: "30"
       Deletion__MinAgeSeconds: "20"
       Deletion__TombstoneSeconds: "60"
+      Cohorts__PollSeconds: "5"
+      Cohorts__MaxRefreshSeconds: "30"
     depends_on:
       kafka-init:
         condition: service_completed_successfully

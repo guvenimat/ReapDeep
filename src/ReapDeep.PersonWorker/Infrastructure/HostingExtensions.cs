@@ -1,5 +1,6 @@
 using MySqlConnector;
 using Npgsql;
+using ReapDeep.PersonWorker.Cohorts;
 using ReapDeep.PersonWorker.Deletion;
 using ReapDeep.PersonWorker.Identity;
 using ReapDeep.PersonWorker.Outbox;
@@ -26,6 +27,7 @@ public static class HostingExtensions
         {
             services.AddSingleton(new MySqlDataSource(starRocks));
             services.AddSingleton<StarRocksDeleter>();
+            services.AddSingleton<CohortStore>();
         }
         services.AddSingleton(DeletionOptions.From(cfg));
         services.AddHostedService(sp => new DeletionJob(
@@ -33,6 +35,14 @@ public static class HostingExtensions
             sp.GetService<StarRocksDeleter>(),
             sp.GetRequiredService<DeletionOptions>(),
             sp.GetRequiredService<ILogger<DeletionJob>>()));
+
+        services.AddSingleton<CohortRepository>();
+        services.AddSingleton(CohortOptions.From(cfg));
+        services.AddHostedService(sp => new CohortRefreshJob(
+            sp.GetRequiredService<CohortRepository>(),
+            sp.GetService<CohortStore>(),
+            sp.GetRequiredService<CohortOptions>(),
+            sp.GetRequiredService<ILogger<CohortRefreshJob>>()));
         return builder;
     }
 }

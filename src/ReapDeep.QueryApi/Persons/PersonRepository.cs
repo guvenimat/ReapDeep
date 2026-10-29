@@ -46,6 +46,14 @@ public sealed class PersonRepository(NpgsqlDataSource db)
         return row?.ToContract();
     }
 
+    public async Task<List<PersonRow>> GetManyAsync(long projectId, Guid[] personIds, CancellationToken ct)
+    {
+        if (personIds.Length == 0) return [];
+        await using var conn = await db.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<PersonRecord>(Select + " AND p.id = ANY(@PersonIds)", new { ProjectId = projectId, PersonIds = personIds });
+        return rows.Select(r => r.ToContract()).ToList();
+    }
+
     public async Task<List<string>> DistinctIdsAsync(long projectId, Guid personId, int limit, CancellationToken ct)
     {
         await using var conn = await db.OpenConnectionAsync(ct);

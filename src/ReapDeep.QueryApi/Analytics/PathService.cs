@@ -2,27 +2,28 @@ using System.Diagnostics;
 using ReapDeep.Analytics;
 using ReapDeep.Analytics.Sql;
 using ReapDeep.QueryApi.Auth;
+using ReapDeep.QueryApi.Cohorts;
 using ReapDeep.QueryApi.Infrastructure;
 
 namespace ReapDeep.QueryApi.Analytics;
 
-public sealed class PathService(StarRocksClient starRocks)
+public sealed class PathService(StarRocksClient starRocks, CohortService cohorts)
 {
     const int NodesPerStep = 8;
     const int MaxPaths = 25;
 
     sealed record Plan(string StartEvent, int Depth, SqlQuery Steps, SqlQuery Sequences);
 
-    public Task<ExplainResponse> ExplainAsync(ProjectContext project, PathsRequest req, CancellationToken ct)
+    public async Task<ExplainResponse> ExplainAsync(ProjectContext project, PathsRequest req, CancellationToken ct)
     {
-        var plan = BuildPlan(project, req);
-        return starRocks.ExplainAsync([plan.Steps, plan.Sequences], ct);
+        var plan = await BuildPlanAsync(project, req, ct);
+        return await starRocks.ExplainAsync([plan.Steps, plan.Sequences], ct);
     }
 
     public async Task<PathsResponse> RunAsync(ProjectContext project, PathsRequest req, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
-        var plan = BuildPlan(project, req);
+        var plan = await BuildPlanAsync(project, req, ct);
         var stepRows = starRocks.QueryAsync(plan.Steps, r => (Step: Convert.ToInt32(r.GetValue(0)), Node: r.GetString(1), Persons: r.GetInt64(2)), ct);
         var pathRows = starRocks.QueryAsync(plan.Sequences, r => (Path: r.GetString(0), Persons: r.GetInt64(1)), ct);
         await Task.WhenAll(stepRows, pathRows);
@@ -41,18 +42,19 @@ public sealed class PathService(StarRocksClient starRocks)
         return new PathsResponse(plan.StartEvent, plan.Depth, steps.FirstOrDefault()?.Persons ?? 0, steps, paths, sw.Elapsed.TotalMilliseconds);
     }
 
-    static Plan BuildPlan(ProjectContext project, PathsRequest req)
+    async Task<Plan> BuildPlanAsync(ProjectContext project, PathsRequest req, CancellationToken ct)
     {
         var startEvent = Ensure.NotBlank(req.StartEvent, "start_event");
         var depth = Ensure.InRange(req.Depth ?? 4, 2, 6, "depth");
         var window = Ensure.InRange(req.WindowSeconds ?? 86_400, 60, 7 * 86_400, "window_seconds");
         var pageviewPaths = req.PageviewPaths ?? true;
         var range = TimeRange.Parse(req.DateFrom, req.DateTo, project.TimeZone, TimeSpan.FromDays(7));
+        var refs = await cohorts.ResolveAsync(project, req.Filters, null, ct);
 
         SqlBuilder NewBuilder()
         {
             var b = new SqlBuilder(project.ProjectId, range.FromUtc, range.ToUtc);
-            b.AddFilters(req.Filters);
+            b.AddFilters(req.Filters, refs);
             return b;
         }
         return new Plan(startEvent, depth,

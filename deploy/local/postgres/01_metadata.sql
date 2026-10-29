@@ -146,7 +146,6 @@ CREATE TABLE cohorts (
     definition               JSONB       NOT NULL DEFAULT '{}',
     status                   TEXT        NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'calculating', 'ready', 'error')),
     active_version           BIGINT,
-    previous_version         BIGINT,
     member_count             BIGINT,
     calculated_at            TIMESTAMPTZ,
     calculation_ms           INT,
@@ -167,6 +166,14 @@ CREATE TABLE cohort_static_members (
     PRIMARY KEY (cohort_id, distinct_id)
 );
 CREATE INDEX cohort_static_members_distinct_id ON cohort_static_members (project_id, distinct_id);
+
+CREATE TABLE cohort_retired_versions (
+    cohort_id   BIGINT      NOT NULL REFERENCES cohorts(id) ON DELETE CASCADE,
+    project_id  BIGINT      NOT NULL,
+    version     BIGINT      NOT NULL,
+    retired_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (cohort_id, version)
+);
 
 INSERT INTO organizations (name) VALUES ('Local Org');
 INSERT INTO projects (organization_id, name, public_key) VALUES (1, 'Local Project', 'pk_dev_local');
