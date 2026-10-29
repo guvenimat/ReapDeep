@@ -55,6 +55,14 @@ public sealed record ApiKeyRow(long Id, string Name, string Prefix, string? Crea
 public sealed record ApiKeysResponse(List<ApiKeyRow> ApiKeys);
 public sealed record CreatedApiKey(ApiKeyRow ApiKey, string Key);
 
+public sealed record InsightBody(string? Name, string? Kind, JsonElement? Query);
+public sealed record InsightRow(long Id, string Name, string Kind, JsonElement Query, string? CreatedBy, DateTime CreatedAt, DateTime UpdatedAt);
+public sealed record InsightsResponse(List<InsightRow> Insights);
+public sealed record DashboardBody(string? Name, string? Description, List<long>? InsightIds);
+public sealed record DashboardRow(long Id, string Name, string Description, string? CreatedBy, DateTime UpdatedAt, int Items);
+public sealed record DashboardsResponse(List<DashboardRow> Dashboards);
+public sealed record DashboardDetail(long Id, string Name, string Description, DateTime UpdatedAt, List<InsightRow> Items);
+
 public sealed record DeletionRequestBody(string? TargetType, string? TargetId);
 public sealed record DeletionRequestRow(long Id, string TargetType, string TargetId, string? RequestedBy, DateTime RequestedAt, DateTime? ProcessedAt);
 public sealed record DeletionRequestsResponse(List<DeletionRequestRow> DeletionRequests);
@@ -81,6 +89,12 @@ public sealed record DeletionRequestsResponse(List<DeletionRequestRow> DeletionR
 [JsonSerializable(typeof(CreateApiKeyRequest))]
 [JsonSerializable(typeof(ApiKeysResponse))]
 [JsonSerializable(typeof(CreatedApiKey))]
+[JsonSerializable(typeof(InsightBody))]
+[JsonSerializable(typeof(InsightRow))]
+[JsonSerializable(typeof(InsightsResponse))]
+[JsonSerializable(typeof(DashboardBody))]
+[JsonSerializable(typeof(DashboardsResponse))]
+[JsonSerializable(typeof(DashboardDetail))]
 [JsonSerializable(typeof(DeletionRequestBody))]
 [JsonSerializable(typeof(DeletionRequestRow))]
 [JsonSerializable(typeof(DeletionRequestsResponse))]

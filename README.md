@@ -102,6 +102,10 @@ curl http://localhost:8001/api/v1/query/trends \
 
 Other endpoints: `POST /api/v1/query/funnels`, `GET /api/v1/events`, `GET /api/v1/persons[/{id}]`, `GET /api/v1/metadata`, `GET /healthz`.
 
+### Saved insights and dashboards
+
+Any trend or funnel can be saved by name from its tab (`/api/v1/insights`). A dashboard (`/api/v1/dashboards`) is an ordered list of saved insights rendered as tiles; the date range picker applies to every tile, and a tile's title opens the insight for editing. Insights store the editor state, not the date range, so the same insight works for "last 24 hours" and "last 30 days". Project members can create and edit them; read API keys can only list them.
+
 ### Authentication
 
 - **API keys** (`Authorization: Bearer <key>`) are scoped to one project and are read-only; they cannot create deletion requests. Use them for scripts and integrations.
@@ -163,6 +167,7 @@ cd deploy/local
 .\auth-test.ps1         # sign-in, sessions, project access, CORS, X-Forwarded-For, StarRocks grants
 .\deletion-test.ps1     # deletion requests and the batch job, end to end
 .\settings-test.ps1     # members, roles, password change, API keys
+.\insights-test.ps1     # saved insights and dashboards, API and browser
 .\query-test.ps1        # Query API: trends, funnels, events, persons, EXPLAIN, latency
 .\dashboard-test.ps1    # headless Chrome against the dashboard (Chrome DevTools Protocol)
 .\load-test.ps1         # ingestion load, 100M seed, query benchmark, cleanup

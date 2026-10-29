@@ -1,10 +1,11 @@
-import { api, type Breakdown, type Filter, type Interval, type Metric, type Series } from './api'
+import { api, type Breakdown, type Filter, type Interval, type Metric, type Series, type TrendResponse } from './api'
 import { Legend, MAX_SERIES, TimeChart, type ChartSeries } from './charts'
 import { bucketLabel, ms, num } from './format'
 import { defaultInterval, readState, toDateRange, type rangeFromParams } from './route'
+import { SaveInsight } from './Insights'
 import { BreakdownEditor, completeBreakdown, completeFilters, FilterEditor, Status, useDebounced, useQuery } from './ui'
 
-interface TrendState {
+export interface TrendState {
   series: Series[]
   interval?: Interval
   filters: Filter[]
@@ -13,7 +14,7 @@ interface TrendState {
   chart: 'line' | 'bar'
 }
 
-const DEFAULT: TrendState = { series: [{ event: '$pageview', metric: 'total' }], filters: [], deduplicate: false, chart: 'line' }
+export const TREND_DEFAULT: TrendState = { series: [{ event: '$pageview', metric: 'total' }], filters: [], deduplicate: false, chart: 'line' }
 const METRICS: { id: Metric; label: string }[] = [
   { id: 'total', label: 'Total events' },
   { id: 'unique_users', label: 'Unique users' },
@@ -22,23 +23,41 @@ const INTERVALS: { id: Interval; label: string }[] = [
   { id: 'hour', label: 'Hour' }, { id: 'day', label: 'Day' }, { id: 'week', label: 'Week' }, { id: 'month', label: 'Month' },
 ]
 
-export function Trends({ params, range, onChange }: {
-  params: URLSearchParams
-  range: ReturnType<typeof rangeFromParams>
-  onChange: (q: string) => void
-}) {
-  const state = readState(params, DEFAULT)
-  const set = (patch: Partial<TrendState>) => onChange(JSON.stringify({ ...state, ...patch }))
-  const interval = state.interval ?? defaultInterval(range.preset)
+type Range = ReturnType<typeof rangeFromParams>
 
-  const request = useDebounced(JSON.stringify({
+export const trendInterval = (state: TrendState, range: Range) => state.interval ?? defaultInterval(range.preset)
+
+export function trendBody(state: TrendState, range: Range) {
+  return {
     series: state.series.filter((s) => s.event.trim()),
-    interval,
+    interval: trendInterval(state, range),
     filters: completeFilters(state.filters),
     breakdown: completeBreakdown(state.breakdown),
     deduplicate: state.deduplicate,
     ...toDateRange(range),
+  }
+}
+
+export const trendLabel = (r: TrendResponse['results'][number]) =>
+  [r.event, METRICS.find((m) => m.id === r.metric)?.label, r.breakdown_value].filter(Boolean).join(' · ')
+
+export function trendChartSeries(data?: TrendResponse): ChartSeries[] {
+  return (data?.results ?? []).slice(0, MAX_SERIES).map((r, i) => ({
+    key: `${i}`, label: trendLabel(r), colorIndex: i, values: r.data.map((d) => d.count),
   }))
+}
+
+export function Trends({ params, range, onChange, onInsight }: {
+  params: URLSearchParams
+  range: ReturnType<typeof rangeFromParams>
+  onChange: (q: string) => void
+  onInsight: (id?: string) => void
+}) {
+  const state = readState(params, TREND_DEFAULT)
+  const set = (patch: Partial<TrendState>) => onChange(JSON.stringify({ ...state, ...patch }))
+  const interval = trendInterval(state, range)
+
+  const request = useDebounced(JSON.stringify(trendBody(state, range)))
   const q = useQuery((signal) => {
     const body = JSON.parse(request)
     return body.series.length ? api.trends(body, signal) : Promise.reject(new Error('Add at least one series'))
@@ -46,11 +65,8 @@ export function Trends({ params, range, onChange }: {
 
   const results = q.data?.results ?? []
   const buckets = results[0]?.data.map((d) => d.bucket) ?? []
-  const label = (r: (typeof results)[number]) =>
-    [r.event, METRICS.find((m) => m.id === r.metric)?.label, r.breakdown_value].filter(Boolean).join(' · ')
-  const chartSeries: ChartSeries[] = results.slice(0, MAX_SERIES).map((r, i) => ({
-    key: `${i}`, label: label(r), colorIndex: i, values: r.data.map((d) => d.count),
-  }))
+  const label = trendLabel
+  const chartSeries = trendChartSeries(q.data)
 
   return (
     <div className="layout">
@@ -100,6 +116,7 @@ export function Trends({ params, range, onChange }: {
       </aside>
 
       <section className="content">
+        <SaveInsight kind="trends" query={state} params={params} onInsight={onInsight} />
         <Status state={q} empty={results.length === 0 || results.every((r) => r.total === 0)}>
           <div className="card" data-testid="trends-chart">
             <div className="card-head">

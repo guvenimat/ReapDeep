@@ -29,6 +29,7 @@ public static class Endpoints
         api.MapGet("/deletion-requests", DeletionRequests);
         api.MapPost("/deletion-requests", CreateDeletionRequest);
         api.MapManagement();
+        api.MapInsights();
     }
 
     public const string LoginRateLimit = "login";

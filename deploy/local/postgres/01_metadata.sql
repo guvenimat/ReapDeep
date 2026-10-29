@@ -107,5 +107,35 @@ CREATE TABLE person_outbox (
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
+CREATE TABLE insights (
+    id          BIGSERIAL   PRIMARY KEY,
+    project_id  BIGINT      NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name        TEXT        NOT NULL,
+    kind        TEXT        NOT NULL CHECK (kind IN ('trends', 'funnels')),
+    query       JSONB       NOT NULL,
+    created_by  BIGINT      REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX insights_project ON insights (project_id, updated_at DESC);
+
+CREATE TABLE dashboards (
+    id          BIGSERIAL   PRIMARY KEY,
+    project_id  BIGINT      NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name        TEXT        NOT NULL,
+    description TEXT        NOT NULL DEFAULT '',
+    created_by  BIGINT      REFERENCES users(id) ON DELETE SET NULL,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX dashboards_project ON dashboards (project_id, updated_at DESC);
+
+CREATE TABLE dashboard_items (
+    dashboard_id  BIGINT NOT NULL REFERENCES dashboards(id) ON DELETE CASCADE,
+    insight_id    BIGINT NOT NULL REFERENCES insights(id) ON DELETE CASCADE,
+    position      INT    NOT NULL,
+    PRIMARY KEY (dashboard_id, insight_id)
+);
+
 INSERT INTO organizations (name) VALUES ('Local Org');
 INSERT INTO projects (organization_id, name, public_key) VALUES (1, 'Local Project', 'pk_dev_local');
