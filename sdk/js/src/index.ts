@@ -3,6 +3,7 @@ import { createStorage, uuidv7, VERSION } from './util'
 
 export interface Config {
   apiHost: string
+  recommendHost?: string
   autoPageview?: boolean
   flushInterval?: number
   batchSize?: number
@@ -11,6 +12,33 @@ export interface Config {
 }
 
 export type Properties = Record<string, unknown>
+
+export type RecommendationModel = 'popular' | 'trending' | 'co_viewed' | 'bought_together'
+
+export interface RecommendOptions {
+  model?: RecommendationModel
+  itemId?: string
+  category?: string
+  limit?: number
+}
+
+export interface RecommendedItem {
+  item_id: string
+  title: string
+  category: string
+  price: number | null
+  currency: string
+  url: string
+  image_url: string
+  score: number
+  source: RecommendationModel
+}
+
+export interface PurchasedItem extends Properties {
+  item_id: string
+  price?: number
+  quantity?: number
+}
 
 interface State {
   distinctId: string
@@ -38,7 +66,7 @@ export class ReapDeep {
   private lastPageviewUrl: string | undefined
 
   constructor(private readonly apiKey: string, config: Config) {
-    this.cfg = { autoPageview: true, flushInterval: 3000, batchSize: 50, sessionTimeoutMinutes: 30, debug: false, ...config }
+    this.cfg = { recommendHost: '', autoPageview: true, flushInterval: 3000, batchSize: 50, sessionTimeoutMinutes: 30, debug: false, ...config }
     this.url = this.cfg.apiHost.replace(/\/+$/, '') + '/capture'
     this.storage = createStorage(`reapdeep_${apiKey}`)
     this.state = this.storage.get<State>() ?? this.newState()
@@ -78,6 +106,21 @@ export class ReapDeep {
   pageview(properties?: Properties): void {
     this.lastPageviewUrl = location.href
     this.capture('$pageview', properties)
+  }
+
+  trackPurchase(items: PurchasedItem[], orderId: string, properties?: Properties): void {
+    for (const item of items) if (item?.item_id) this.capture('purchase', { ...properties, ...item, order_id: orderId })
+  }
+
+  async recommend(options: RecommendOptions = {}): Promise<RecommendedItem[]> {
+    if (!this.cfg.recommendHost) throw new Error('reapdeep: set recommendHost to use recommend()')
+    const query = new URLSearchParams({ api_key: this.apiKey, model: options.model ?? 'popular' })
+    if (options.itemId) query.set('item_id', options.itemId)
+    if (options.category) query.set('category', options.category)
+    if (options.limit) query.set('limit', String(options.limit))
+    const res = await fetch(`${this.cfg.recommendHost.replace(/\/+$/, '')}/recommend?${query}`)
+    if (!res.ok) throw new Error(`reapdeep: recommend failed with HTTP ${res.status}`)
+    return ((await res.json()) as { items: RecommendedItem[] }).items
   }
 
   identify(distinctId: string, personProperties?: Properties): void {
