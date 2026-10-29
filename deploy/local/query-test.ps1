@@ -132,8 +132,18 @@ $p = (Call GET "/api/v1/persons/$personId").Json
 Check "person detail: distinct_ids [$($p.distinct_ids -join ', ')], email=$($p.properties.email)" (($p.distinct_ids -contains $anonA) -and ($p.distinct_ids -contains $user) -and $p.properties.email -eq "$user@example.com")
 Check "person search (email)" (@((Call GET "/api/v1/persons?search=$user").Json.persons | Where-Object { $_.id -eq $personId }).Count -eq 1)
 Check "unknown person -> 404" ((Call GET "/api/v1/persons/00000000-0000-0000-0000-000000000000").Status -eq 404)
-$m = (Call GET "/api/v1/metadata").Json
+Capture $chrome '[{"event":"defs___TAG__","distinct_id":"__A__","properties":{"n___TAG__":4.5,"b___TAG__":true,"d___TAG__":"2026-10-29T10:00:00Z","s___TAG__":"x","$current_url":"https://example.com/"}},{"event":"$set","distinct_id":"__U__","properties":{"$set":{"pp___TAG__":12}}}]'
+$deadline = (Get-Date).AddSeconds(30)
+do {
+    Start-Sleep 2
+    $m = (Call GET "/api/v1/metadata").Json
+    $types = @{}; foreach ($d in @($m.event_properties) + @($m.person_properties)) { $types[$d.name] = $d.type }
+} until (($m.events.name -contains "defs_$tag" -and $types.ContainsKey("pp_$tag")) -or (Get-Date) -gt $deadline)
 Check "metadata: event names, columns, event and person properties" (($m.events.name -contains "view_product") -and ($m.event_columns -contains '$browser') -and ($m.person_properties.name -contains "email"))
+Check "definitions recorded within seconds (new event name)" ($m.events.name -contains "defs_$tag")
+Check "property types inferred: number, boolean, datetime, string" ($types["n_$tag"] -eq "number" -and $types["b_$tag"] -eq "boolean" -and $types["d_$tag"] -eq "datetime" -and $types["s_$tag"] -eq "string")
+Check "person property from `$set recorded with its type" ((@($m.person_properties) | Where-Object { $_.name -eq "pp_$tag" }).type -eq "number")
+Check "properties stored as columns are listed only in event_columns" (-not (@($m.event_properties).name -contains '$current_url') -and ($m.event_columns -contains '$current_url'))
 
 Write-Host "`n6) EXPLAIN: is the person_distinct_ids join colocated?"
 $e1 = (Call POST "/api/v1/query/trends" ('{"series":[{"event":"$pageview","metric":"unique_users"}],"filters":[' + $qtFilter + '],"explain":true}')).Json

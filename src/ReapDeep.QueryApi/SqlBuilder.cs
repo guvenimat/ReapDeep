@@ -207,12 +207,5 @@ public static class Queries
             orderBy: "e.timestamp DESC", limit: limit);
     }
 
-    public static string EventNames(SqlBuilder b) =>
-        b.Select("e.event, COUNT(*) AS c", groupBy: "e.event", orderBy: "c DESC", limit: 1000);
-
-    public static string EventPropertyKeys(SqlBuilder b) =>
-        $"SELECT k, COUNT(*) AS c FROM ({b.Select("e.properties", orderBy: "e.timestamp DESC", limit: 10_000)}) s, " +
-        "unnest(CAST(json_keys(s.properties) AS ARRAY<VARCHAR>)) AS t(k) GROUP BY k ORDER BY c DESC LIMIT 500";
-
     static int Limit(Breakdown bd) => bd.Limit is null ? 10 : Math.Clamp(bd.Limit.Value, 1, 100);
 }

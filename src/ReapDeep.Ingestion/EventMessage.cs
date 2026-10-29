@@ -32,6 +32,8 @@ public static class EventMessage
 
     public const int MaxIdBytes = 200;
 
+    public static string? ColumnFor(string property) => Extracted.TryGetValue(property, out var c) ? c.Column : null;
+
     public static byte[] Build(
         long projectId, string eventName, string distinctId, string eventId,
         DateTime timestamp, DateTime insertedAt, string? ip, UserAgentParser.Result ua,

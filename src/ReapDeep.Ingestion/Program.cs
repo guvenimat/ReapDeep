@@ -19,9 +19,13 @@ builder.Services.Configure<ForwardedHeadersOptions>(o =>
     foreach (var cidr in trustedProxies) o.KnownIPNetworks.Add(System.Net.IPNetwork.Parse(cidr));
 });
 
-builder.Services.AddSingleton(new NpgsqlSlimDataSourceBuilder(builder.Configuration.GetConnectionString("Postgres")).Build());
+var pg = new NpgsqlSlimDataSourceBuilder(builder.Configuration.GetConnectionString("Postgres"));
+pg.EnableArrays();
+builder.Services.AddSingleton(pg.Build());
 builder.Services.AddSingleton<ProjectCache>();
 builder.Services.AddHostedService(sp => sp.GetRequiredService<ProjectCache>());
+builder.Services.AddSingleton<DefinitionTracker>();
+builder.Services.AddHostedService(sp => sp.GetRequiredService<DefinitionTracker>());
 
 var topic = builder.Configuration["Kafka:Topic"] ?? "events";
 builder.Services.AddSingleton(sp => new ProducerBuilder<Null, byte[]>(new ProducerConfig
@@ -44,7 +48,7 @@ app.Lifetime.ApplicationStopping.Register(() => app.Services.GetRequiredService<
 
 app.MapGet("/healthz", () => "ok");
 
-app.MapPost("/capture", async (HttpContext ctx, ProjectCache projects, IProducer<Null, byte[]> producer, ILogger<Program> log) =>
+app.MapPost("/capture", async (HttpContext ctx, ProjectCache projects, DefinitionTracker definitions, IProducer<Null, byte[]> producer, ILogger<Program> log) =>
 {
     CaptureRequest? req;
     try
@@ -70,6 +74,7 @@ app.MapPost("/capture", async (HttpContext ctx, ProjectCache projects, IProducer
 
     var deliveries = new List<Task<DeliveryResult<Null, byte[]>>>(batch.Count);
     var rejected = 0;
+    var accepted = new List<(string Event, Dictionary<string, JsonElement>? Properties)>(batch.Count);
     foreach (var e in batch)
     {
         if (string.IsNullOrEmpty(e.Event) || string.IsNullOrEmpty(e.DistinctId) ||
@@ -87,6 +92,7 @@ app.MapPost("/capture", async (HttpContext ctx, ProjectCache projects, IProducer
         var eventId = e.EventId is { Length: > 0 and <= 64 } id ? id : Guid.CreateVersion7().ToString();
         var value = EventMessage.Build(projectId, e.Event, e.DistinctId, eventId, ts, now, ip, ua, e.Properties);
         deliveries.Add(producer.ProduceAsync(topic, new Message<Null, byte[]> { Value = value }, ctx.RequestAborted));
+        accepted.Add((e.Event, e.Properties));
     }
 
     try
@@ -99,6 +105,7 @@ app.MapPost("/capture", async (HttpContext ctx, ProjectCache projects, IProducer
         return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
     }
 
+    foreach (var (name, props) in accepted) definitions.Observe(projectId, name, props);
     return Results.Json(new CaptureResponse(deliveries.Count, rejected), AppJsonContext.Default.CaptureResponse, statusCode: StatusCodes.Status202Accepted);
 });
 
