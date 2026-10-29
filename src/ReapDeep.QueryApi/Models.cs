@@ -39,6 +39,11 @@ public sealed record ExplainResponse(List<string> Sql, List<string> Plans);
 public sealed record ErrorResponse(string Error);
 public sealed record HealthResponse(string Postgres, string Starrocks);
 
+public sealed record LoginRequest(string? Email, string? Password);
+public sealed record UserInfo(long Id, string Email, string Name);
+public sealed record ProjectInfo(long Id, string Name, long OrganizationId, string OrganizationName, string Role, string Timezone);
+public sealed record MeResponse(UserInfo User, List<ProjectInfo> Projects);
+
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower)]
 [JsonSerializable(typeof(TrendRequest))]
 [JsonSerializable(typeof(TrendResponse))]
@@ -51,6 +56,8 @@ public sealed record HealthResponse(string Postgres, string Starrocks);
 [JsonSerializable(typeof(ExplainResponse))]
 [JsonSerializable(typeof(ErrorResponse))]
 [JsonSerializable(typeof(HealthResponse))]
+[JsonSerializable(typeof(LoginRequest))]
+[JsonSerializable(typeof(MeResponse))]
 internal partial class AppJsonContext : JsonSerializerContext;
 
 public sealed class QueryException(string message) : Exception(message);

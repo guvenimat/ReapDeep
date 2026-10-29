@@ -20,6 +20,14 @@ CREATE TABLE organization_members (
     PRIMARY KEY (organization_id, user_id)
 );
 
+CREATE TABLE sessions (
+    token_hash  TEXT        PRIMARY KEY,
+    user_id     BIGINT      NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    expires_at  TIMESTAMPTZ NOT NULL
+);
+CREATE INDEX sessions_user ON sessions (user_id);
+
 CREATE TABLE projects (
     id               BIGSERIAL PRIMARY KEY,
     organization_id  BIGINT      NOT NULL REFERENCES organizations(id),

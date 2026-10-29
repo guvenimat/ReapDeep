@@ -101,6 +101,13 @@ services:
             exit 1
           fi
         done
+        echo "Configuring StarRocks users"
+        mysql -h starrocks -P9030 -uroot -e "
+          CREATE USER IF NOT EXISTS 'reapdeep_query'@'%' IDENTIFIED BY '$$STARROCKS_QUERY_PASSWORD';
+          ALTER USER 'reapdeep_query'@'%' IDENTIFIED BY '$$STARROCKS_QUERY_PASSWORD';
+          GRANT SELECT ON ALL TABLES IN DATABASE analytics TO USER 'reapdeep_query'@'%';"
+    environment:
+      STARROCKS_QUERY_PASSWORD: ${STARROCKS_QUERY_PASSWORD:?Missing STARROCKS_QUERY_PASSWORD in .env - run run-local.ps1 or smoke-test.sh}
     restart: "no"
 
   postgres:
@@ -162,13 +169,17 @@ services:
       - "127.0.0.1:8001:8080"
     environment:
       ConnectionStrings__Postgres: *postgres-connection
-      ConnectionStrings__StarRocks: Server=starrocks;Port=9030;User ID=root;Database=analytics;ConnectionReset=false;Pooling=true;MaximumPoolSize=50
+      ConnectionStrings__StarRocks: Server=starrocks;Port=9030;User ID=reapdeep_query;Password=${STARROCKS_QUERY_PASSWORD:?Missing STARROCKS_QUERY_PASSWORD in .env};Database=analytics;ConnectionReset=false;Pooling=true;MaximumPoolSize=50
       QueryApi__AllowExplain: "true"
+      Auth__BootstrapEmail: ${ADMIN_EMAIL:-admin@reapdeep.local}
+      Auth__BootstrapPassword: ${ADMIN_PASSWORD:?Missing ADMIN_PASSWORD in .env - run run-local.ps1 or smoke-test.sh}
+      Auth__SecureCookie: "false"
+      ForwardedHeaders__TrustedNetworks: 172.16.0.0/12
     depends_on:
       postgres:
         condition: service_healthy
-      starrocks:
-        condition: service_healthy
+      starrocks-init:
+        condition: service_completed_successfully
 
   dashboard:
     build: ../../dashboard

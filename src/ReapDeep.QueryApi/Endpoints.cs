@@ -14,6 +14,11 @@ public static class Endpoints
     {
         app.MapGet("/healthz", Health);
 
+        var auth = app.MapGroup("/api/v1/auth");
+        auth.MapPost("/login", Login).RequireRateLimiting(LoginRateLimit);
+        auth.MapPost("/logout", Logout);
+        auth.MapGet("/me", Me);
+
         var api = app.MapGroup("/api/v1").AddEndpointFilter(AuthAndErrors);
         api.MapPost("/query/trends", Trends);
         api.MapPost("/query/funnels", Funnels);
@@ -23,11 +28,50 @@ public static class Endpoints
         api.MapGet("/metadata", Metadata);
     }
 
+    public const string LoginRateLimit = "login";
+
+    static async Task<IResult> Login(LoginRequest req, HttpContext ctx, SessionAuth sessions)
+    {
+        if (string.IsNullOrWhiteSpace(req.Email) || string.IsNullOrEmpty(req.Password) || req.Password.Length > 1024)
+            return Error("email and password are required", StatusCodes.Status400BadRequest);
+        var me = await sessions.Login(ctx, req.Email, req.Password);
+        return me is null
+            ? Error("Invalid email or password", StatusCodes.Status401Unauthorized)
+            : Results.Json(me, AppJsonContext.Default.MeResponse);
+    }
+
+    static async Task<IResult> Logout(HttpContext ctx, SessionAuth sessions)
+    {
+        await sessions.Logout(ctx);
+        return Results.NoContent();
+    }
+
+    static async Task<IResult> Me(HttpContext ctx, SessionAuth sessions) =>
+        await sessions.Current(ctx) is { } me
+            ? Results.Json(me, AppJsonContext.Default.MeResponse)
+            : Error("Not signed in", StatusCodes.Status401Unauthorized);
+
+    static async ValueTask<(ProjectContext? Project, IResult? Error)> Authenticate(HttpContext ctx)
+    {
+        if (ApiKeyAuth.HasKey(ctx.Request))
+            return await ctx.RequestServices.GetRequiredService<ApiKeyAuth>().Authenticate(ctx) is { } byKey
+                ? (byKey, null)
+                : (null, Error("Invalid or missing API key", StatusCodes.Status401Unauthorized));
+
+        var sessions = ctx.RequestServices.GetRequiredService<SessionAuth>();
+        if (await sessions.Current(ctx) is not { } me) return (null, Error("Not signed in", StatusCodes.Status401Unauthorized));
+        if (!long.TryParse(ctx.Request.Headers["X-Project-Id"].ToString(), out var projectId))
+            return (null, Error("X-Project-Id header is required", StatusCodes.Status400BadRequest));
+        return sessions.Project(me, projectId) is { } project
+            ? (project, null)
+            : (null, Error("You do not have access to this project", StatusCodes.Status403Forbidden));
+    }
+
     static async ValueTask<object?> AuthAndErrors(EndpointFilterInvocationContext ic, EndpointFilterDelegate next)
     {
         var ctx = ic.HttpContext;
-        var project = await ctx.RequestServices.GetRequiredService<ApiKeyAuth>().Authenticate(ctx);
-        if (project is null) return Error("Invalid or missing API key", StatusCodes.Status401Unauthorized);
+        var (project, error) = await Authenticate(ctx);
+        if (project is null) return error;
         ctx.Items[nameof(ProjectContext)] = project;
         try
         {

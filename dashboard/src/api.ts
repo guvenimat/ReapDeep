@@ -25,21 +25,33 @@ export interface Metadata {
   person_properties: { name: string; count: number }[]
 }
 
-const KEY_STORAGE = 'reapdeep.apiKey'
+export interface User { id: number; email: string; name: string }
+export interface Project { id: number; name: string; organization_id: number; organization_name: string; role: 'owner' | 'admin' | 'member'; timezone: string }
+export interface Me { user: User; projects: Project[] }
 
-export function getApiKey(): string {
+const PROJECT_STORAGE = 'reapdeep.projectId'
+let currentProject: number | undefined
+let onUnauthorized: () => void = () => {}
+
+export function storedProjectId(): number | undefined {
   try {
-    return localStorage.getItem(KEY_STORAGE) ?? ''
+    const v = Number(localStorage.getItem(PROJECT_STORAGE))
+    return Number.isInteger(v) && v > 0 ? v : undefined
   } catch {
-    return ''
+    return undefined
   }
 }
 
-export function setApiKey(key: string) {
+export function setProject(id: number) {
+  currentProject = id
   try {
-    localStorage.setItem(KEY_STORAGE, key)
+    localStorage.setItem(PROJECT_STORAGE, String(id))
   } catch {
   }
+}
+
+export function setUnauthorizedHandler(handler: () => void) {
+  onUnauthorized = handler
 }
 
 export class ApiError extends Error {
@@ -52,9 +64,14 @@ async function request<T>(method: 'GET' | 'POST', path: string, body?: unknown, 
   const res = await fetch(path, {
     method,
     signal,
-    headers: { Authorization: `Bearer ${getApiKey()}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+    credentials: 'same-origin',
+    headers: {
+      ...(currentProject !== undefined ? { 'X-Project-Id': String(currentProject) } : {}),
+      ...(body ? { 'Content-Type': 'application/json' } : {}),
+    },
     body: body ? JSON.stringify(body) : undefined,
   })
+  if (res.status === 401 && !path.startsWith('/api/v1/auth/')) onUnauthorized()
   if (!res.ok) {
     let msg = `HTTP ${res.status}`
     try {
@@ -63,7 +80,7 @@ async function request<T>(method: 'GET' | 'POST', path: string, body?: unknown, 
     }
     throw new ApiError(res.status, msg)
   }
-  return (await res.json()) as T
+  return (res.status === 204 ? undefined : await res.json()) as T
 }
 
 const qs = (params: object) => {
@@ -76,6 +93,9 @@ export interface DateRange { date_from?: string; date_to?: string }
 
 export const api = {
   health: () => fetch('/healthz').then((r) => r.ok),
+  me: () => request<Me>('GET', '/api/v1/auth/me'),
+  login: (email: string, password: string) => request<Me>('POST', '/api/v1/auth/login', { email, password }),
+  logout: () => request<void>('POST', '/api/v1/auth/logout'),
   metadata: (signal?: AbortSignal) => request<Metadata>('GET', '/api/v1/metadata', undefined, signal),
   trends: (body: { series: Series[]; interval: Interval; filters: Filter[]; breakdown?: Breakdown; deduplicate: boolean } & DateRange, signal?: AbortSignal) =>
     request<TrendResponse>('POST', '/api/v1/query/trends', body, signal),
