@@ -108,7 +108,9 @@ services:
           GRANT SELECT ON ALL TABLES IN DATABASE analytics TO USER 'reapdeep_query'@'%';
           CREATE USER IF NOT EXISTS 'reapdeep_jobs'@'%' IDENTIFIED BY '$$STARROCKS_JOBS_PASSWORD';
           ALTER USER 'reapdeep_jobs'@'%' IDENTIFIED BY '$$STARROCKS_JOBS_PASSWORD';
-          GRANT SELECT, DELETE ON ALL TABLES IN DATABASE analytics TO USER 'reapdeep_jobs'@'%';"
+          GRANT SELECT, DELETE ON ALL TABLES IN DATABASE analytics TO USER 'reapdeep_jobs'@'%';
+          GRANT INSERT ON TABLE analytics.cohort_members TO USER 'reapdeep_jobs'@'%';
+          CREATE RESOURCE GROUP IF NOT EXISTS rg_jobs TO (user='reapdeep_jobs') WITH ('cpu_weight'='2', 'mem_limit'='0.3', 'concurrency_limit'='4');"
     environment:
       STARROCKS_QUERY_PASSWORD: ${STARROCKS_QUERY_PASSWORD:?Missing STARROCKS_QUERY_PASSWORD in .env - run run-local.ps1 or smoke-test.sh}
       STARROCKS_JOBS_PASSWORD: ${STARROCKS_JOBS_PASSWORD:?Missing STARROCKS_JOBS_PASSWORD in .env - run run-local.ps1 or smoke-test.sh}
