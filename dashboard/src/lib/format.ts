@@ -1,4 +1,4 @@
-import type { Interval } from './api'
+import type { Interval } from '../api/types'
 
 const nf = new Intl.NumberFormat('en-US')
 const compactNf = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 })
@@ -37,4 +37,12 @@ export function niceTicks(max: number, count = 4): number[] {
   for (let v = 0; v <= max + step * 0.001; v += step) ticks.push(Math.round(v * 1e6) / 1e6)
   if (ticks[ticks.length - 1] < max) ticks.push(ticks[ticks.length - 1] + step)
   return ticks
+}
+
+export const shortId = (id: string) => (id.length > 18 ? `${id.slice(0, 8)}…${id.slice(-4)}` : id)
+
+export const initials = (text: string) => {
+  const local = text.split('@')[0]
+  const words = local.split(/[\s._-]+/).filter((w) => /^\p{L}/u.test(w))
+  return ((words[0]?.[0] ?? local[0] ?? '?') + (words[1]?.[0] ?? '')).toUpperCase()
 }

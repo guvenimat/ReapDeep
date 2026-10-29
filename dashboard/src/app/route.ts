@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useState } from 'react'
-import type { DateRange, Interval } from './api'
+import type { DateRange, Interval } from '../api/types'
+import type { IconName } from '../components/icons'
 
 export type Tab = 'dashboards' | 'trends' | 'funnels' | 'retention' | 'paths' | 'events' | 'persons' | 'settings'
-export const TABS: { id: Tab; label: string }[] = [
-  { id: 'dashboards', label: 'Dashboards' },
-  { id: 'trends', label: 'Trends' },
-  { id: 'funnels', label: 'Funnels' },
-  { id: 'retention', label: 'Retention' },
-  { id: 'paths', label: 'Paths' },
-  { id: 'events', label: 'Events' },
-  { id: 'persons', label: 'Persons' },
-  { id: 'settings', label: 'Settings' },
+export interface TabInfo { id: Tab; label: string; icon: IconName; description: string; group: 'analyze' | 'data' | 'admin' }
+export const TABS: TabInfo[] = [
+  { id: 'dashboards', label: 'Dashboards', icon: 'dashboards', description: 'Saved insights, side by side', group: 'analyze' },
+  { id: 'trends', label: 'Trends', icon: 'trends', description: 'Event volume and unique users over time', group: 'analyze' },
+  { id: 'funnels', label: 'Funnels', icon: 'funnels', description: 'Conversion through ordered steps', group: 'analyze' },
+  { id: 'retention', label: 'Retention', icon: 'retention', description: 'How many people come back, by cohort', group: 'analyze' },
+  { id: 'paths', label: 'Paths', icon: 'paths', description: 'What people do after a starting event', group: 'analyze' },
+  { id: 'events', label: 'Events', icon: 'events', description: 'Raw event stream', group: 'data' },
+  { id: 'persons', label: 'Persons', icon: 'persons', description: 'Identified people and their history', group: 'data' },
+  { id: 'settings', label: 'Settings', icon: 'settings', description: 'Account, members and API keys', group: 'admin' },
 ]
 
 export interface Route { tab: Tab; id?: string; params: URLSearchParams }
@@ -19,7 +21,7 @@ function parse(): Route {
   const [path, query = ''] = location.hash.replace(/^#\/?/, '').split('?')
   const [tab, id] = path.split('/')
   return {
-    tab: TABS.some((t) => t.id === tab) ? (tab as Tab) : 'trends',
+    tab: TABS.some((t) => t.id === tab) ? (tab as Tab) : 'dashboards',
     id: id ? decodeURIComponent(id) : undefined,
     params: new URLSearchParams(query),
   }
@@ -70,11 +72,13 @@ export function readState<T>(params: URLSearchParams, fallback: T): T {
   }
 }
 
+export type Range = ReturnType<typeof rangeFromParams>
+
 export type RangePreset = '24h' | '7d' | '30d' | 'custom'
 export const RANGE_PRESETS: { id: RangePreset; label: string }[] = [
-  { id: '24h', label: 'Last 24 hours' },
-  { id: '7d', label: 'Last 7 days' },
-  { id: '30d', label: 'Last 30 days' },
+  { id: '24h', label: '24h' },
+  { id: '7d', label: '7d' },
+  { id: '30d', label: '30d' },
   { id: 'custom', label: 'Custom' },
 ]
 
