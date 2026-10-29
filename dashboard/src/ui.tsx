@@ -34,9 +34,9 @@ export function MetaDatalists() {
       <datalist id="dl-events">{meta?.events.map((e) => <option key={e.name} value={e.name} />)}</datalist>
       <datalist id="dl-event-props">
         {meta?.event_columns.map((c) => <option key={c} value={c} />)}
-        {meta?.event_properties.filter((p) => !meta.event_columns.includes(p.name)).map((p) => <option key={p.name} value={p.name} />)}
+        {meta?.event_properties.filter((p) => !meta.event_columns.includes(p.name)).map((p) => <option key={p.name} value={p.name} label={p.type ?? undefined} />)}
       </datalist>
-      <datalist id="dl-person-props">{meta?.person_properties.map((p) => <option key={p.name} value={p.name} />)}</datalist>
+      <datalist id="dl-person-props">{meta?.person_properties.map((p) => <option key={p.name} value={p.name} label={p.type ?? undefined} />)}</datalist>
     </>
   )
 }

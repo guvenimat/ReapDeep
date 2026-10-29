@@ -18,11 +18,13 @@ export interface EventRow {
   columns: Record<string, string>; properties: Record<string, unknown> | null
 }
 export interface Person { id: string; is_identified: boolean; created_at: string; distinct_ids: string[]; properties: Record<string, unknown> }
+export type PropertyType = 'string' | 'number' | 'boolean' | 'datetime'
+export interface PropertyDefinition { name: string; type: PropertyType | null; last_seen_at: string }
 export interface Metadata {
-  events: { name: string; count: number }[]
+  events: { name: string; last_seen_at: string }[]
   event_columns: string[]
-  event_properties: { name: string; count: number }[]
-  person_properties: { name: string; count: number }[]
+  event_properties: PropertyDefinition[]
+  person_properties: PropertyDefinition[]
 }
 
 export interface User { id: number; email: string; name: string }

@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
@@ -350,33 +349,37 @@ public static class Endpoints
         return list;
     }
 
-    static readonly ConcurrentDictionary<long, (MetadataResponse Value, DateTime Expires)> MetadataCache = new();
-
-    static async Task<IResult> Metadata(HttpContext ctx, MySqlDataSource db, NpgsqlDataSource pg)
+    static async Task<IResult> Metadata(HttpContext ctx, NpgsqlDataSource pg)
     {
         var project = ProjectContext.From(ctx);
-        if (MetadataCache.TryGetValue(project.ProjectId, out var hit) && hit.Expires > DateTime.UtcNow)
-            return Results.Json(hit.Value, AppJsonContext.Default.MetadataResponse);
+        var ct = ctx.RequestAborted;
+        await using var conn = await pg.OpenConnectionAsync(ct);
 
-        var now = DateTime.UtcNow;
-        var namesB = new SqlBuilder(project.ProjectId, now.AddDays(-30), now.AddMinutes(1));
-        var keysB = new SqlBuilder(project.ProjectId, now.AddDays(-7), now.AddMinutes(1));
-        var events = Run(db, Queries.EventNames(namesB), namesB, r => new NameCount(r.GetString(0), r.GetInt64(1)), ctx.RequestAborted);
-        var eventProps = Run(db, Queries.EventPropertyKeys(keysB), keysB, r => new NameCount(r.GetString(0), r.GetInt64(1)), ctx.RequestAborted);
+        var events = new List<EventDefinition>();
+        await using (var cmd = new NpgsqlCommand(
+            "SELECT name, last_seen_at FROM event_definitions WHERE project_id = @p ORDER BY last_seen_at DESC, name LIMIT 2000", conn))
+        {
+            cmd.Parameters.AddWithValue("p", project.ProjectId);
+            await using var r = await cmd.ExecuteReaderAsync(ct);
+            while (await r.ReadAsync(ct)) events.Add(new EventDefinition(r.GetString(0), r.GetDateTime(1)));
+        }
 
-        await using var cmd = pg.CreateCommand("""
-            SELECT k, count(*) FROM persons, jsonb_object_keys(properties) AS k
-            WHERE project_id = @p AND NOT is_deleted GROUP BY k ORDER BY 2 DESC LIMIT 500
-            """);
-        cmd.Parameters.AddWithValue("p", project.ProjectId);
-        var personProps = new List<NameCount>();
-        await using (var r = await cmd.ExecuteReaderAsync(ctx.RequestAborted))
-            while (await r.ReadAsync(ctx.RequestAborted)) personProps.Add(new NameCount(r.GetString(0), r.GetInt64(1)));
+        var eventProps = new List<PropertyDefinition>();
+        var personProps = new List<PropertyDefinition>();
+        await using (var cmd = new NpgsqlCommand("""
+            SELECT scope, name, property_type, last_seen_at FROM property_definitions
+            WHERE project_id = @p AND column_name IS NULL ORDER BY last_seen_at DESC, name LIMIT 5000
+            """, conn))
+        {
+            cmd.Parameters.AddWithValue("p", project.ProjectId);
+            await using var r = await cmd.ExecuteReaderAsync(ct);
+            while (await r.ReadAsync(ct))
+                (r.GetString(0) == "person" ? personProps : eventProps)
+                    .Add(new PropertyDefinition(r.GetString(1), r.IsDBNull(2) ? null : r.GetString(2), r.GetDateTime(3)));
+        }
 
         var columns = ColumnMapper.EventColumns.Select(c => c.StartsWith("utm_") ? c : "$" + c).Order().ToList();
-        var result = new MetadataResponse(await events, columns, await eventProps, personProps);
-        MetadataCache[project.ProjectId] = (result, DateTime.UtcNow.AddMinutes(5));
-        return Results.Json(result, AppJsonContext.Default.MetadataResponse);
+        return Results.Json(new MetadataResponse(events, columns, eventProps, personProps), AppJsonContext.Default.MetadataResponse);
     }
 
     static async Task<IResult> Health(MySqlDataSource db, NpgsqlDataSource pg, CancellationToken ct)

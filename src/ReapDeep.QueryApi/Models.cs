@@ -32,8 +32,9 @@ public sealed record EventsResponse(List<EventRow> Events, double TookMs);
 public sealed record PersonRow(string Id, bool IsIdentified, DateTime CreatedAt, string[] DistinctIds, JsonElement Properties);
 public sealed record PersonsResponse(List<PersonRow> Persons, string? NextCursor);
 
-public sealed record NameCount(string Name, long Count);
-public sealed record MetadataResponse(List<NameCount> Events, List<string> EventColumns, List<NameCount> EventProperties, List<NameCount> PersonProperties);
+public sealed record EventDefinition(string Name, DateTime LastSeenAt);
+public sealed record PropertyDefinition(string Name, string? Type, DateTime LastSeenAt);
+public sealed record MetadataResponse(List<EventDefinition> Events, List<string> EventColumns, List<PropertyDefinition> EventProperties, List<PropertyDefinition> PersonProperties);
 
 public sealed record ExplainResponse(List<string> Sql, List<string> Plans);
 public sealed record ErrorResponse(string Error);
