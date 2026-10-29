@@ -28,7 +28,7 @@ public sealed class SessionAuth(NpgsqlDataSource db, IConfiguration cfg, ILogger
     }
 
     public ProjectContext? Project(MeResponse me, long projectId) =>
-        me.Projects.FirstOrDefault(p => p.Id == projectId) is { } p ? ProjectContext.Create(p.Id, p.Timezone, p.Role, log) : null;
+        me.Projects.FirstOrDefault(p => p.Id == projectId) is { } p ? ProjectContext.Create(p.Id, p.Timezone, p.Role, me.User.Id, log) : null;
 
     public async Task<MeResponse?> Login(HttpContext ctx, string email, string password)
     {

@@ -115,6 +115,9 @@ button.icon:hover { color: var(--text); }
 button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; padding: 8px 12px; }
 button.primary:hover { filter: brightness(1.05); background: var(--accent); }
 button.primary:disabled { opacity: 0.6; cursor: default; }
+.danger-zone { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border); }
+button.danger { color: var(--critical); border-color: var(--critical); }
+button.danger:disabled { opacity: 0.6; cursor: default; }
 .notice { padding: 24px; text-align: center; color: var(--text-2); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
 .notice.error { color: var(--text); border-color: var(--critical); }
 .stale { opacity: 0.6; transition: opacity 0.2s; }

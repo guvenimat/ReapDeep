@@ -28,6 +28,10 @@ export interface Metadata {
 export interface User { id: number; email: string; name: string }
 export interface Project { id: number; name: string; organization_id: number; organization_name: string; role: 'owner' | 'admin' | 'member'; timezone: string }
 export interface Me { user: User; projects: Project[] }
+export interface DeletionRequest {
+  id: number; target_type: 'person' | 'distinct_id'; target_id: string; requested_by: string | null
+  requested_at: string; processed_at: string | null
+}
 
 const PROJECT_STORAGE = 'reapdeep.projectId'
 let currentProject: number | undefined
@@ -106,4 +110,7 @@ export const api = {
   persons: (params: { search?: string; cursor?: string; limit?: number; identified?: boolean }, signal?: AbortSignal) =>
     request<{ persons: Person[]; next_cursor: string | null }>('GET', `/api/v1/persons?${qs(params)}`, undefined, signal),
   person: (id: string, signal?: AbortSignal) => request<Person>('GET', `/api/v1/persons/${encodeURIComponent(id)}`, undefined, signal),
+  deletionRequests: (signal?: AbortSignal) => request<{ deletion_requests: DeletionRequest[] }>('GET', '/api/v1/deletion-requests', undefined, signal),
+  requestDeletion: (target_type: DeletionRequest['target_type'], target_id: string) =>
+    request<DeletionRequest>('POST', '/api/v1/deletion-requests', { target_type, target_id }),
 }

@@ -104,7 +104,7 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
         {route.tab === 'trends' && <Trends params={route.params} range={range} onChange={onQuery} />}
         {route.tab === 'funnels' && <Funnels params={route.params} range={range} onChange={onQuery} />}
         {route.tab === 'events' && <Events params={route.params} range={range} onChange={onQuery} openPerson={openPerson} />}
-        {route.tab === 'persons' && <Persons id={route.id} openPerson={openPerson} />}
+        {route.tab === 'persons' && <Persons id={route.id} openPerson={openPerson} canManage={['owner', 'admin'].includes(me.projects.find((p) => p.id === projectId)?.role ?? '')} />}
       </main>
     </MetaContext.Provider>
   )

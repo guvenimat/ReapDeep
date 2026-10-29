@@ -43,6 +43,7 @@ flowchart LR
 - **Ingestion.** The API validates the project key, parses the user agent, corrects client clock skew using `sent_at`, and promotes common properties (URL, UTM, browser, OS, device) to columns. It returns `202` only after Kafka acknowledges every event in the batch, and `503` otherwise. The SDK retries with the same `event_id`.
 - **Storage.** `events` is a Duplicate Key table partitioned by day. `persons` and `person_distinct_ids` are Primary Key tables. `events` and `person_distinct_ids` share a colocate group distributed by `HASH(project_id, distinct_id)`, so the person join runs locally on each node.
 - **Identity.** PostgreSQL is the source of truth for persons. The worker applies merge rules (two identified persons are never merged) and writes changes to an outbox in the same transaction. A publisher forwards them to Kafka, and StarRocks applies them in version order.
+- **Deletion.** Owners and admins request deletion of a person or a `distinct_id` (`POST /api/v1/deletion-requests`). A periodic batch job in the person worker (daily by default) deletes the events from StarRocks with one `DELETE` per project, removes the identity rows from PostgreSQL, and sends tombstones through the outbox so StarRocks drops the mappings and person properties in version order; the tombstones are purged later. Batching keeps StarRocks delete-predicate and compaction load low.
 - **Queries.** A person is `COALESCE(pdi.person_id, e.distinct_id)` over a `LEFT JOIN`, so anonymous events are never dropped. Date filters use UTC boundaries for partition pruning; the project time zone is used only for bucketing.
 
 ## Quick start
@@ -99,7 +100,7 @@ Other endpoints: `POST /api/v1/query/funnels`, `GET /api/v1/events`, `GET /api/v
 
 ### Authentication
 
-- **API keys** (`Authorization: Bearer <key>`) are scoped to one project and are read-only. Use them for scripts and integrations.
+- **API keys** (`Authorization: Bearer <key>`) are scoped to one project and are read-only; they cannot create deletion requests. Use them for scripts and integrations.
 - **Dashboard sessions:** `POST /api/v1/auth/login` sets an HttpOnly, `SameSite=Strict` cookie valid for 14 days. Requests then name the project in the `X-Project-Id` header, and the API checks the user's organization membership. `GET /api/v1/auth/me` returns the user and their projects; `POST /api/v1/auth/logout` revokes the session.
 - Passwords are hashed with PBKDF2-SHA256 (600K iterations), and sign-in is rate limited to 10 attempts per minute per client IP.
 - On first start, the Query API creates the `ADMIN_EMAIL` user as owner of every organization when the `users` table is empty.
@@ -155,6 +156,7 @@ The optimizations that got us here: a fixed-offset time bucketing path when the 
 cd deploy/local
 .\identity-test.ps1     # identity resolution, 10 end-to-end scenarios
 .\auth-test.ps1         # sign-in, sessions, project access, CORS, X-Forwarded-For, StarRocks grants
+.\deletion-test.ps1     # deletion requests and the batch job, end to end
 .\query-test.ps1        # Query API: trends, funnels, events, persons, EXPLAIN, latency
 .\dashboard-test.ps1    # headless Chrome against the dashboard (Chrome DevTools Protocol)
 .\load-test.ps1         # ingestion load, 100M seed, query benchmark, cleanup
@@ -193,7 +195,7 @@ ReapDeep is an early v1. It runs end to end locally but has not been operated in
 - There is no user management UI yet: the first owner comes from `.env`, other users are added in PostgreSQL.
 - Not in v1: session replay, mobile SDKs, autocapture, feature flags.
 - Behind a load balancer, set `ForwardedHeaders__TrustedNetworks` (CIDR list) on the ingestion and Query APIs; `X-Forwarded-For` is ignored otherwise. The Query API sends no CORS headers unless `QueryApi__CorsOrigins` is set.
-- Data deletion requests are planned as periodic batch `DELETE` jobs.
+- The deletion job runs every 30 s in the local compose file so tests finish quickly; the default is once a day (`Deletion__IntervalSeconds`). Raw events also stay in Kafka for its 7-day retention.
 
 ## License
 

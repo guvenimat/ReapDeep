@@ -105,9 +105,13 @@ services:
         mysql -h starrocks -P9030 -uroot -e "
           CREATE USER IF NOT EXISTS 'reapdeep_query'@'%' IDENTIFIED BY '$$STARROCKS_QUERY_PASSWORD';
           ALTER USER 'reapdeep_query'@'%' IDENTIFIED BY '$$STARROCKS_QUERY_PASSWORD';
-          GRANT SELECT ON ALL TABLES IN DATABASE analytics TO USER 'reapdeep_query'@'%';"
+          GRANT SELECT ON ALL TABLES IN DATABASE analytics TO USER 'reapdeep_query'@'%';
+          CREATE USER IF NOT EXISTS 'reapdeep_jobs'@'%' IDENTIFIED BY '$$STARROCKS_JOBS_PASSWORD';
+          ALTER USER 'reapdeep_jobs'@'%' IDENTIFIED BY '$$STARROCKS_JOBS_PASSWORD';
+          GRANT SELECT, DELETE ON ALL TABLES IN DATABASE analytics TO USER 'reapdeep_jobs'@'%';"
     environment:
       STARROCKS_QUERY_PASSWORD: ${STARROCKS_QUERY_PASSWORD:?Missing STARROCKS_QUERY_PASSWORD in .env - run run-local.ps1 or smoke-test.sh}
+      STARROCKS_JOBS_PASSWORD: ${STARROCKS_JOBS_PASSWORD:?Missing STARROCKS_JOBS_PASSWORD in .env - run run-local.ps1 or smoke-test.sh}
     restart: "no"
 
   postgres:
@@ -153,11 +157,17 @@ services:
     environment:
       Kafka__BootstrapServers: kafka:29092
       ConnectionStrings__Postgres: *postgres-connection
+      ConnectionStrings__StarRocks: Server=starrocks;Port=9030;User ID=reapdeep_jobs;Password=${STARROCKS_JOBS_PASSWORD:?Missing STARROCKS_JOBS_PASSWORD in .env};Database=analytics;ConnectionReset=false
+      Deletion__IntervalSeconds: "30"
+      Deletion__MinAgeSeconds: "20"
+      Deletion__TombstoneSeconds: "60"
     depends_on:
       kafka-init:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
+      starrocks-init:
+        condition: service_completed_successfully
     restart: unless-stopped
 
   query-api:

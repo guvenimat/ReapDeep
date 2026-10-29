@@ -44,6 +44,10 @@ public sealed record UserInfo(long Id, string Email, string Name);
 public sealed record ProjectInfo(long Id, string Name, long OrganizationId, string OrganizationName, string Role, string Timezone);
 public sealed record MeResponse(UserInfo User, List<ProjectInfo> Projects);
 
+public sealed record DeletionRequestBody(string? TargetType, string? TargetId);
+public sealed record DeletionRequestRow(long Id, string TargetType, string TargetId, string? RequestedBy, DateTime RequestedAt, DateTime? ProcessedAt);
+public sealed record DeletionRequestsResponse(List<DeletionRequestRow> DeletionRequests);
+
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower)]
 [JsonSerializable(typeof(TrendRequest))]
 [JsonSerializable(typeof(TrendResponse))]
@@ -58,6 +62,9 @@ public sealed record MeResponse(UserInfo User, List<ProjectInfo> Projects);
 [JsonSerializable(typeof(HealthResponse))]
 [JsonSerializable(typeof(LoginRequest))]
 [JsonSerializable(typeof(MeResponse))]
+[JsonSerializable(typeof(DeletionRequestBody))]
+[JsonSerializable(typeof(DeletionRequestRow))]
+[JsonSerializable(typeof(DeletionRequestsResponse))]
 internal partial class AppJsonContext : JsonSerializerContext;
 
 public sealed class QueryException(string message) : Exception(message);

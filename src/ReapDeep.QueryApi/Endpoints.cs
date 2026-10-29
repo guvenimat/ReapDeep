@@ -26,6 +26,8 @@ public static class Endpoints
         api.MapGet("/persons", Persons);
         api.MapGet("/persons/{personId}", Person);
         api.MapGet("/metadata", Metadata);
+        api.MapGet("/deletion-requests", DeletionRequests);
+        api.MapPost("/deletion-requests", CreateDeletionRequest);
     }
 
     public const string LoginRateLimit = "login";
@@ -289,6 +291,62 @@ public static class Endpoints
         await using var r = await cmd.ExecuteReaderAsync(ct);
         while (await r.ReadAsync(ct))
             list.Add(new PersonRow(r.GetGuid(0).ToString(), r.GetBoolean(1), r.GetDateTime(2), r.GetFieldValue<string[]>(4), ParseJson(r.GetString(3))));
+        return list;
+    }
+
+    const string DeletionSelect = """
+        SELECT r.id, r.target_type, r.target_id, u.email, r.requested_at, r.processed_at
+        FROM deletion_requests r LEFT JOIN users u ON u.id = r.requested_by
+        WHERE r.project_id = @p
+        """;
+
+    static async Task<IResult> DeletionRequests(HttpContext ctx, NpgsqlDataSource pg)
+    {
+        var project = ProjectContext.From(ctx);
+        await using var cmd = pg.CreateCommand(DeletionSelect + " ORDER BY r.id DESC LIMIT 100");
+        cmd.Parameters.AddWithValue("p", project.ProjectId);
+        return Results.Json(new DeletionRequestsResponse(await ReadDeletionRequests(cmd, ctx.RequestAborted)), AppJsonContext.Default.DeletionRequestsResponse);
+    }
+
+    static async Task<IResult> CreateDeletionRequest(DeletionRequestBody req, HttpContext ctx, NpgsqlDataSource pg)
+    {
+        var project = ProjectContext.From(ctx);
+        if (!project.CanManage) return Error("Deletion requests require a signed-in project owner or admin", StatusCodes.Status403Forbidden);
+        if (req.TargetType is not ("person" or "distinct_id")) throw new QueryException("target_type: person | distinct_id");
+        if (string.IsNullOrWhiteSpace(req.TargetId) || req.TargetId.Length > 200) throw new QueryException("target_id is required (at most 200 characters)");
+
+        await using var cmd = pg.CreateCommand("""
+            WITH existing AS (
+                SELECT id FROM deletion_requests
+                WHERE project_id = @p AND target_type = @t AND target_id = @i AND processed_at IS NULL
+                LIMIT 1
+            ), created AS (
+                INSERT INTO deletion_requests (project_id, target_type, target_id, requested_by)
+                SELECT @p, @t, @i, @u WHERE NOT EXISTS (SELECT 1 FROM existing)
+                RETURNING id
+            )
+            SELECT id FROM created UNION ALL SELECT id FROM existing
+            """);
+        cmd.Parameters.AddWithValue("p", project.ProjectId);
+        cmd.Parameters.AddWithValue("t", req.TargetType);
+        cmd.Parameters.AddWithValue("i", req.TargetId);
+        cmd.Parameters.Add(new NpgsqlParameter("u", NpgsqlDbType.Bigint) { Value = (object?)project.UserId ?? DBNull.Value });
+        var id = (long)(await cmd.ExecuteScalarAsync(ctx.RequestAborted))!;
+
+        await using var read = pg.CreateCommand(DeletionSelect + " AND r.id = @id");
+        read.Parameters.AddWithValue("p", project.ProjectId);
+        read.Parameters.AddWithValue("id", id);
+        var row = (await ReadDeletionRequests(read, ctx.RequestAborted))[0];
+        return Results.Json(row, AppJsonContext.Default.DeletionRequestRow, statusCode: StatusCodes.Status202Accepted);
+    }
+
+    static async Task<List<DeletionRequestRow>> ReadDeletionRequests(NpgsqlCommand cmd, CancellationToken ct)
+    {
+        var list = new List<DeletionRequestRow>();
+        await using var r = await cmd.ExecuteReaderAsync(ct);
+        while (await r.ReadAsync(ct))
+            list.Add(new DeletionRequestRow(r.GetInt64(0), r.GetString(1), r.GetString(2), r.IsDBNull(3) ? null : r.GetString(3),
+                r.GetDateTime(4), r.IsDBNull(5) ? null : r.GetDateTime(5)));
         return list;
     }
 
