@@ -68,6 +68,40 @@ public sealed class SessionAuth(NpgsqlDataSource db, IConfiguration cfg, ILogger
         return await Load(hash, ct);
     }
 
+    public void InvalidateUser(long userId)
+    {
+        foreach (var (hash, entry) in _cache)
+            if (entry.Me?.User.Id == userId) _cache.TryRemove(hash, out _);
+    }
+
+    public async Task<bool> ChangePassword(HttpContext ctx, long userId, string current, string next)
+    {
+        var ct = ctx.RequestAborted;
+        await using var conn = await db.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+        string? stored;
+        await using (var cmd = new NpgsqlCommand("SELECT password_hash FROM users WHERE id = @u FOR UPDATE", conn, tx))
+        {
+            cmd.Parameters.AddWithValue("u", userId);
+            stored = await cmd.ExecuteScalarAsync(ct) as string;
+        }
+        if (!Passwords.Verify(current, stored)) return false;
+
+        await using (var cmd = new NpgsqlCommand("""
+            UPDATE users SET password_hash = @h WHERE id = @u;
+            DELETE FROM sessions WHERE user_id = @u AND token_hash <> @keep;
+            """, conn, tx))
+        {
+            cmd.Parameters.AddWithValue("u", userId);
+            cmd.Parameters.AddWithValue("h", Passwords.Hash(next));
+            cmd.Parameters.AddWithValue("keep", TokenHash(ctx.Request) ?? "");
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+        await tx.CommitAsync(ct);
+        InvalidateUser(userId);
+        return true;
+    }
+
     public async Task Logout(HttpContext ctx)
     {
         if (TokenHash(ctx.Request) is { } hash)

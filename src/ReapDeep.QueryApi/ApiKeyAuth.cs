@@ -32,7 +32,7 @@ public sealed class ApiKeyAuth(NpgsqlDataSource db, ILogger<ApiKeyAuth> log)
         var key = ReadKey(ctx.Request);
         if (string.IsNullOrEmpty(key)) return null;
 
-        var hash = Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(key)));
+        var hash = HashKey(key);
         var now = DateTime.UtcNow;
         if (_cache.TryGetValue(hash, out var hit) && hit.Expires > now) return hit.Project;
 
@@ -41,6 +41,10 @@ public sealed class ApiKeyAuth(NpgsqlDataSource db, ILogger<ApiKeyAuth> log)
         _cache[hash] = (project, now + (project is null ? InvalidTtl : ValidTtl));
         return project;
     }
+
+    public void Invalidate(string keyHash) => _cache.TryRemove(keyHash, out _);
+
+    public static string HashKey(string key) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(key)));
 
     public static bool HasKey(HttpRequest req) =>
         req.Headers.Authorization.Count > 0 || req.Headers.ContainsKey("X-Api-Key");

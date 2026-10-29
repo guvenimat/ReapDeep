@@ -45,6 +45,16 @@ public sealed record UserInfo(long Id, string Email, string Name);
 public sealed record ProjectInfo(long Id, string Name, long OrganizationId, string OrganizationName, string Role, string Timezone);
 public sealed record MeResponse(UserInfo User, List<ProjectInfo> Projects);
 
+public sealed record PasswordChangeRequest(string? CurrentPassword, string? NewPassword);
+public sealed record AddMemberRequest(string? Email, string? Name, string? Password, string? Role);
+public sealed record RoleChangeRequest(string? Role);
+public sealed record MemberRow(long UserId, string Email, string Name, string Role, DateTime CreatedAt);
+public sealed record MembersResponse(List<MemberRow> Members);
+public sealed record CreateApiKeyRequest(string? Name);
+public sealed record ApiKeyRow(long Id, string Name, string Prefix, string? CreatedBy, DateTime CreatedAt, DateTime? RevokedAt);
+public sealed record ApiKeysResponse(List<ApiKeyRow> ApiKeys);
+public sealed record CreatedApiKey(ApiKeyRow ApiKey, string Key);
+
 public sealed record DeletionRequestBody(string? TargetType, string? TargetId);
 public sealed record DeletionRequestRow(long Id, string TargetType, string TargetId, string? RequestedBy, DateTime RequestedAt, DateTime? ProcessedAt);
 public sealed record DeletionRequestsResponse(List<DeletionRequestRow> DeletionRequests);
@@ -63,6 +73,14 @@ public sealed record DeletionRequestsResponse(List<DeletionRequestRow> DeletionR
 [JsonSerializable(typeof(HealthResponse))]
 [JsonSerializable(typeof(LoginRequest))]
 [JsonSerializable(typeof(MeResponse))]
+[JsonSerializable(typeof(PasswordChangeRequest))]
+[JsonSerializable(typeof(AddMemberRequest))]
+[JsonSerializable(typeof(RoleChangeRequest))]
+[JsonSerializable(typeof(MemberRow))]
+[JsonSerializable(typeof(MembersResponse))]
+[JsonSerializable(typeof(CreateApiKeyRequest))]
+[JsonSerializable(typeof(ApiKeysResponse))]
+[JsonSerializable(typeof(CreatedApiKey))]
 [JsonSerializable(typeof(DeletionRequestBody))]
 [JsonSerializable(typeof(DeletionRequestRow))]
 [JsonSerializable(typeof(DeletionRequestsResponse))]

@@ -118,6 +118,14 @@ button.primary:disabled { opacity: 0.6; cursor: default; }
 .danger-zone { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 12px; border-top: 1px solid var(--border); }
 button.danger { color: var(--critical); border-color: var(--critical); }
 button.danger:disabled { opacity: 0.6; cursor: default; }
+.settings { display: flex; flex-direction: column; gap: 16px; max-width: 1000px; }
+.settings-form { display: flex; flex-direction: column; gap: 12px; max-width: 480px; }
+.settings-inline { margin-top: 12px; }
+.settings-inline input { flex: 1 1 180px; }
+.new-key { display: flex; flex-direction: column; gap: 6px; padding: 12px; margin-bottom: 12px; border: 1px solid var(--accent); border-radius: 6px; }
+.new-key code { padding: 4px 8px; background: var(--page); border-radius: 4px; word-break: break-all; }
+button.link.danger-link { color: var(--critical); }
+.good { color: var(--good); }
 .notice { padding: 24px; text-align: center; color: var(--text-2); background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); }
 .notice.error { color: var(--text); border-color: var(--critical); }
 .stale { opacity: 0.6; transition: opacity 0.2s; }

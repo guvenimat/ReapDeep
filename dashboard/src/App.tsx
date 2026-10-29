@@ -4,6 +4,7 @@ import { Events } from './Events'
 import { Funnels } from './Funnels'
 import { Login } from './Login'
 import { Persons } from './Persons'
+import { Settings } from './Settings'
 import { RANGE_PRESETS, rangeFromParams, TABS, useRoute, type RangePreset } from './route'
 import { Trends } from './Trends'
 import { MetaContext, MetaDatalists, useQuery } from './ui'
@@ -18,7 +19,8 @@ export function App() {
 
   if (me === undefined) return <div className="notice login-wait">Loading...</div>
   if (me === null) return <Login onLogin={setMe} />
-  return <Workspace me={me} onLogout={() => api.logout().finally(() => setMe(null))} />
+  return <Workspace me={me} onLogout={() => api.logout().finally(() => setMe(null))}
+    onAccessChanged={() => api.me().then(setMe, () => setMe(null))} />
 }
 
 function pickProject(me: Me): number | undefined {
@@ -26,7 +28,7 @@ function pickProject(me: Me): number | undefined {
   return me.projects.find((p) => p.id === stored)?.id ?? me.projects[0]?.id
 }
 
-function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
+function Workspace({ me, onLogout, onAccessChanged }: { me: Me; onLogout: () => void; onAccessChanged: () => void }) {
   const { route, navigate, setParams } = useRoute()
   const range = rangeFromParams(route.params)
   const [projectId, setProjectId] = useState(() => {
@@ -39,12 +41,22 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const err = meta.error ? (meta.loading ? undefined : meta.error) : undefined
   const status = meta.data && !meta.error ? 'ok' : err ? 'down' : 'checking'
 
+  const project = me.projects.find((p) => p.id === projectId)
+  const canManage = project?.role === 'owner' || project?.role === 'admin'
+
+  useEffect(() => {
+    if (project) return
+    const id = pickProject(me)
+    if (id !== undefined) setProject(id)
+    setProjectId(id)
+  }, [me, project])
+
   const changeProject = (id: number) => {
     setProject(id)
     setProjectId(id)
   }
 
-  if (projectId === undefined)
+  if (projectId === undefined || !project)
     return <div className="notice login-wait">Your account is not a member of any project. <button className="link" onClick={onLogout}>Sign out</button></div>
 
   const onQuery = (q: string) => setParams({ q })
@@ -65,7 +77,7 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
           ))}
         </nav>
         <div className="spacer" />
-        {route.tab !== 'persons' && (
+        {route.tab !== 'persons' && route.tab !== 'settings' && (
           <div className="range">
             <div className="segmented" role="group" aria-label="Date range">
               {RANGE_PRESETS.map((p) => (
@@ -104,7 +116,8 @@ function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
         {route.tab === 'trends' && <Trends params={route.params} range={range} onChange={onQuery} />}
         {route.tab === 'funnels' && <Funnels params={route.params} range={range} onChange={onQuery} />}
         {route.tab === 'events' && <Events params={route.params} range={range} onChange={onQuery} openPerson={openPerson} />}
-        {route.tab === 'persons' && <Persons id={route.id} openPerson={openPerson} canManage={['owner', 'admin'].includes(me.projects.find((p) => p.id === projectId)?.role ?? '')} />}
+        {route.tab === 'persons' && <Persons id={route.id} openPerson={openPerson} canManage={canManage} />}
+        {route.tab === 'settings' && <Settings me={me} project={project!} onAccessChanged={onAccessChanged} />}
       </main>
     </MetaContext.Provider>
   )

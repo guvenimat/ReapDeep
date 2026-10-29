@@ -156,7 +156,13 @@ $evTable = Section $html "events-table"
 $rows = ([regex]::Matches($evTable, '<tr class="clickable')).Count
 Check "person event history: anonymous + after identify = 7 events -> $rows" ($rows -eq 7)
 
-Write-Host "`n7) Sign-out"
+Write-Host "`n7) Settings"
+$html = Dom "#/settings" "document.querySelector('[data-testid=members-table] tbody tr') && document.querySelector('[data-testid=api-keys-table] tbody tr')"
+Check "members table lists the owner" ((Section $html "members-table") -match [regex]::Escape($envValues.ADMIN_EMAIL) -and (Section $html "members-table") -match 'owner')
+Check "API keys table lists the local read key" ((Section $html "api-keys-table") -match 'Local read key')
+Check "change password form is shown" ($html -match 'data-testid="settings-account"')
+
+Write-Host "`n8) Sign-out"
 $html = Dom "#/trends" "(function(){const b=document.querySelector('[data-testid=logout]');if(b&&!window.__out){window.__out=1;b.click()}return false})() || document.querySelector('[data-testid=login-form]')"
 Check "Sign out returns to the login screen" ($html -match 'data-testid="login-form"')
 $html = Dom "#/trends" "document.querySelector('[data-testid=login-form]')"
