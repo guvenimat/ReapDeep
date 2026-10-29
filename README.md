@@ -41,7 +41,7 @@ flowchart LR
 |---|---|---|
 | Ingestion API | `src/ReapDeep.Ingestion` | .NET 10 Minimal API, Native AOT, Confluent.Kafka |
 | Person worker | `src/ReapDeep.PersonWorker` | .NET 10 Worker, Native AOT, transactional outbox |
-| Query API | `src/ReapDeep.QueryApi` | .NET 10 Minimal API, Native AOT, MySqlConnector, Npgsql |
+| Query API | `src/ReapDeep.QueryApi` | .NET 10 Minimal API, Native AOT, MySqlConnector, Npgsql + Dapper.AOT |
 | JS SDK | `sdk/js` | TypeScript, esbuild (ESM + IIFE) |
 | Dashboard | `dashboard` | React 19, TypeScript, Vite, hand-written SVG charts |
 | Load test | `tests/ReapDeep.LoadTest` | .NET 10 console app |
@@ -224,7 +224,8 @@ Init SQL runs only on empty volumes. After a schema change, run `docker compose 
 ```
 src/ReapDeep.Ingestion      Ingestion API
 src/ReapDeep.PersonWorker   identity resolution worker
-src/ReapDeep.QueryApi       Query API and the single SQL builder (SqlBuilder.cs)
+src/ReapDeep.QueryApi       Query API: feature folders (Analytics, Persons, Insights, Organization, ...);
+                            all StarRocks SQL is built in Analytics/Sql (SqlBuilder)
 sdk/js                      browser SDK
 dashboard                   React dashboard, served by nginx
 tests/ReapDeep.LoadTest     load generator, 100M seeder, demo data and query benchmark

@@ -46,8 +46,34 @@ flowchart LR
 | Query API (.NET, Native AOT) | the only producer of analytical SQL; auth and tenancy | one place to enforce `project_id` filters |
 | Dashboard (React, nginx) | UI; same origin as the API | no CORS needed, cookie sessions work |
 
-All three .NET services are Minimal API or Worker projects with no extra layers, and compile to Native
-AOT (about 30-60 MB of memory each). JSON uses System.Text.Json source generation throughout.
+All three .NET services are Minimal API or Worker projects, and compile to Native AOT (about 30-60 MB
+of memory each). JSON uses System.Text.Json source generation throughout.
+
+### Code structure
+
+Each service is organized by feature, not by technical layer, and keeps three kinds of classes apart:
+
+| Kind | Examples | Rule |
+|---|---|---|
+| Endpoints | `MemberEndpoints`, `AnalyticsEndpoints` | map routes, declare access (`.RequireUser()`, `.RequireManager()`), translate results to HTTP; no SQL |
+| Services and pure logic | `TrendService`, `MembershipRules`, `EventTimestamps`, `IdentityEvent` | validation and business rules; unit tested without a database |
+| Data access | `MemberRepository`, `PersonTransaction`, `StarRocksClient` | one class per store and aggregate; return typed records |
+
+There is deliberately no mediator, no repository interfaces and no generic layers: with one
+implementation per abstraction they would only add indirection. Cross-cutting concerns live in one
+place each: tenancy in `ProjectAccessMiddleware`, errors in `ApiExceptionHandler` (validation -> 400,
+StarRocks resource limits -> 503), and composition in each service's `HostingExtensions`. Tenancy is a
+middleware rather than an endpoint filter on purpose: Minimal API binds handler parameters before
+filters run, so the project must be resolved earlier for `ProjectContext` to bind as a parameter. Routes
+opt in through group metadata (`RequireProjectAccess()`), and per-route role checks are declared next to
+the route (`RequireUser()`, `RequireManager()`).
+
+**Data access choice.** PostgreSQL access uses Dapper with **Dapper.AOT**, which replaces Dapper's
+reflection with build-time interceptors so it works under Native AOT. Its analyzer rejects call shapes it
+cannot intercept (for example `CommandDefinition`), but it skips row types that are `private` without
+any diagnostic, so a unit test enforces that every `*Record` row type is non-private. StarRocks queries
+do not use Dapper: their SQL and parameter lists are generated at run time by `SqlBuilder`, so a small
+`StarRocksClient` with typed row mappers is simpler and keeps cancellation support for long queries.
 
 ## 3. Ingestion
 

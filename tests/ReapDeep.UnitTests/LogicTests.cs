@@ -1,6 +1,10 @@
 using System.Text.Json;
-using ReapDeep.Ingestion;
-using ReapDeep.QueryApi;
+using ReapDeep.Ingestion.Capture;
+using ReapDeep.Ingestion.Definitions;
+using ReapDeep.QueryApi.Analytics.Sql;
+using ReapDeep.QueryApi.Auth;
+using ReapDeep.QueryApi.Infrastructure;
+using ReapDeep.QueryApi.Organization;
 
 namespace ReapDeep.UnitTests;
 
@@ -31,7 +35,7 @@ public class TimeRangeTests
     [InlineData("yesterday", null)]
     public void Invalid_ranges_are_rejected(string from, string? to)
     {
-        Assert.Throws<QueryException>(() => TimeRange.Parse(from, to, Istanbul, TimeSpan.FromDays(7)));
+        Assert.Throws<ValidationException>(() => TimeRange.Parse(from, to, Istanbul, TimeSpan.FromDays(7)));
     }
 
     [Fact]
@@ -50,16 +54,16 @@ public class PasswordTests
     [Fact]
     public void Hash_verifies_only_the_right_password()
     {
-        var hash = Passwords.Hash("correct horse battery");
+        var hash = PasswordHasher.Hash("correct horse battery");
         Assert.StartsWith("pbkdf2-sha256$600000$", hash);
-        Assert.True(Passwords.Verify("correct horse battery", hash));
-        Assert.False(Passwords.Verify("correct horse batterY", hash));
+        Assert.True(PasswordHasher.Verify("correct horse battery", hash));
+        Assert.False(PasswordHasher.Verify("correct horse batterY", hash));
     }
 
     [Fact]
     public void Every_hash_has_its_own_salt()
     {
-        Assert.NotEqual(Passwords.Hash("same"), Passwords.Hash("same"));
+        Assert.NotEqual(PasswordHasher.Hash("same"), PasswordHasher.Hash("same"));
     }
 
     [Theory]
@@ -69,7 +73,7 @@ public class PasswordTests
     [InlineData("md5$1$abc$def")]
     public void Missing_or_malformed_hashes_never_verify(string? stored)
     {
-        Assert.False(Passwords.Verify("anything", stored));
+        Assert.False(PasswordHasher.Verify("anything", stored));
     }
 }
 
@@ -109,6 +113,54 @@ public class DefinitionTypeTests
     public void Property_types_are_inferred_from_values(string json, string? expected)
     {
         using var doc = JsonDocument.Parse(json);
-        Assert.Equal(expected, DefinitionTracker.TypeOf(doc.RootElement));
+        Assert.Equal(expected, PropertyTypes.Infer(doc.RootElement));
+    }
+}
+
+public class MembershipRulesTests
+{
+    static readonly Dictionary<long, string> Members = new() { [1] = Roles.Owner, [2] = Roles.Admin, [3] = Roles.Member };
+
+    [Theory]
+    [InlineData(Roles.Owner, Roles.Owner, MembershipError.None)]
+    [InlineData(Roles.Admin, Roles.Admin, MembershipError.None)]
+    [InlineData(Roles.Admin, Roles.Owner, MembershipError.OwnerOnly)]
+    public void Only_owners_can_add_owners(string actor, string role, MembershipError expected)
+    {
+        Assert.Equal(expected, MembershipRules.CanAdd(actor, role));
+    }
+
+    [Theory]
+    [InlineData(Roles.Admin, 3L, Roles.Admin, MembershipError.None)]
+    [InlineData(Roles.Admin, 3L, null, MembershipError.None)]
+    [InlineData(Roles.Admin, 1L, Roles.Member, MembershipError.OwnerOnly)]
+    [InlineData(Roles.Admin, 3L, Roles.Owner, MembershipError.OwnerOnly)]
+    [InlineData(Roles.Owner, 1L, Roles.Admin, MembershipError.LastOwner)]
+    [InlineData(Roles.Owner, 1L, null, MembershipError.LastOwner)]
+    [InlineData(Roles.Owner, 9L, Roles.Admin, MembershipError.NotFound)]
+    public void Role_changes_follow_the_rules(string actor, long userId, string? role, MembershipError expected)
+    {
+        Assert.Equal(expected, MembershipRules.CanChange(actor, Members, userId, role));
+    }
+
+    [Fact]
+    public void An_owner_can_step_down_when_another_owner_exists()
+    {
+        var roles = new Dictionary<long, string> { [1] = Roles.Owner, [2] = Roles.Owner };
+        Assert.Equal(MembershipError.None, MembershipRules.CanChange(Roles.Owner, roles, 1, Roles.Member));
+    }
+}
+
+public class DapperConventionTests
+{
+    [Fact]
+    public void Dapper_row_records_are_not_private()
+    {
+        var rows = new[] { typeof(PasswordHasher).Assembly, typeof(PropertyTypes).Assembly, typeof(ReapDeep.PersonWorker.Identity.IdentityEvent).Assembly }
+            .SelectMany(a => a.GetTypes())
+            .Where(t => t.IsNested && t.Name.EndsWith("Record", StringComparison.Ordinal))
+            .ToList();
+        Assert.NotEmpty(rows);
+        Assert.All(rows, t => Assert.False(t.IsNestedPrivate, $"{t.FullName} is private; Dapper.AOT silently skips private row types"));
     }
 }

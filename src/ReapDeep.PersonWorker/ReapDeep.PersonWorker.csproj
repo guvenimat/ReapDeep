@@ -12,6 +12,7 @@
     <InvariantGlobalization>true</InvariantGlobalization>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <WarningsNotAsErrors>IL2104</WarningsNotAsErrors>
+    <InterceptorsNamespaces>$(InterceptorsNamespaces);Dapper.AOT</InterceptorsNamespaces>
   </PropertyGroup>
 
   <ItemGroup>
@@ -20,6 +21,8 @@
 
   <ItemGroup>
     <PackageReference Include="Confluent.Kafka" Version="2.16.0" />
+    <PackageReference Include="Dapper" Version="2.1.89" />
+    <PackageReference Include="Dapper.AOT" Version="1.1.0" />
     <PackageReference Include="Microsoft.Extensions.Hosting" Version="10.0.0" />
     <PackageReference Include="MySqlConnector" Version="2.6.2" />
     <PackageReference Include="Npgsql" Version="10.0.3" />

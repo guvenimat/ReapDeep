@@ -1,5 +1,7 @@
 using System.Text.Json;
-using ReapDeep.QueryApi;
+using ReapDeep.QueryApi.Analytics;
+using ReapDeep.QueryApi.Analytics.Sql;
+using ReapDeep.QueryApi.Infrastructure;
 
 namespace ReapDeep.UnitTests;
 
@@ -16,23 +18,23 @@ public class SqlBuilderTests
 
     static JsonElement Json(string raw) => JsonDocument.Parse(raw).RootElement.Clone();
 
-    static void AssertTenantAndTimeFilters(string sql, SqlBuilder b)
+    static void AssertTenantAndTimeFilters(SqlQuery query)
     {
-        Assert.Contains("e.project_id = @p0", sql);
-        Assert.Contains("e.timestamp >= @p1", sql);
-        Assert.Contains("e.timestamp < @p2", sql);
-        Assert.Equal(Project, b.Parameters[0].Value);
-        Assert.Equal(From, b.Parameters[1].Value);
-        Assert.Equal(To, b.Parameters[2].Value);
+        Assert.Contains("e.project_id = @p0", query.Sql);
+        Assert.Contains("e.timestamp >= @p1", query.Sql);
+        Assert.Contains("e.timestamp < @p2", query.Sql);
+        Assert.Equal(Project, query.Parameters[0].Value);
+        Assert.Equal(From, query.Parameters[1].Value);
+        Assert.Equal(To, query.Parameters[2].Value);
     }
 
     [Fact]
     public void Constructor_adds_project_and_time_filters_as_parameters()
     {
         var b = Builder();
-        var sql = b.Select("COUNT(*)");
-        Assert.Equal("SELECT COUNT(*) FROM analytics.events e WHERE e.project_id = @p0 AND e.timestamp >= @p1 AND e.timestamp < @p2", sql);
-        AssertTenantAndTimeFilters(sql, b);
+        var query = b.Build(b.Select("COUNT(*)"));
+        Assert.Equal("SELECT COUNT(*) FROM analytics.events e WHERE e.project_id = @p0 AND e.timestamp >= @p1 AND e.timestamp < @p2", query.Sql);
+        AssertTenantAndTimeFilters(query);
     }
 
     [Theory]
@@ -40,33 +42,21 @@ public class SqlBuilderTests
     [InlineData("unique_users")]
     public void Trend_queries_keep_the_tenant_filter(string metric)
     {
-        var builders = new List<SqlBuilder>();
-        SqlBuilder New()
-        {
-            var b = Builder();
-            builders.Add(b);
-            return b;
-        }
-        var (buckets, total) = Queries.Trend(New, new Series("$pageview", metric), dedup: true, "day", Range(), "Europe/Istanbul",
+        var plan = TrendSql.Build(Builder, new Series("$pageview", metric), dedup: true, "day", Range(), "Europe/Istanbul",
             new Breakdown("event", "$browser", 5));
-        AssertTenantAndTimeFilters(buckets.Sql, buckets.Builder);
-        if (total is not null) AssertTenantAndTimeFilters(total.Sql, total.Builder);
+        AssertTenantAndTimeFilters(plan.Buckets);
+        Assert.NotNull(plan.Total);
+        AssertTenantAndTimeFilters(plan.Total);
     }
 
     [Fact]
     public void Funnel_retention_and_paths_keep_the_tenant_filter()
     {
-        var f = Builder();
-        AssertTenantAndTimeFilters(Queries.Funnel(f, [new FunnelStep("a", null), new FunnelStep("b", null)], 3600, null, 0.1), f);
-
-        var r = Builder();
-        AssertTenantAndTimeFilters(Queries.Retention(r, "signup", "login", "week", 6, Range(), "Europe/Istanbul", To), r);
-
-        var p = Builder();
-        AssertTenantAndTimeFilters(Queries.PathSequences(p, "$pageview", 4, 3600, true, 25), p);
-
-        var e = Builder();
-        AssertTenantAndTimeFilters(Queries.Events(e, "x", null, ["a", "b"], null, 50), e);
+        AssertTenantAndTimeFilters(FunnelSql.Build(Builder(), [new FunnelStep("a", null), new FunnelStep("b", null)], 3600, null, 0.1));
+        AssertTenantAndTimeFilters(RetentionSql.Build(Builder(), "signup", "login", "week", 6, Range(), "Europe/Istanbul", To));
+        AssertTenantAndTimeFilters(PathSql.Steps(Builder(), "$pageview", 4, 3600, true));
+        AssertTenantAndTimeFilters(PathSql.Sequences(Builder(), "$pageview", 4, 3600, true, 25));
+        AssertTenantAndTimeFilters(EventSql.Build(Builder(), "x", null, ["a", "b"], null, 50));
     }
 
     [Fact]
@@ -90,13 +80,13 @@ public class SqlBuilderTests
     public void Invalid_property_names_are_rejected(string property)
     {
         var b = Builder();
-        Assert.Throws<QueryException>(() => b.AddFilters([new Filter("event", property, "is_set", null)]));
+        Assert.Throws<ValidationException>(() => b.AddFilters([new Filter("event", property, "is_set", null)]));
     }
 
     [Fact]
     public void Unknown_operator_is_rejected()
     {
-        Assert.Throws<QueryException>(() => Builder().AddFilters([new Filter("event", "plan", "regex", Json("\"x\""))]));
+        Assert.Throws<ValidationException>(() => Builder().AddFilters([new Filter("event", "plan", "regex", Json("\"x\""))]));
     }
 
     [Fact]
@@ -126,9 +116,8 @@ public class SqlBuilderTests
     [Fact]
     public void Fixed_offset_ranges_avoid_convert_tz()
     {
-        var b = Builder();
-        var sql = Queries.Retention(b, "a", "b", "day", 7, Range(), "Europe/Istanbul", To);
-        Assert.Contains("seconds_add(e.timestamp, 10800)", sql);
-        Assert.DoesNotContain("convert_tz", sql);
+        var query = RetentionSql.Build(Builder(), "a", "b", "day", 7, Range(), "Europe/Istanbul", To);
+        Assert.Contains("seconds_add(e.timestamp, 10800)", query.Sql);
+        Assert.DoesNotContain("convert_tz", query.Sql);
     }
 }
