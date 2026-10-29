@@ -11,7 +11,7 @@ if (args.Length == 0)
           cohorts  --pg <conn> [--timeout 900]
           bench    --api <url> --key <read key> [--runs 20]
           cleanup  --sr <conn> --pg <conn>
-          demo     --pg <conn> [--url http://localhost:8000/capture] [--visitors 3000] [--days 56] [--seed 42]
+          demo     --pg <conn> [--url http://localhost:8000/capture] [--visitors 3000] [--days 56] [--seed 42] [--reset --sr <conn>]
 
         Common: --report <file.md> appends markdown results.
         """);
@@ -50,7 +50,8 @@ try
             await Bench.Run(opts.Get("api") ?? "http://localhost:8001", opts.Require("key"), opts.Int("runs", 20));
             break;
         case "demo":
-            await Demo.Run(opts.Get("url") ?? "http://localhost:8000/capture", opts.Require("pg"), opts.Int("visitors", 3000), opts.Int("days", 56), opts.Int("seed", 42));
+            await Demo.Run(opts.Get("url") ?? "http://localhost:8000/capture", opts.Require("pg"), opts.Int("visitors", 3000), opts.Int("days", 56), opts.Int("seed", 42),
+                opts.Has("reset") ? opts.Require("sr") : null);
             break;
         case "cleanup":
             await Setup.Cleanup(opts.Require("sr"), opts.Require("pg"));

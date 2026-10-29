@@ -4,6 +4,7 @@ using ReapDeep.PersonWorker.Cohorts;
 using ReapDeep.PersonWorker.Deletion;
 using ReapDeep.PersonWorker.Identity;
 using ReapDeep.PersonWorker.Outbox;
+using ReapDeep.PersonWorker.Recommendations;
 
 namespace ReapDeep.PersonWorker.Infrastructure;
 
@@ -27,7 +28,7 @@ public static class HostingExtensions
         {
             services.AddSingleton(new MySqlDataSource(starRocks));
             services.AddSingleton<StarRocksDeleter>();
-            services.AddSingleton<CohortStore>();
+            services.AddSingleton<StarRocksStore>();
         }
         services.AddSingleton(DeletionOptions.From(cfg));
         services.AddHostedService(sp => new DeletionJob(
@@ -40,9 +41,17 @@ public static class HostingExtensions
         services.AddSingleton(CohortOptions.From(cfg));
         services.AddHostedService(sp => new CohortRefreshJob(
             sp.GetRequiredService<CohortRepository>(),
-            sp.GetService<CohortStore>(),
+            sp.GetService<StarRocksStore>(),
             sp.GetRequiredService<CohortOptions>(),
             sp.GetRequiredService<ILogger<CohortRefreshJob>>()));
+
+        services.AddSingleton<RecommendationRepository>();
+        services.AddSingleton(RecommendationOptions.From(cfg));
+        services.AddHostedService(sp => new RecommendationRefreshJob(
+            sp.GetRequiredService<RecommendationRepository>(),
+            sp.GetService<StarRocksStore>(),
+            sp.GetRequiredService<RecommendationOptions>(),
+            sp.GetRequiredService<ILogger<RecommendationRefreshJob>>()));
         return builder;
     }
 }

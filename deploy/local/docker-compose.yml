@@ -167,6 +167,8 @@ services:
       Deletion__TombstoneSeconds: "60"
       Cohorts__PollSeconds: "5"
       Cohorts__MaxRefreshSeconds: "30"
+      Recommendations__PollSeconds: "10"
+      Recommendations__RefreshSeconds: "60"
     depends_on:
       kafka-init:
         condition: service_completed_successfully

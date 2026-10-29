@@ -2,10 +2,11 @@ using System.Diagnostics;
 using System.Text.Json;
 using ReapDeep.Analytics.Cohorts;
 using ReapDeep.Analytics.Sql;
+using ReapDeep.PersonWorker.Infrastructure;
 
 namespace ReapDeep.PersonWorker.Cohorts;
 
-public sealed class CohortRefreshJob(CohortRepository cohorts, CohortStore? store, CohortOptions options, ILogger<CohortRefreshJob> log) : BackgroundService
+public sealed class CohortRefreshJob(CohortRepository cohorts, StarRocksStore? store, CohortOptions options, ILogger<CohortRefreshJob> log) : BackgroundService
 {
     const int StaticChunkSize = 500;
 
@@ -40,7 +41,7 @@ public sealed class CohortRefreshJob(CohortRepository cohorts, CohortStore? stor
         }
     }
 
-    async Task RefreshAsync(CohortStore store, CohortRepository.DueCohortRecord cohort, CancellationToken ct)
+    async Task RefreshAsync(StarRocksStore store, CohortRepository.DueCohortRecord cohort, CancellationToken ct)
     {
         await using var lockConn = await cohorts.TryLockAsync(cohort.Id, ct);
         if (lockConn is null) return;
@@ -73,7 +74,7 @@ public sealed class CohortRefreshJob(CohortRepository cohorts, CohortStore? stor
         }
     }
 
-    async Task WriteStaticAsync(CohortStore store, CohortRepository.DueCohortRecord cohort, long version, CancellationToken ct)
+    async Task WriteStaticAsync(StarRocksStore store, CohortRepository.DueCohortRecord cohort, long version, CancellationToken ct)
     {
         var ids = await cohorts.StaticMembersAsync(cohort.Id, ct);
         foreach (var chunk in ids.Chunk(StaticChunkSize))
@@ -81,7 +82,7 @@ public sealed class CohortRefreshJob(CohortRepository cohorts, CohortStore? stor
         if (ids.Count > 0) await store.ExecuteAsync(CohortSql.ExpandStatic(cohort.ProjectId, cohort.Id, version), ct);
     }
 
-    async Task DropExpiredVersionsAsync(CohortStore store, CancellationToken ct)
+    async Task DropExpiredVersionsAsync(StarRocksStore store, CancellationToken ct)
     {
         foreach (var v in await cohorts.ExpiredVersionsAsync(options.VersionGrace, ct))
         {
@@ -90,7 +91,7 @@ public sealed class CohortRefreshJob(CohortRepository cohorts, CohortStore? stor
         }
     }
 
-    async Task RemoveDeletedAsync(CohortStore store, CancellationToken ct)
+    async Task RemoveDeletedAsync(StarRocksStore store, CancellationToken ct)
     {
         foreach (var c in await cohorts.DeletedAsync(ct))
         {
