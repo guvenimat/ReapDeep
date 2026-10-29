@@ -24,6 +24,20 @@ public sealed record FunnelStepResult(int Step, string Event, long Count, double
 public sealed record FunnelResult(string? BreakdownValue, List<FunnelStepResult> Steps);
 public sealed record FunnelResponse(long WindowSeconds, double Sampling, List<FunnelResult> Results, double TookMs);
 
+public sealed record RetentionRequest(
+    string? StartEvent, string? ReturnEvent, string? Period, int? Periods, string? DateFrom, string? DateTo,
+    List<Filter>? Filters, bool Explain);
+public sealed record RetentionCohort(string CohortStart, long Size, List<long?> Counts);
+public sealed record RetentionResponse(string Period, int Periods, string Timezone, List<RetentionCohort> Cohorts, List<double?> Average, double TookMs);
+
+public sealed record PathsRequest(
+    string? StartEvent, int? Depth, int? WindowSeconds, bool? PageviewPaths, string? DateFrom, string? DateTo,
+    List<Filter>? Filters, bool Explain);
+public sealed record PathNode(string Name, long Persons);
+public sealed record PathStep(int Step, long Persons, List<PathNode> Nodes);
+public sealed record PathSequence(List<string> Nodes, long Persons);
+public sealed record PathsResponse(string StartEvent, int Depth, long Persons, List<PathStep> Steps, List<PathSequence> Paths, double TookMs);
+
 public sealed record EventRow(
     string EventId, string Event, DateTime Timestamp, string DistinctId, string ResolvedPersonId,
     Dictionary<string, string> Columns, JsonElement? Properties);
@@ -73,6 +87,10 @@ public sealed record DeletionRequestsResponse(List<DeletionRequestRow> DeletionR
 [JsonSerializable(typeof(FunnelRequest))]
 [JsonSerializable(typeof(FunnelResponse))]
 [JsonSerializable(typeof(EventsResponse))]
+[JsonSerializable(typeof(RetentionRequest))]
+[JsonSerializable(typeof(RetentionResponse))]
+[JsonSerializable(typeof(PathsRequest))]
+[JsonSerializable(typeof(PathsResponse))]
 [JsonSerializable(typeof(PersonsResponse))]
 [JsonSerializable(typeof(PersonRow))]
 [JsonSerializable(typeof(MetadataResponse))]

@@ -145,6 +145,40 @@ Check "property types inferred: number, boolean, datetime, string" ($types["n_$t
 Check "person property from `$set recorded with its type" ((@($m.person_properties) | Where-Object { $_.name -eq "pp_$tag" }).type -eq "number")
 Check "properties stored as columns are listed only in event_columns" (-not (@($m.event_properties).name -contains '$current_url') -and ($m.event_columns -contains '$current_url'))
 
+Write-Host "`n5b) Retention and paths"
+function Ago([int]$days, [int]$minutes = 0) { (Get-Date).ToUniversalTime().Date.AddHours(9).AddDays(-$days).AddMinutes(-$minutes).ToString("yyyy-MM-ddTHH:mm:ssZ") }
+Capture $chrome ('[{"event":"rs___TAG__","distinct_id":"ra___TAG__","timestamp":"' + (Ago 5) + '"},{"event":"rs___TAG__","distinct_id":"rb___TAG__","timestamp":"' + (Ago 5) + '"},' +
+    '{"event":"ru___TAG__","distinct_id":"ra___TAG__","timestamp":"' + (Ago 4) + '"},{"event":"rs___TAG__","distinct_id":"rc___TAG__","timestamp":"' + (Ago 4) + '"},' +
+    '{"event":"ru___TAG__","distinct_id":"rc___TAG__","timestamp":"' + (Ago 2) + '"},{"event":"ru___TAG__","distinct_id":"ra___TAG__","timestamp":"' + (Ago 2) + '"}]')
+Capture $chrome ('[{"event":"$pageview","distinct_id":"pa___TAG__","timestamp":"' + (Ago 1 30) + '","properties":{"$pathname":"/p___TAG__","qt":"__TAG__"}},' +
+    '{"event":"$pageview","distinct_id":"pa___TAG__","timestamp":"' + (Ago 1 29) + '","properties":{"$pathname":"/pricing","qt":"__TAG__"}},' +
+    '{"event":"buy___TAG__","distinct_id":"pa___TAG__","timestamp":"' + (Ago 1 28) + '","properties":{"qt":"__TAG__"}},' +
+    '{"event":"$pageview","distinct_id":"pb___TAG__","timestamp":"' + (Ago 1 30) + '","properties":{"$pathname":"/p___TAG__","qt":"__TAG__"}},' +
+    '{"event":"$pageview","distinct_id":"pb___TAG__","timestamp":"' + (Ago 1 29) + '","properties":{"$pathname":"/pricing","qt":"__TAG__"}},' +
+    '{"event":"buy___TAG__","distinct_id":"pb___TAG__","timestamp":"' + (Ago 1 28) + '","properties":{"qt":"__TAG__"}},' +
+    '{"event":"$pageview","distinct_id":"pc___TAG__","timestamp":"' + (Ago 1 30) + '","properties":{"$pathname":"/p___TAG__","qt":"__TAG__"}},' +
+    '{"event":"$pageview","distinct_id":"pc___TAG__","timestamp":"' + (Ago 1 29) + '","properties":{"$pathname":"/p___TAG__","qt":"__TAG__"}},' +
+    '{"event":"$pageview","distinct_id":"pc___TAG__","timestamp":"' + (Ago 1 28) + '","properties":{"$pathname":"/blog","qt":"__TAG__"}}]')
+$from = (Get-Date).ToUniversalTime().AddDays(-6).ToString("yyyy-MM-dd")
+$deadline = (Get-Date).AddSeconds(30)
+do {
+    Start-Sleep 2
+    $ret = (Call POST "/api/v1/query/retention" ('{"start_event":"rs___TAG__","return_event":"ru___TAG__","period":"day","periods":4,"date_from":"' + $from + '"}')).Json
+    $big = @($ret.cohorts | Where-Object { $_.size -eq 2 })
+} until ($big.Count -eq 1 -or (Get-Date) -gt $deadline)
+$small = @($ret.cohorts | Where-Object { $_.size -eq 1 })
+Check "retention: cohort of 2 -> day 1: 1, day 3: 1 ($($big[0].counts -join ','))" ($big.Count -eq 1 -and $big[0].counts[1] -eq 1 -and $big[0].counts[3] -eq 1 -and $big[0].counts[2] -eq 0)
+Check "retention: cohort of 1 -> day 2: 1 ($($small[0].counts -join ','))" ($small.Count -eq 1 -and $small[0].counts[2] -eq 1)
+Check "retention: future periods are null" ($null -eq $ret.cohorts[-1].counts[1])
+Check "retention: average of day 1 = 1/3 -> $($ret.average[1])" ([math]::Abs($ret.average[1] - 0.3333) -lt 0.001)
+Check "retention: invalid period -> 400" ((Call POST "/api/v1/query/retention" '{"start_event":"x","period":"month"}').Status -eq 400)
+$pth = (Call POST "/api/v1/query/paths" ('{"start_event":"$pageview","depth":3,"date_from":"' + $from + '","filters":[' + $qtFilter + ']}')).Json
+$top = @($pth.paths | Where-Object { ($_.nodes -join '|') -eq ('$pageview /p_' + $tag + '|$pageview /pricing|buy_' + $tag) })
+Check "paths: /p -> /pricing -> buy followed by 2 persons ($($top[0].persons))" ($top.Count -eq 1 -and $top[0].persons -eq 2)
+Check "paths: repeated page collapses (/p -> /blog)" (@($pth.paths | Where-Object { ($_.nodes -join '|') -eq ('$pageview /p_' + $tag + '|$pageview /blog') }).Count -eq 1)
+Check "paths: step 2 has /pricing for 2 persons" ((($pth.steps | Where-Object { $_.step -eq 2 }).nodes | Where-Object { $_.name -eq '$pageview /pricing' }).persons -eq 2)
+Check "paths: depth out of range -> 400" ((Call POST "/api/v1/query/paths" '{"start_event":"x","depth":9}').Status -eq 400)
+
 Write-Host "`n6) EXPLAIN: is the person_distinct_ids join colocated?"
 $e1 = (Call POST "/api/v1/query/trends" ('{"series":[{"event":"$pageview","metric":"unique_users"}],"filters":[' + $qtFilter + '],"explain":true}')).Json
 Check "trends unique_users: OUTER JOIN (COLOCATE)" ($e1.plans[0] -match "(LEFT|RIGHT) OUTER JOIN \(COLOCATE\)")

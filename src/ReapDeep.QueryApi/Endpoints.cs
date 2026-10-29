@@ -22,6 +22,8 @@ public static class Endpoints
         var api = app.MapGroup("/api/v1").AddEndpointFilter(AuthAndErrors);
         api.MapPost("/query/trends", Trends);
         api.MapPost("/query/funnels", Funnels);
+        api.MapPost("/query/retention", AnalysisEndpoints.Retention);
+        api.MapPost("/query/paths", AnalysisEndpoints.Paths);
         api.MapGet("/events", Events);
         api.MapGet("/persons", Persons);
         api.MapGet("/persons/{personId}", Person);
@@ -414,7 +416,7 @@ public static class Endpoints
             statusCode: ok ? StatusCodes.Status200OK : StatusCodes.Status503ServiceUnavailable);
     }
 
-    static async Task<List<T>> Run<T>(MySqlDataSource db, string sql, SqlBuilder b, Func<MySqlDataReader, T> map, CancellationToken ct)
+    internal static async Task<List<T>> Run<T>(MySqlDataSource db, string sql, SqlBuilder b, Func<MySqlDataReader, T> map, CancellationToken ct)
     {
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var cmd = new MySqlCommand(sql, conn) { CommandTimeout = 30 };
@@ -425,7 +427,7 @@ public static class Endpoints
         return list;
     }
 
-    static async Task<IResult> Explain(MySqlDataSource db, IConfiguration cfg, IEnumerable<(string Sql, SqlBuilder Builder)> queries, CancellationToken ct)
+    internal static async Task<IResult> Explain(MySqlDataSource db, IConfiguration cfg, IEnumerable<(string Sql, SqlBuilder Builder)> queries, CancellationToken ct)
     {
         if (cfg["QueryApi:AllowExplain"] != "true") throw new QueryException("explain is disabled in this environment");
         var list = queries.ToList();

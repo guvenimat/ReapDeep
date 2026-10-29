@@ -4,7 +4,9 @@ import { Events } from './Events'
 import { Funnels } from './Funnels'
 import { Dashboards } from './Insights'
 import { Login } from './Login'
+import { Paths } from './Paths'
 import { Persons } from './Persons'
+import { Retention } from './Retention'
 import { Settings } from './Settings'
 import { RANGE_PRESETS, rangeFromParams, TABS, useRoute, type RangePreset } from './route'
 import { Trends } from './Trends'
@@ -118,6 +120,8 @@ function Workspace({ me, onLogout, onAccessChanged }: { me: Me; onLogout: () => 
         {route.tab === 'dashboards' && <Dashboards id={route.id} params={route.params} range={range} openDashboard={(id) => navigate('dashboards', id)} />}
         {route.tab === 'trends' && <Trends params={route.params} range={range} onChange={onQuery} onInsight={onInsight} />}
         {route.tab === 'funnels' && <Funnels params={route.params} range={range} onChange={onQuery} onInsight={onInsight} />}
+        {route.tab === 'retention' && <Retention params={route.params} range={range} onChange={onQuery} onInsight={onInsight} />}
+        {route.tab === 'paths' && <Paths params={route.params} range={range} onChange={onQuery} onInsight={onInsight} />}
         {route.tab === 'events' && <Events params={route.params} range={range} onChange={onQuery} openPerson={openPerson} />}
         {route.tab === 'persons' && <Persons id={route.id} openPerson={openPerson} canManage={canManage} />}
         {route.tab === 'settings' && <Settings me={me} project={project!} onAccessChanged={onAccessChanged} />}
