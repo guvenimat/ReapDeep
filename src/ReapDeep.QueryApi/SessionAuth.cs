@@ -158,7 +158,7 @@ public sealed class SessionAuth(NpgsqlDataSource db, IConfiguration cfg, ILogger
             FROM organization_members m
             JOIN organizations o ON o.id = m.organization_id
             JOIN projects p ON p.organization_id = o.id
-            WHERE m.user_id = @u ORDER BY o.name, p.name, p.id
+            WHERE m.user_id = @u ORDER BY o.id, p.id
             """, conn))
         {
             cmd.Parameters.AddWithValue("u", user.Id);

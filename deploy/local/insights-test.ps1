@@ -48,7 +48,7 @@ Check "create trend and funnel insights -> 201" ($tr.Status -eq 201 -and $fu.Sta
 Check "query is stored as JSON" ($tr.Json.query.chart -eq "bar" -and $fu.Json.query.steps[1] -eq "buy_$tag")
 Check "read API key can list insights" (@((K GET "/insights").Json.insights | Where-Object { $_.id -eq $tr.Json.id }).Count -eq 1)
 Check "read API key cannot save -> 403" ((K POST "/insights" "{`"name`":`"x`",`"kind`":`"trends`",`"query`":{}}").Status -eq 403)
-Check "invalid kind -> 400" ((S POST "/insights" '{"name":"x","kind":"retention","query":{}}').Status -eq 400)
+Check "invalid kind -> 400" ((S POST "/insights" '{"name":"x","kind":"sankey","query":{}}').Status -eq 400)
 Check "query must be an object -> 400" ((S POST "/insights" '{"name":"x","kind":"trends","query":[1]}').Status -eq 400)
 $up = S PUT "/insights/$($tr.Json.id)" "{`"name`":`"Daily views $tag`"}"
 Check "rename keeps the query" ($up.Status -eq 200 -and $up.Json.name -eq "Daily views $tag" -and $up.Json.query.chart -eq "bar")

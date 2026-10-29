@@ -132,7 +132,7 @@ button.danger:disabled { opacity: 0.6; cursor: default; }
 .new-key code { padding: 4px 8px; background: var(--page); border-radius: 4px; word-break: break-all; }
 button.link.danger-link { color: var(--critical); }
 .good { color: var(--good); }
-.save-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 16px; }
+.save-bar, .content > .save-bar { display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 10px 16px; }
 .save-bar h2 { margin: 0; }
 .grow-row { flex: 1; }
 .grow-row .grow { flex: 1; }
