@@ -7,6 +7,11 @@ public sealed class ProjectAccessMetadata
     public static readonly ProjectAccessMetadata Instance = new();
 }
 
+public sealed class CatalogEndpointMetadata
+{
+    public static readonly CatalogEndpointMetadata Instance = new();
+}
+
 public sealed class ProjectAccessMiddleware(RequestDelegate next, ApiKeyAuthenticator apiKeys, SessionService sessions)
 {
     public const string ProjectHeader = "X-Project-Id";
@@ -23,6 +28,11 @@ public sealed class ProjectAccessMiddleware(RequestDelegate next, ApiKeyAuthenti
         if (project is null)
         {
             await error!.ExecuteAsync(ctx);
+            return;
+        }
+        if (project.KeyScope == KeyScopes.CatalogWrite && ctx.GetEndpoint()?.Metadata.GetMetadata<CatalogEndpointMetadata>() is null)
+        {
+            await ApiResults.Forbidden("A catalog_write key can only be used for the catalog endpoints").ExecuteAsync(ctx);
             return;
         }
         ProjectContext.Set(ctx, project);
@@ -53,6 +63,13 @@ public static class ProjectAccessConventions
         route.AddEndpointFilter((ic, next) => ProjectContext.Get(ic.HttpContext)?.UserId is not null
             ? next(ic)
             : ValueTask.FromResult<object?>(ApiResults.Forbidden("This action requires a signed-in user")));
+
+    public static RouteHandlerBuilder AllowCatalogKeys(this RouteHandlerBuilder route) => route.WithMetadata(CatalogEndpointMetadata.Instance);
+
+    public static RouteHandlerBuilder RequireCatalogWriter(this RouteHandlerBuilder route) =>
+        route.AllowCatalogKeys().AddEndpointFilter((ic, next) => ProjectContext.Get(ic.HttpContext) is { CanWriteCatalog: true }
+            ? next(ic)
+            : ValueTask.FromResult<object?>(ApiResults.Forbidden("This action requires the owner or admin role, or a catalog_write API key")));
 
     public static RouteHandlerBuilder RequireManager(this RouteHandlerBuilder route) =>
         route.AddEndpointFilter((ic, next) => ProjectContext.Get(ic.HttpContext) is { UserId: not null, CanManage: true }

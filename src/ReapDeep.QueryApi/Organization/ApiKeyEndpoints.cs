@@ -7,7 +7,8 @@ namespace ReapDeep.QueryApi.Organization;
 
 public static class ApiKeyEndpoints
 {
-    const string KeyPrefix = "rk_";
+    const string ReadKeyPrefix = "rk_";
+    const string CatalogKeyPrefix = "ck_";
     const int VisiblePrefixLength = 7;
 
     public static void MapApiKeys(this RouteGroupBuilder api)
@@ -23,8 +24,9 @@ public static class ApiKeyEndpoints
     static async Task<IResult> Create(CreateApiKeyRequest req, ProjectContext project, ApiKeyRepository keys, CancellationToken ct)
     {
         var name = Ensure.NotBlank(req.Name, "name", 100);
-        var key = KeyPrefix + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
-        var row = await keys.CreateAsync(project.ProjectId, name, key[..VisiblePrefixLength], ApiKeyAuthenticator.HashKey(key), project.UserId!.Value, ct);
+        var scope = Ensure.OneOf(req.Scope ?? KeyScopes.Read, "scope", KeyScopes.All);
+        var key = (scope == KeyScopes.CatalogWrite ? CatalogKeyPrefix : ReadKeyPrefix) + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
+        var row = await keys.CreateAsync(project.ProjectId, name, scope, key[..VisiblePrefixLength], ApiKeyAuthenticator.HashKey(key), project.UserId!.Value, ct);
         return ApiResults.Created(new CreatedApiKey(row, key), AppJsonContext.Default.CreatedApiKey);
     }
 
