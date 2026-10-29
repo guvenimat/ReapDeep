@@ -1,10 +1,11 @@
-import { api, type Filter, type RetentionResponse } from './api'
-import { dateTime, ms, num, pct } from './format'
-import { SaveInsight } from './Insights'
-import { readState, toDateRange, type rangeFromParams } from './route'
-import { completeFilters, FilterEditor, Status, useDebounced, useQuery } from './ui'
-
-type Range = ReturnType<typeof rangeFromParams>
+import { api } from '../../api/client'
+import type { Filter, RetentionResponse } from '../../api/types'
+import { readState, toDateRange, type Range } from '../../app/route'
+import { completeFilters, EditorSection, FilterEditor } from '../../components/editors'
+import { Card, Segmented, StatTile, Status } from '../../components/ui'
+import { dateTime, ms, num, pct } from '../../lib/format'
+import { useDebounced, useQuery } from '../../lib/hooks'
+import { SaveInsight } from '../insights/SaveInsight'
 
 export interface RetentionState { start_event: string; return_event: string; period: 'day' | 'week'; periods: number; filters: Filter[] }
 
@@ -42,19 +43,19 @@ export function RetentionTable({ data, maxCohorts }: { data: RetentionResponse; 
             <td className="strong">Average</td>
             <td className="num">{num(data.cohorts.reduce((s, c) => s + c.size, 0))}</td>
             {data.average.map((a, k) => (
-              <td key={k} className={`num heat ${a === null ? 'heat-none' : heatClass(a)}`}>{a === null ? '' : pct(a)}</td>
+              <td key={k} className={`num heat ${a === null ? 'heat-none' : heatClass(a)}`}><span>{a === null ? '' : pct(a)}</span></td>
             ))}
           </tr>
           {cohorts.map((c) => (
             <tr key={c.cohort_start}>
               <td className="nowrap">{cohortLabel(c.cohort_start)}</td>
-              <td className="num">{num(c.size)}</td>
+              <td className="num muted">{num(c.size)}</td>
               {c.counts.map((n, k) => {
                 const ratio = n === null || c.size === 0 ? null : n / c.size
                 return (
                   <td key={k} className={`num heat ${ratio === null ? 'heat-none' : heatClass(ratio)}`}
                     title={ratio === null ? 'Not reached yet' : `${num(n!)} of ${num(c.size)} persons (${pct(ratio)}) · ${label.toLowerCase()} ${k} after ${dateTime(c.cohort_start)}`}>
-                    {ratio === null ? '' : c.size === 0 ? '-' : pct(ratio)}
+                    <span>{ratio === null ? '' : c.size === 0 ? '-' : pct(ratio)}</span>
                   </td>
                 )
               })}
@@ -67,10 +68,7 @@ export function RetentionTable({ data, maxCohorts }: { data: RetentionResponse; 
 }
 
 export function Retention({ params, range, onChange, onInsight }: {
-  params: URLSearchParams
-  range: Range
-  onChange: (q: string) => void
-  onInsight: (id?: string) => void
+  params: URLSearchParams; range: Range; onChange: (q: string) => void; onInsight: (id?: string) => void
 }) {
   const state = readState(params, RETENTION_DEFAULT)
   const set = (patch: Partial<RetentionState>) => onChange(JSON.stringify({ ...state, ...patch }))
@@ -80,45 +78,48 @@ export function Retention({ params, range, onChange, onInsight }: {
     return body.start_event ? api.retention(body, signal) : Promise.reject(new Error('Choose a start event'))
   }, [request])
 
+  const unit = state.period === 'week' ? 'Week' : 'Day'
+  const avg = q.data?.average ?? []
+  const cohortSize = q.data?.cohorts.reduce((s, c) => s + c.size, 0) ?? 0
+
   return (
     <div className="layout">
       <aside className="panel">
-        <div className="editor-block">
-          <div className="editor-title">Cohort</div>
+        <EditorSection title="Cohort">
           <label className="field"><span>People who did</span>
             <input list="dl-events" value={state.start_event} onChange={(e) => set({ start_event: e.target.value })} aria-label="Start event" />
           </label>
           <label className="field"><span>and came back to do</span>
             <input list="dl-events" value={state.return_event} placeholder="same event" onChange={(e) => set({ return_event: e.target.value })} aria-label="Return event" />
           </label>
-        </div>
-        <div className="editor-block">
-          <div className="editor-title">Periods</div>
-          <div className="row">
-            <div className="segmented" role="group" aria-label="Period">
-              <button className={state.period === 'day' ? 'active' : ''} onClick={() => set({ period: 'day', periods: Math.min(state.periods * 7, 14) })}>Daily</button>
-              <button className={state.period === 'week' ? 'active' : ''} onClick={() => set({ period: 'week', periods: Math.max(1, Math.min(Math.round(state.periods / 7) || 6, 12)) })}>Weekly</button>
-            </div>
-            <label className="inline">Show
-              <input type="number" className="narrow" min={1} max={30} value={state.periods}
-                onChange={(e) => set({ periods: Math.max(1, Math.min(30, Number(e.target.value) || 1)) })} aria-label="Number of periods" />
-            </label>
-          </div>
-          <p className="muted small">Cohorts are formed from the first time a person did the start event in the selected date range.</p>
-        </div>
+        </EditorSection>
+        <EditorSection title="Periods" hint="Cohorts are formed from the first time a person did the start event in the selected date range.">
+          <Segmented<'day' | 'week'> size="sm" label="Period" value={state.period}
+            options={[{ id: 'day', label: 'Daily' }, { id: 'week', label: 'Weekly' }]}
+            onChange={(p) => set(p === 'day'
+              ? { period: 'day', periods: Math.min(state.periods * 7, 14) }
+              : { period: 'week', periods: Math.max(1, Math.min(Math.round(state.periods / 7) || 6, 12)) })} />
+          <label className="inline">Show
+            <input type="number" className="narrow" min={1} max={30} value={state.periods}
+              onChange={(e) => set({ periods: Math.max(1, Math.min(30, Number(e.target.value) || 1)) })} aria-label="Number of periods" />
+            periods
+          </label>
+        </EditorSection>
         <FilterEditor filters={state.filters} onChange={(filters) => set({ filters })} />
       </aside>
       <section className="content">
         <SaveInsight kind="retention" query={state} params={params} onInsight={onInsight} />
         <Status state={q} empty={q.data?.cohorts.every((c) => c.size === 0)}>
-          <div className="card" data-testid="retention-card">
-            <div className="card-head">
-              <h2>Retention</h2>
-              <span className="muted">{q.data?.timezone} · {ms(q.data?.took_ms ?? 0)}</span>
-            </div>
-            {q.data && <RetentionTable data={q.data} />}
-            <p className="muted small">Each cell is the share of the cohort that did the return event in that period; period 0 is the cohort's own period.</p>
+          <div className="stats">
+            <StatTile label="People in cohorts" value={num(cohortSize)} hint={`${q.data?.cohorts.length ?? 0} cohorts`} />
+            {[1, Math.min(4, avg.length - 1)].filter((k, i, a) => k > 0 && k < avg.length && a.indexOf(k) === i).map((k) => (
+              <StatTile key={k} label={`${unit} ${k} retention`} value={avg[k] === null ? '—' : pct(avg[k]!)} hint="Average across cohorts" />
+            ))}
           </div>
+          <Card testId="retention-card" title="Cohort retention" meta={`${q.data?.timezone ?? ''} · ${ms(q.data?.took_ms ?? 0)}`}>
+            {q.data && <RetentionTable data={q.data} />}
+            <p className="footnote">Each cell is the share of the cohort that did the return event in that period; period 0 is the cohort's own period.</p>
+          </Card>
         </Status>
       </section>
     </div>

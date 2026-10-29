@@ -1,17 +1,17 @@
 import { Fragment, useState } from 'react'
-import { api, type EventRow } from './api'
-import { dateTime, ms, num } from './format'
-import { readState, toDateRange, type rangeFromParams } from './route'
-import { JsonView, Status, useDebounced, useQuery } from './ui'
+import { api } from '../../api/client'
+import type { EventRow } from '../../api/types'
+import { readState, toDateRange, type Range } from '../../app/route'
+import { Icon } from '../../components/icons'
+import { Card, JsonView, Status } from '../../components/ui'
+import { dateTime, ms, num, shortId } from '../../lib/format'
+import { useDebounced, useQuery } from '../../lib/hooks'
 
 interface EventsState { event: string; distinct_id: string; person_id: string; limit: number }
 const DEFAULT: EventsState = { event: '', distinct_id: '', person_id: '', limit: 50 }
 
 export function Events({ params, range, onChange, openPerson }: {
-  params: URLSearchParams
-  range: ReturnType<typeof rangeFromParams>
-  onChange: (q: string) => void
-  openPerson: (id: string) => void
+  params: URLSearchParams; range: Range; onChange: (q: string) => void; openPerson: (id: string) => void
 }) {
   const state = readState(params, DEFAULT)
   const set = (patch: Partial<EventsState>) => onChange(JSON.stringify({ ...state, ...patch }))
@@ -25,20 +25,23 @@ export function Events({ params, range, onChange, openPerson }: {
 
   return (
     <div className="stack">
-      <div className="card toolbar">
-        <input list="dl-events" placeholder="event" value={state.event} onChange={(e) => set({ event: e.target.value })} aria-label="Event" />
+      <div className="toolbar">
+        <div className="search-input">
+          <Icon name="search" />
+          <input list="dl-events" placeholder="Event name" value={state.event} onChange={(e) => set({ event: e.target.value })} aria-label="Event" />
+        </div>
         <input placeholder="distinct_id" value={state.distinct_id} onChange={(e) => set({ distinct_id: e.target.value })} aria-label="distinct_id" />
         <input placeholder="person_id" value={state.person_id} onChange={(e) => set({ person_id: e.target.value })} aria-label="person_id" />
         <select value={state.limit} onChange={(e) => set({ limit: Number(e.target.value) })} aria-label="Limit">
           {[50, 100, 200].map((n) => <option key={n} value={n}>{n} rows</option>)}
         </select>
-        <button onClick={() => setNonce((n) => n + 1)}>Refresh</button>
-        <span className="muted">{q.data && `${num(q.data.events.length)} event · ${ms(q.data.took_ms)}`}</span>
+        <button type="button" onClick={() => setNonce((n) => n + 1)}><Icon name="refresh" />Refresh</button>
+        <span className="toolbar-meta">{q.data && `${num(q.data.events.length)} events · ${ms(q.data.took_ms)}`}</span>
       </div>
       <Status state={q} empty={q.data?.events.length === 0}>
-        <div className="card">
+        <Card className="flush">
           <EventsTable events={q.data?.events ?? []} openPerson={openPerson} />
-        </div>
+        </Card>
       </Status>
     </div>
   )
@@ -62,19 +65,19 @@ export function EventsTable({ events, openPerson }: { events: EventRow[]; openPe
             return (
               <Fragment key={key}>
                 <tr className={`clickable${isOpen ? ' open' : ''}`} onClick={() => setOpen(isOpen ? null : key)} aria-expanded={isOpen}>
-                  <td className="nowrap tabular">{dateTime(e.timestamp)}</td>
-                  <td className="strong">{e.event}</td>
+                  <td className="nowrap tabular muted">{dateTime(e.timestamp)}</td>
+                  <td><span className={`event-name${e.event.startsWith('$') ? ' system' : ''}`}>{e.event}</span></td>
                   <td className="mono">{e.distinct_id}</td>
                   <td className="mono">
                     {openPerson ? (
                       <a href={`#/persons/${encodeURIComponent(e.resolved_person_id)}`}
                         onClick={(ev) => { ev.preventDefault(); ev.stopPropagation(); openPerson(e.resolved_person_id) }}>
-                        {short(e.resolved_person_id)}
+                        {shortId(e.resolved_person_id)}
                       </a>
-                    ) : short(e.resolved_person_id)}
+                    ) : shortId(e.resolved_person_id)}
                   </td>
                   <td className="truncate" title={e.columns.current_url}>{page(e)}</td>
-                  <td className="nowrap">{client(e)}</td>
+                  <td className="nowrap muted">{client(e)}</td>
                 </tr>
                 {isOpen && (
                   <tr className="detail">
@@ -104,5 +107,3 @@ export function EventsTable({ events, openPerson }: { events: EventRow[]; openPe
     </div>
   )
 }
-
-const short = (id: string) => (id.length > 18 ? `${id.slice(0, 8)}…${id.slice(-4)}` : id)

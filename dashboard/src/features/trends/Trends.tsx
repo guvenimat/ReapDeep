@@ -1,9 +1,13 @@
-import { api, type Breakdown, type Filter, type Interval, type Metric, type Series, type TrendResponse } from './api'
-import { Legend, MAX_SERIES, TimeChart, type ChartSeries } from './charts'
-import { bucketLabel, ms, num } from './format'
-import { defaultInterval, readState, toDateRange, type rangeFromParams } from './route'
-import { SaveInsight } from './Insights'
-import { BreakdownEditor, completeBreakdown, completeFilters, FilterEditor, Status, useDebounced, useQuery } from './ui'
+import { api } from '../../api/client'
+import type { Breakdown, Filter, Interval, Metric, Series, TrendResponse } from '../../api/types'
+import { defaultInterval, readState, toDateRange, type Range } from '../../app/route'
+import { Legend, MAX_SERIES, seriesColor } from '../../components/charts/common'
+import { TimeChart, type ChartSeries } from '../../components/charts/TimeChart'
+import { AddButton, BreakdownEditor, completeBreakdown, completeFilters, EditorSection, FilterEditor } from '../../components/editors'
+import { Card, IconButton, Segmented, StatTile, Status } from '../../components/ui'
+import { bucketLabel, ms, num } from '../../lib/format'
+import { useDebounced, useQuery } from '../../lib/hooks'
+import { SaveInsight } from '../insights/SaveInsight'
 
 export interface TrendState {
   series: Series[]
@@ -23,8 +27,6 @@ const INTERVALS: { id: Interval; label: string }[] = [
   { id: 'hour', label: 'Hour' }, { id: 'day', label: 'Day' }, { id: 'week', label: 'Week' }, { id: 'month', label: 'Month' },
 ]
 
-type Range = ReturnType<typeof rangeFromParams>
-
 export const trendInterval = (state: TrendState, range: Range) => state.interval ?? defaultInterval(range.preset)
 
 export function trendBody(state: TrendState, range: Range) {
@@ -38,7 +40,7 @@ export function trendBody(state: TrendState, range: Range) {
   }
 }
 
-export const trendLabel = (r: TrendResponse['results'][number]) =>
+const trendLabel = (r: TrendResponse['results'][number]) =>
   [r.event, METRICS.find((m) => m.id === r.metric)?.label, r.breakdown_value].filter(Boolean).join(' · ')
 
 export function trendChartSeries(data?: TrendResponse): ChartSeries[] {
@@ -50,13 +52,11 @@ export function trendChartSeries(data?: TrendResponse): ChartSeries[] {
 }
 
 export function Trends({ params, range, onChange, onInsight }: {
-  params: URLSearchParams
-  range: ReturnType<typeof rangeFromParams>
-  onChange: (q: string) => void
-  onInsight: (id?: string) => void
+  params: URLSearchParams; range: Range; onChange: (q: string) => void; onInsight: (id?: string) => void
 }) {
   const state = readState(params, TREND_DEFAULT)
   const set = (patch: Partial<TrendState>) => onChange(JSON.stringify({ ...state, ...patch }))
+  const setSeries = (i: number, patch: Partial<Series>) => set({ series: state.series.map((x, k) => (k === i ? { ...x, ...patch } : x)) })
   const interval = trendInterval(state, range)
 
   const request = useDebounced(JSON.stringify(trendBody(state, range)))
@@ -67,51 +67,42 @@ export function Trends({ params, range, onChange, onInsight }: {
 
   const results = q.data?.results ?? []
   const buckets = results[0]?.data.map((d) => d.bucket) ?? []
-  const label = trendLabel
   const chartSeries = trendChartSeries(q.data)
 
   return (
     <div className="layout">
       <aside className="panel">
-        <div className="editor-block">
-          <div className="editor-title">Series</div>
+        <EditorSection title="Series">
           {state.series.map((s, i) => (
-            <div className="row" key={i}>
-              <span className="series-key" style={{ background: `var(--series-${(i % MAX_SERIES) + 1})` }} aria-hidden />
-              <input list="dl-events" placeholder="event" value={s.event} aria-label={`Series ${i + 1} event`}
-                onChange={(e) => set({ series: state.series.map((x, k) => (k === i ? { ...x, event: e.target.value } : x)) })} />
-              <select value={s.metric} aria-label={`Series ${i + 1} metric`}
-                onChange={(e) => set({ series: state.series.map((x, k) => (k === i ? { ...x, metric: e.target.value as Metric } : x)) })}>
-                {METRICS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
-              </select>
-              {state.series.length > 1 && (
-                <button className="icon" aria-label="Remove series" onClick={() => set({ series: state.series.filter((_, k) => k !== i) })}>×</button>
-              )}
+            <div className="editor-item" key={i}>
+              <div className="row">
+                <span className="series-key" style={{ background: seriesColor(i) }} aria-hidden />
+                <input list="dl-events" placeholder="event" value={s.event} aria-label={`Series ${i + 1} event`}
+                  onChange={(e) => setSeries(i, { event: e.target.value })} />
+                {state.series.length > 1 && (
+                  <IconButton icon="close" label="Remove series" onClick={() => set({ series: state.series.filter((_, k) => k !== i) })} />
+                )}
+              </div>
+              <Segmented<Metric> size="sm" label={`Series ${i + 1} metric`} value={s.metric} options={METRICS} onChange={(metric) => setSeries(i, { metric })} />
             </div>
           ))}
-          {state.series.length < 10 && (
-            <button className="link" onClick={() => set({ series: [...state.series, { event: '', metric: 'total' }] })}>+ Add series</button>
-          )}
-        </div>
+          {state.series.length < 10 && <AddButton onClick={() => set({ series: [...state.series, { event: '', metric: 'total' }] })}>Add series</AddButton>}
+        </EditorSection>
 
-        <div className="editor-block">
-          <div className="editor-title">Settings</div>
+        <EditorSection title="Display">
           <div className="row">
-            <label className="inline">Interval
-              <select value={interval} onChange={(e) => set({ interval: e.target.value as Interval })}>
-                {INTERVALS.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
-              </select>
-            </label>
-            <div className="segmented" role="group" aria-label="Chart type">
-              <button className={state.chart === 'line' ? 'active' : ''} onClick={() => set({ chart: 'line' })}>Line</button>
-              <button className={state.chart === 'bar' ? 'active' : ''} onClick={() => set({ chart: 'bar' })}>Bar</button>
-            </div>
+            <Segmented<Interval> size="sm" label="Interval" value={interval} options={INTERVALS} onChange={(v) => set({ interval: v })} />
           </div>
-          <label className="inline check">
+          <div className="row">
+            <Segmented<'line' | 'bar'> size="sm" label="Chart type" value={state.chart}
+              options={[{ id: 'line', label: 'Line' }, { id: 'bar', label: 'Bar' }]} onChange={(chart) => set({ chart })} />
+          </div>
+          <label className="switch">
             <input type="checkbox" checked={state.deduplicate} onChange={(e) => set({ deduplicate: e.target.checked })} />
-            Count duplicate events once (event_id)
+            <span className="switch-track" aria-hidden />
+            Count duplicate events once
           </label>
-        </div>
+        </EditorSection>
 
         <FilterEditor filters={state.filters} onChange={(filters) => set({ filters })} />
         <BreakdownEditor value={state.breakdown} onChange={(breakdown) => set({ breakdown })} />
@@ -120,17 +111,25 @@ export function Trends({ params, range, onChange, onInsight }: {
       <section className="content">
         <SaveInsight kind="trends" query={state} params={params} onInsight={onInsight} />
         <Status state={q} empty={results.length === 0 || results.every((r) => r.total === 0)}>
-          <div className="card" data-testid="trends-chart">
-            <div className="card-head">
-              <h2>Trend</h2>
-              <span className="muted">{q.data?.timezone} · {ms(q.data?.took_ms ?? 0)}</span>
+          {results.length <= 4 && (
+            <div className="stats">
+              {results.map((r, i) => {
+                const peak = r.data.reduce((best, d) => (d.count > best.count ? d : best), r.data[0] ?? { bucket: '', count: 0 })
+                return (
+                  <StatTile key={i} swatch={seriesColor(i)} label={chartSeries[i]?.label ?? trendLabel(r)} value={num(r.total)}
+                    hint={peak.count > 0 ? `Peak ${num(peak.count)} · ${bucketLabel(peak.bucket, interval)}` : 'No events'} />
+                )
+              })}
             </div>
+          )}
+
+          <Card testId="trends-chart" title="Over time" meta={`${q.data?.timezone ?? ''} · ${ms(q.data?.took_ms ?? 0)}`}>
             <Legend items={chartSeries.map((s) => ({ label: s.label, colorIndex: s.colorIndex }))} />
             <TimeChart buckets={buckets} interval={interval} series={chartSeries} mode={state.chart} />
-            {results.length > MAX_SERIES && <p className="muted small">The chart shows the first {MAX_SERIES} series; the table has all of them.</p>}
-          </div>
+            {results.length > MAX_SERIES && <p className="footnote">The chart shows the first {MAX_SERIES} series; the table has all of them.</p>}
+          </Card>
 
-          <div className="card">
+          <Card title="Breakdown table">
             <div className="table-wrap">
               <table data-testid="trends-table">
                 <thead>
@@ -143,9 +142,9 @@ export function Trends({ params, range, onChange, onInsight }: {
                 <tbody>
                   {results.map((r, i) => (
                     <tr key={i}>
-                      <td className="nowrap">
-                        {i < MAX_SERIES && <span className="swatch" style={{ background: `var(--series-${i + 1})` }} />}
-                        {label(r)}
+                      <td className="nowrap sticky-col">
+                        {i < MAX_SERIES && <span className="swatch" style={{ background: seriesColor(i) }} />}
+                        {trendLabel(r)}
                       </td>
                       <td className="num strong">{num(r.total)}</td>
                       {r.data.map((d) => <td key={d.bucket} className="num">{num(d.count)}</td>)}
@@ -154,8 +153,8 @@ export function Trends({ params, range, onChange, onInsight }: {
                 </tbody>
               </table>
             </div>
-            <p className="muted small">For unique users, the period total is not the sum of the buckets (the same person can appear in several buckets).</p>
-          </div>
+            <p className="footnote">For unique users, the period total is not the sum of the buckets (the same person can appear in several buckets).</p>
+          </Card>
         </Status>
       </section>
     </div>

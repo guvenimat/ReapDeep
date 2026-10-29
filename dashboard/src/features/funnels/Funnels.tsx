@@ -1,21 +1,23 @@
-import { api, type Breakdown, type Filter, type FunnelResponse } from './api'
-import { FunnelChart, Legend, MAX_SERIES, seriesColor, type FunnelGroup } from './charts'
-import { ms, num, pct } from './format'
-import { readState, toDateRange, type rangeFromParams } from './route'
-import { SaveInsight } from './Insights'
-import { BreakdownEditor, completeBreakdown, completeFilters, FilterEditor, Status, useDebounced, useQuery } from './ui'
+import { api } from '../../api/client'
+import type { Breakdown, Filter, FunnelResponse } from '../../api/types'
+import { readState, toDateRange, type Range } from '../../app/route'
+import { Legend, MAX_SERIES, seriesColor } from '../../components/charts/common'
+import { FunnelChart, type FunnelGroup } from '../../components/charts/FunnelChart'
+import { AddButton, BreakdownEditor, completeBreakdown, completeFilters, EditorSection, FilterEditor } from '../../components/editors'
+import { Card, IconButton, Segmented, StatTile, Status } from '../../components/ui'
+import { ms, num, pct } from '../../lib/format'
+import { useDebounced, useQuery } from '../../lib/hooks'
+import { SaveInsight } from '../insights/SaveInsight'
 
 export interface FunnelState { steps: string[]; window_seconds: number; filters: Filter[]; breakdown?: Breakdown; sampling: number }
 
 export const FUNNEL_DEFAULT: FunnelState = { steps: ['$pageview', '$identify'], window_seconds: 7 * 86400, filters: [], sampling: 1 }
 const WINDOWS = [
-  { s: 3600, label: '1 hour' }, { s: 86400, label: '1 day' }, { s: 7 * 86400, label: '7 days' }, { s: 30 * 86400, label: '30 days' },
+  { id: 3600, label: '1h' }, { id: 86400, label: '1d' }, { id: 7 * 86400, label: '7d' }, { id: 30 * 86400, label: '30d' },
 ]
 const SAMPLING = [
-  { v: 1, label: 'Exact' }, { v: 0.25, label: 'Fast 25%' }, { v: 0.1, label: 'Fast 10%' },
+  { id: 1, label: 'Exact' }, { id: 0.25, label: '25%' }, { id: 0.1, label: '10%' },
 ]
-
-type Range = ReturnType<typeof rangeFromParams>
 
 export function funnelBody(state: FunnelState, range: Range) {
   return {
@@ -35,10 +37,7 @@ export function funnelGroups(data?: FunnelResponse): FunnelGroup[] {
 }
 
 export function Funnels({ params, range, onChange, onInsight }: {
-  params: URLSearchParams
-  range: ReturnType<typeof rangeFromParams>
-  onChange: (q: string) => void
-  onInsight: (id?: string) => void
+  params: URLSearchParams; range: Range; onChange: (q: string) => void; onInsight: (id?: string) => void
 }) {
   const state = readState(params, FUNNEL_DEFAULT)
   const set = (patch: Partial<FunnelState>) => onChange(JSON.stringify({ ...state, ...patch }))
@@ -52,40 +51,32 @@ export function Funnels({ params, range, onChange, onInsight }: {
   const results = (q.data?.results ?? []).slice(0, MAX_SERIES)
   const groups = funnelGroups(q.data)
   const stepNames = q.data?.results[0]?.steps.map((s) => s.event) ?? []
+  const overall = q.data?.results.length === 1 ? q.data.results[0].steps : undefined
+  const last = overall?.[overall.length - 1]
+  const worst = overall?.slice(1).reduce((w, s) => (s.conversion_from_previous < w.conversion_from_previous ? s : w), overall[1])
 
   return (
     <div className="layout">
       <aside className="panel">
-        <div className="editor-block">
-          <div className="editor-title">Steps</div>
+        <EditorSection title="Steps">
           {state.steps.map((s, i) => (
-            <div className="row" key={i}>
+            <div className="row step-row" key={i}>
               <span className="step-no">{i + 1}</span>
               <input list="dl-events" placeholder="event" value={s} aria-label={`Step ${i + 1}`}
                 onChange={(e) => set({ steps: state.steps.map((x, k) => (k === i ? e.target.value : x)) })} />
               {state.steps.length > 2 && (
-                <button className="icon" aria-label="Remove step" onClick={() => set({ steps: state.steps.filter((_, k) => k !== i) })}>×</button>
+                <IconButton icon="close" label="Remove step" onClick={() => set({ steps: state.steps.filter((_, k) => k !== i) })} />
               )}
             </div>
           ))}
-          {state.steps.length < 8 && <button className="link" onClick={() => set({ steps: [...state.steps, ''] })}>+ Add step</button>}
-        </div>
-        <div className="editor-block">
-          <div className="editor-title">Conversion window</div>
-          <div className="segmented" role="group" aria-label="Conversion window">
-            {WINDOWS.map((w) => (
-              <button key={w.s} className={state.window_seconds === w.s ? 'active' : ''} onClick={() => set({ window_seconds: w.s })}>{w.label}</button>
-            ))}
-          </div>
-        </div>
-        <div className="editor-block">
-          <div className="editor-title">Precision</div>
-          <div className="segmented" role="group" aria-label="Sampling">
-            {SAMPLING.map((x) => (
-              <button key={x.v} className={state.sampling === x.v ? 'active' : ''} onClick={() => set({ sampling: x.v })}>{x.label}</button>
-            ))}
-          </div>
-        </div>
+          {state.steps.length < 8 && <AddButton onClick={() => set({ steps: [...state.steps, ''] })}>Add step</AddButton>}
+        </EditorSection>
+        <EditorSection title="Conversion window">
+          <Segmented<number> size="sm" label="Conversion window" value={state.window_seconds} options={WINDOWS} onChange={(v) => set({ window_seconds: v })} />
+        </EditorSection>
+        <EditorSection title="Precision" hint="Sampling hashes persons and scales the counts back up; it trades exactness for speed on large projects.">
+          <Segmented<number> size="sm" label="Sampling" value={state.sampling} options={SAMPLING} onChange={(v) => set({ sampling: v })} />
+        </EditorSection>
         <FilterEditor filters={state.filters} onChange={(filters) => set({ filters })} />
         <BreakdownEditor value={state.breakdown} onChange={(breakdown) => set({ breakdown })} />
       </aside>
@@ -93,16 +84,21 @@ export function Funnels({ params, range, onChange, onInsight }: {
       <section className="content">
         <SaveInsight kind="funnels" query={state} params={params} onInsight={onInsight} />
         <Status state={q} empty={groups.length === 0 || groups.every((g) => g.counts[0] === 0)}>
-          <div className="card" data-testid="funnel-chart">
-            <div className="card-head">
-              <h2>Funnel</h2>
-              <span className="muted">{q.data && q.data.sampling < 1 && <span data-testid="funnel-sampled">Sampled: {pct(q.data.sampling)} of persons, counts scaled · </span>}{ms(q.data?.took_ms ?? 0)}</span>
+          {overall && last && (
+            <div className="stats">
+              <StatTile label="Entered" value={num(overall[0].count)} hint={overall[0].event} />
+              <StatTile label="Converted" value={pct(last.conversion_from_first)} hint={`${num(last.count)} reached ${last.event}`} />
+              {worst && <StatTile label="Biggest drop-off" value={pct(1 - worst.conversion_from_previous)} hint={`Before ${worst.event}`} />}
             </div>
+          )}
+
+          <Card testId="funnel-chart" title="Conversion"
+            meta={<>{q.data && q.data.sampling < 1 && <span data-testid="funnel-sampled">Sampled: {pct(q.data.sampling)} of persons, counts scaled · </span>}{ms(q.data?.took_ms ?? 0)}</>}>
             <Legend items={groups.map((g) => ({ label: g.label, colorIndex: g.colorIndex }))} />
             <FunnelChart steps={stepNames} groups={groups} />
-          </div>
+          </Card>
 
-          <div className="card">
+          <Card title="Step details">
             <div className="table-wrap">
               <table data-testid="funnel-table">
                 <thead>
@@ -122,7 +118,7 @@ export function Funnels({ params, range, onChange, onInsight }: {
                         {groups.length > 1 && (
                           <td className="nowrap">{s.step === 1 && <><span className="swatch" style={{ background: seriesColor(gi) }} />{groups[gi].label}</>}</td>
                         )}
-                        <td className="nowrap">{s.step}. {s.event}</td>
+                        <td className="nowrap"><span className="muted tabular">{s.step}.</span> {s.event}</td>
                         <td className="num strong">{num(s.count)}</td>
                         <td className="num">{pct(s.conversion_from_first)}</td>
                         <td className="num">{s.step === 1 ? '—' : pct(s.conversion_from_previous)}</td>
@@ -133,7 +129,7 @@ export function Funnels({ params, range, onChange, onInsight }: {
                 </tbody>
               </table>
             </div>
-          </div>
+          </Card>
         </Status>
       </section>
     </div>

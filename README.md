@@ -16,7 +16,7 @@ retention, path and person questions over hundreds of millions of events.
 - **Identity resolution:** anonymous visitors are merged into identified users; their earlier events count as the same person in trends and funnels.
 - **Multi-tenant by design:** shared tables keyed by `project_id`; every StarRocks query comes from a single SQL builder that always adds the project and time filters.
 - **Small footprint:** ~2.4 KB gzip SDK with no dependencies, 30-50 MB ingestion process, dashboard without chart or UI libraries.
-- **Permissive licensing only:** Apache 2.0 for this repo; every dependency is MIT or Apache 2.0.
+- **Permissive licensing only:** Apache 2.0 for this repo; every code dependency is MIT or Apache 2.0, and the self-hosted Inter font is under the SIL Open Font License 1.1.
 
 ## Architecture
 
@@ -125,7 +125,7 @@ The seed creates a **Demo Shop** project with a deterministic store scenario: tr
 |---|---|
 | ![Paths](docs/images/paths.png) | ![Person](docs/images/person.png) |
 
-Dark mode uses its own validated color steps: [screenshot](docs/images/dashboard-dark.png).
+The dashboard opens in a dark theme; the light theme is one click away in the sidebar and uses its own validated color steps: [screenshot](docs/images/dashboard-light.png).
 
 ### Retention and paths
 

@@ -15,8 +15,8 @@ The [README](../README.md) covers setup and usage.
 | Trend query | p95 < 1 s (30 days, project with 100M events/month) | 110 ms totals, ~1.1 s unique users |
 | Funnel query | p95 < 3 s (same data) | 4.1 s exact, 0.8-1.2 s sampled |
 
-Other constraints: multi-tenant from day one, only MIT or Apache 2.0 dependencies (no AGPL or BSL,
-which rules out MinIO, Redpanda and k6), data stored in a single region, events kept for one year.
+Other constraints: multi-tenant from day one, only MIT or Apache 2.0 code dependencies (no AGPL or BSL,
+which rules out MinIO, Redpanda and k6; the dashboard font, Inter, is SIL OFL 1.1), data stored in a single region, events kept for one year.
 
 ## 2. Components
 
@@ -67,6 +67,12 @@ middleware rather than an endpoint filter on purpose: Minimal API binds handler 
 filters run, so the project must be resolved earlier for `ProjectContext` to bind as a parameter. Routes
 opt in through group metadata (`RequireProjectAccess()`), and per-route role checks are declared next to
 the route (`RequireUser()`, `RequireManager()`).
+
+The dashboard follows the same idea: `app/` (shell, routing, theme), `api/` (typed client and
+contracts), `components/` (UI primitives, query editors, and the SVG charts), `features/<name>/` (one
+folder per screen), `lib/` (hooks and formatting) and `styles/` (design tokens first, then base,
+layout, components and charts). There is no UI or chart library; the only runtime dependency besides
+React is the self-hosted Inter font, so no request leaves the deployment for fonts or assets.
 
 **Data access choice.** PostgreSQL access uses Dapper with **Dapper.AOT**, which replaces Dapper's
 reflection with build-time interceptors so it works under Native AOT. Its analyzer rejects call shapes it
