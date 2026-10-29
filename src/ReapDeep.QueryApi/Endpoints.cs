@@ -17,6 +17,7 @@ public static class Endpoints
         auth.MapPost("/login", Login).RequireRateLimiting(LoginRateLimit);
         auth.MapPost("/logout", Logout);
         auth.MapGet("/me", Me);
+        auth.MapPost("/password", ChangePassword);
 
         var api = app.MapGroup("/api/v1").AddEndpointFilter(AuthAndErrors);
         api.MapPost("/query/trends", Trends);
@@ -27,6 +28,7 @@ public static class Endpoints
         api.MapGet("/metadata", Metadata);
         api.MapGet("/deletion-requests", DeletionRequests);
         api.MapPost("/deletion-requests", CreateDeletionRequest);
+        api.MapManagement();
     }
 
     public const string LoginRateLimit = "login";
@@ -51,6 +53,16 @@ public static class Endpoints
         await sessions.Current(ctx) is { } me
             ? Results.Json(me, AppJsonContext.Default.MeResponse)
             : Error("Not signed in", StatusCodes.Status401Unauthorized);
+
+    static async Task<IResult> ChangePassword(PasswordChangeRequest req, HttpContext ctx, SessionAuth sessions)
+    {
+        if (await sessions.Current(ctx) is not { } me) return Error("Not signed in", StatusCodes.Status401Unauthorized);
+        if (string.IsNullOrEmpty(req.CurrentPassword)) return Error("current_password is required", StatusCodes.Status400BadRequest);
+        if (!ManagementEndpoints.ValidPassword(req.NewPassword)) return Error(ManagementEndpoints.PasswordRule, StatusCodes.Status400BadRequest);
+        return await sessions.ChangePassword(ctx, me.User.Id, req.CurrentPassword, req.NewPassword!)
+            ? Results.NoContent()
+            : Error("Current password is incorrect", StatusCodes.Status400BadRequest);
+    }
 
     static async ValueTask<(ProjectContext? Project, IResult? Error)> Authenticate(HttpContext ctx)
     {

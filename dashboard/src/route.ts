@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { DateRange, Interval } from './api'
 
-export type Tab = 'trends' | 'funnels' | 'events' | 'persons'
+export type Tab = 'trends' | 'funnels' | 'events' | 'persons' | 'settings'
 export const TABS: { id: Tab; label: string }[] = [
   { id: 'trends', label: 'Trends' },
   { id: 'funnels', label: 'Funnels' },
   { id: 'events', label: 'Events' },
   { id: 'persons', label: 'Persons' },
+  { id: 'settings', label: 'Settings' },
 ]
 
 export interface Route { tab: Tab; id?: string; params: URLSearchParams }

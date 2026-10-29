@@ -30,6 +30,9 @@ export interface Metadata {
 export interface User { id: number; email: string; name: string }
 export interface Project { id: number; name: string; organization_id: number; organization_name: string; role: 'owner' | 'admin' | 'member'; timezone: string }
 export interface Me { user: User; projects: Project[] }
+export type Role = Project['role']
+export interface Member { user_id: number; email: string; name: string; role: Role; created_at: string }
+export interface ApiKey { id: number; name: string; prefix: string; created_by: string | null; created_at: string; revoked_at: string | null }
 export interface DeletionRequest {
   id: number; target_type: 'person' | 'distinct_id'; target_id: string; requested_by: string | null
   requested_at: string; processed_at: string | null
@@ -66,7 +69,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(method: 'GET' | 'POST', path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+async function request<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const res = await fetch(path, {
     method,
     signal,
@@ -112,6 +115,15 @@ export const api = {
   persons: (params: { search?: string; cursor?: string; limit?: number; identified?: boolean }, signal?: AbortSignal) =>
     request<{ persons: Person[]; next_cursor: string | null }>('GET', `/api/v1/persons?${qs(params)}`, undefined, signal),
   person: (id: string, signal?: AbortSignal) => request<Person>('GET', `/api/v1/persons/${encodeURIComponent(id)}`, undefined, signal),
+  changePassword: (current_password: string, new_password: string) =>
+    request<void>('POST', '/api/v1/auth/password', { current_password, new_password }),
+  members: (signal?: AbortSignal) => request<{ members: Member[] }>('GET', '/api/v1/members', undefined, signal),
+  addMember: (body: { email: string; name?: string; password?: string; role: Role }) => request<Member>('POST', '/api/v1/members', body),
+  changeRole: (userId: number, role: Role) => request<Member>('PATCH', `/api/v1/members/${userId}`, { role }),
+  removeMember: (userId: number) => request<void>('DELETE', `/api/v1/members/${userId}`),
+  apiKeys: (signal?: AbortSignal) => request<{ api_keys: ApiKey[] }>('GET', '/api/v1/api-keys', undefined, signal),
+  createApiKey: (name: string) => request<{ api_key: ApiKey; key: string }>('POST', '/api/v1/api-keys', { name }),
+  revokeApiKey: (id: number) => request<void>('DELETE', `/api/v1/api-keys/${id}`),
   deletionRequests: (signal?: AbortSignal) => request<{ deletion_requests: DeletionRequest[] }>('GET', '/api/v1/deletion-requests', undefined, signal),
   requestDeletion: (target_type: DeletionRequest['target_type'], target_id: string) =>
     request<DeletionRequest>('POST', '/api/v1/deletion-requests', { target_type, target_id }),
