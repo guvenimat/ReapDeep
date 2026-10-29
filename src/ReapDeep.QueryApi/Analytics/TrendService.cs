@@ -1,5 +1,6 @@
 using System.Diagnostics;
-using ReapDeep.QueryApi.Analytics.Sql;
+using ReapDeep.Analytics;
+using ReapDeep.Analytics.Sql;
 using ReapDeep.QueryApi.Auth;
 using ReapDeep.QueryApi.Infrastructure;
 

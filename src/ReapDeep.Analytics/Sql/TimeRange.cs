@@ -1,7 +1,7 @@
 using System.Globalization;
-using ReapDeep.QueryApi.Infrastructure;
+using ReapDeep.Analytics;
 
-namespace ReapDeep.QueryApi.Analytics.Sql;
+namespace ReapDeep.Analytics.Sql;
 
 public readonly record struct TimeRange(DateTime FromUtc, DateTime ToUtc, DateTime FromLocal, DateTime ToLocal, int? FixedOffsetSeconds)
 {

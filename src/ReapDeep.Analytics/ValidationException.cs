@@ -1,6 +1,6 @@
 using System.Diagnostics.CodeAnalysis;
 
-namespace ReapDeep.QueryApi.Infrastructure;
+namespace ReapDeep.Analytics;
 
 public sealed class ValidationException(string message) : Exception(message);
 

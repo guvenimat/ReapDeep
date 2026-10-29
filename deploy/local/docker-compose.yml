@@ -150,7 +150,9 @@ services:
         condition: service_healthy
 
   person-worker:
-    build: ../../src/ReapDeep.PersonWorker
+    build:
+      context: ../../src
+      dockerfile: ReapDeep.PersonWorker/Dockerfile
     image: reapdeep-person-worker
     container_name: reapdeep-person-worker
     profiles: ["app"]
@@ -171,7 +173,9 @@ services:
     restart: unless-stopped
 
   query-api:
-    build: ../../src/ReapDeep.QueryApi
+    build:
+      context: ../../src
+      dockerfile: ReapDeep.QueryApi/Dockerfile
     image: reapdeep-query-api
     container_name: reapdeep-query-api
     profiles: ["app"]

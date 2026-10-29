@@ -1,7 +1,7 @@
 using System.Text.Json;
+using ReapDeep.Analytics;
+using ReapDeep.Analytics.Sql;
 using ReapDeep.QueryApi.Analytics;
-using ReapDeep.QueryApi.Analytics.Sql;
-using ReapDeep.QueryApi.Infrastructure;
 
 namespace ReapDeep.UnitTests;
 

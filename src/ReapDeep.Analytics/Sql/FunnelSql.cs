@@ -1,4 +1,4 @@
-namespace ReapDeep.QueryApi.Analytics.Sql;
+namespace ReapDeep.Analytics.Sql;
 
 public static class FunnelSql
 {

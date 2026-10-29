@@ -1,5 +1,6 @@
 using MySqlConnector;
-using ReapDeep.QueryApi.Analytics.Sql;
+using ReapDeep.Analytics;
+using ReapDeep.Analytics.Sql;
 
 namespace ReapDeep.QueryApi.Infrastructure;
 

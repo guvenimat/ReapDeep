@@ -1,6 +1,6 @@
 using Dapper;
 using Npgsql;
-using ReapDeep.QueryApi.Analytics.Sql;
+using ReapDeep.Analytics.Sql;
 
 namespace ReapDeep.QueryApi.Metadata;
 

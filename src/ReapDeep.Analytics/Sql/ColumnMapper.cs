@@ -1,8 +1,8 @@
 using System.Collections.Frozen;
 using System.Text.RegularExpressions;
-using ReapDeep.QueryApi.Infrastructure;
+using ReapDeep.Analytics;
 
-namespace ReapDeep.QueryApi.Analytics.Sql;
+namespace ReapDeep.Analytics.Sql;
 
 public static partial class ColumnMapper
 {

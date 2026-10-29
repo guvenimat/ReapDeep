@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Diagnostics;
 using MySqlConnector;
+using ReapDeep.Analytics;
 
 namespace ReapDeep.QueryApi.Infrastructure;
 

@@ -1,9 +1,11 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0-noble-aot AS build
 WORKDIR /src
-COPY ReapDeep.QueryApi.csproj .
-RUN dotnet restore -r linux-x64
-COPY . .
-RUN dotnet publish -c Release -r linux-x64 --no-restore -o /app
+COPY ReapDeep.Analytics/ReapDeep.Analytics.csproj ReapDeep.Analytics/
+COPY ReapDeep.QueryApi/ReapDeep.QueryApi.csproj ReapDeep.QueryApi/
+RUN dotnet restore ReapDeep.QueryApi/ReapDeep.QueryApi.csproj -r linux-x64
+COPY ReapDeep.Analytics/ ReapDeep.Analytics/
+COPY ReapDeep.QueryApi/ ReapDeep.QueryApi/
+RUN dotnet publish ReapDeep.QueryApi/ReapDeep.QueryApi.csproj -c Release -r linux-x64 --no-restore -o /app
 
 FROM mcr.microsoft.com/dotnet/runtime-deps:10.0-noble
 WORKDIR /app

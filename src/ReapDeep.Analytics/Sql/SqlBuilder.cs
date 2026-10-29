@@ -1,8 +1,8 @@
 using System.Text;
 using System.Text.Json;
-using ReapDeep.QueryApi.Infrastructure;
+using ReapDeep.Analytics;
 
-namespace ReapDeep.QueryApi.Analytics.Sql;
+namespace ReapDeep.Analytics.Sql;
 
 public sealed record SqlQuery(string Sql, IReadOnlyList<(string Name, object Value)> Parameters);
 

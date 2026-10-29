@@ -27,4 +27,8 @@
     <PackageReference Include="MySqlConnector" Version="2.6.2" />
     <PackageReference Include="Npgsql" Version="10.0.3" />
   </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ReapDeep.Analytics\ReapDeep.Analytics.csproj" />
+  </ItemGroup>
 </Project>
