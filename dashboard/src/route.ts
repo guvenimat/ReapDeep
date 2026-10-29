@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { DateRange, Interval } from './api'
 
-export type Tab = 'trends' | 'funnels' | 'events' | 'persons' | 'settings'
+export type Tab = 'dashboards' | 'trends' | 'funnels' | 'events' | 'persons' | 'settings'
 export const TABS: { id: Tab; label: string }[] = [
+  { id: 'dashboards', label: 'Dashboards' },
   { id: 'trends', label: 'Trends' },
   { id: 'funnels', label: 'Funnels' },
   { id: 'events', label: 'Events' },
@@ -86,7 +87,7 @@ export function toDateRange(r: ReturnType<typeof rangeFromParams>): DateRange {
   const now = new Date()
   switch (r.preset) {
     case '24h':
-      return { date_from: new Date(now.getTime() - 24 * 3600_000).toISOString() }
+      return { date_from: new Date(Math.floor(now.getTime() / 60_000) * 60_000 - 24 * 3600_000).toISOString() }
     case '30d':
       return { date_from: ymd(new Date(now.getTime() - 29 * 86400_000)), date_to: ymd(now) }
     case 'custom':

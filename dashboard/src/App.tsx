@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { api, setProject, setUnauthorizedHandler, storedProjectId, type Me } from './api'
 import { Events } from './Events'
 import { Funnels } from './Funnels'
+import { Dashboards } from './Insights'
 import { Login } from './Login'
 import { Persons } from './Persons'
 import { Settings } from './Settings'
@@ -60,6 +61,7 @@ function Workspace({ me, onLogout, onAccessChanged }: { me: Me; onLogout: () => 
     return <div className="notice login-wait">Your account is not a member of any project. <button className="link" onClick={onLogout}>Sign out</button></div>
 
   const onQuery = (q: string) => setParams({ q })
+  const onInsight = (id?: string) => setParams({ insight: id })
   const openPerson = (id?: string) => navigate('persons', id)
 
   return (
@@ -113,8 +115,9 @@ function Workspace({ me, onLogout, onAccessChanged }: { me: Me; onLogout: () => 
       </header>
 
       <main key={projectId}>
-        {route.tab === 'trends' && <Trends params={route.params} range={range} onChange={onQuery} />}
-        {route.tab === 'funnels' && <Funnels params={route.params} range={range} onChange={onQuery} />}
+        {route.tab === 'dashboards' && <Dashboards id={route.id} params={route.params} range={range} openDashboard={(id) => navigate('dashboards', id)} />}
+        {route.tab === 'trends' && <Trends params={route.params} range={range} onChange={onQuery} onInsight={onInsight} />}
+        {route.tab === 'funnels' && <Funnels params={route.params} range={range} onChange={onQuery} onInsight={onInsight} />}
         {route.tab === 'events' && <Events params={route.params} range={range} onChange={onQuery} openPerson={openPerson} />}
         {route.tab === 'persons' && <Persons id={route.id} openPerson={openPerson} canManage={canManage} />}
         {route.tab === 'settings' && <Settings me={me} project={project!} onAccessChanged={onAccessChanged} />}

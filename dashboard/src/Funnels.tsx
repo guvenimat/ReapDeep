@@ -1,12 +1,13 @@
-import { api, type Breakdown, type Filter } from './api'
+import { api, type Breakdown, type Filter, type FunnelResponse } from './api'
 import { FunnelChart, Legend, MAX_SERIES, seriesColor, type FunnelGroup } from './charts'
 import { ms, num, pct } from './format'
 import { readState, toDateRange, type rangeFromParams } from './route'
+import { SaveInsight } from './Insights'
 import { BreakdownEditor, completeBreakdown, completeFilters, FilterEditor, Status, useDebounced, useQuery } from './ui'
 
-interface FunnelState { steps: string[]; window_seconds: number; filters: Filter[]; breakdown?: Breakdown; sampling: number }
+export interface FunnelState { steps: string[]; window_seconds: number; filters: Filter[]; breakdown?: Breakdown; sampling: number }
 
-const DEFAULT: FunnelState = { steps: ['$pageview', '$identify'], window_seconds: 7 * 86400, filters: [], sampling: 1 }
+export const FUNNEL_DEFAULT: FunnelState = { steps: ['$pageview', '$identify'], window_seconds: 7 * 86400, filters: [], sampling: 1 }
 const WINDOWS = [
   { s: 3600, label: '1 hour' }, { s: 86400, label: '1 day' }, { s: 7 * 86400, label: '7 days' }, { s: 30 * 86400, label: '30 days' },
 ]
@@ -14,32 +15,42 @@ const SAMPLING = [
   { v: 1, label: 'Exact' }, { v: 0.25, label: 'Fast 25%' }, { v: 0.1, label: 'Fast 10%' },
 ]
 
-export function Funnels({ params, range, onChange }: {
-  params: URLSearchParams
-  range: ReturnType<typeof rangeFromParams>
-  onChange: (q: string) => void
-}) {
-  const state = readState(params, DEFAULT)
-  const set = (patch: Partial<FunnelState>) => onChange(JSON.stringify({ ...state, ...patch }))
+type Range = ReturnType<typeof rangeFromParams>
 
-  const steps = state.steps.filter((s) => s.trim())
-  const request = useDebounced(JSON.stringify({
-    steps: steps.map((event) => ({ event })),
+export function funnelBody(state: FunnelState, range: Range) {
+  return {
+    steps: state.steps.filter((s) => s.trim()).map((event) => ({ event })),
     window_seconds: state.window_seconds,
     filters: completeFilters(state.filters),
     breakdown: completeBreakdown(state.breakdown),
     sampling: state.sampling,
     ...toDateRange(range),
+  }
+}
+
+export function funnelGroups(data?: FunnelResponse): FunnelGroup[] {
+  return (data?.results ?? []).slice(0, MAX_SERIES).map((r, i) => ({
+    label: r.breakdown_value ?? 'All', colorIndex: i, counts: r.steps.map((s) => s.count),
   }))
+}
+
+export function Funnels({ params, range, onChange, onInsight }: {
+  params: URLSearchParams
+  range: ReturnType<typeof rangeFromParams>
+  onChange: (q: string) => void
+  onInsight: (id?: string) => void
+}) {
+  const state = readState(params, FUNNEL_DEFAULT)
+  const set = (patch: Partial<FunnelState>) => onChange(JSON.stringify({ ...state, ...patch }))
+
+  const request = useDebounced(JSON.stringify(funnelBody(state, range)))
   const q = useQuery((signal) => {
     const body = JSON.parse(request)
     return body.steps.length >= 2 ? api.funnels(body, signal) : Promise.reject(new Error('Enter at least 2 steps'))
   }, [request])
 
   const results = (q.data?.results ?? []).slice(0, MAX_SERIES)
-  const groups: FunnelGroup[] = results.map((r, i) => ({
-    label: r.breakdown_value ?? 'All', colorIndex: i, counts: r.steps.map((s) => s.count),
-  }))
+  const groups = funnelGroups(q.data)
   const stepNames = q.data?.results[0]?.steps.map((s) => s.event) ?? []
 
   return (
@@ -80,6 +91,7 @@ export function Funnels({ params, range, onChange }: {
       </aside>
 
       <section className="content">
+        <SaveInsight kind="funnels" query={state} params={params} onInsight={onInsight} />
         <Status state={q} empty={groups.length === 0 || groups.every((g) => g.counts[0] === 0)}>
           <div className="card" data-testid="funnel-chart">
             <div className="card-head">

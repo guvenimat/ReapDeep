@@ -33,6 +33,13 @@ export interface Me { user: User; projects: Project[] }
 export type Role = Project['role']
 export interface Member { user_id: number; email: string; name: string; role: Role; created_at: string }
 export interface ApiKey { id: number; name: string; prefix: string; created_by: string | null; created_at: string; revoked_at: string | null }
+export type InsightKind = 'trends' | 'funnels'
+export interface Insight {
+  id: number; name: string; kind: InsightKind; query: Record<string, unknown>
+  created_by: string | null; created_at: string; updated_at: string
+}
+export interface DashboardSummary { id: number; name: string; description: string; created_by: string | null; updated_at: string; items: number }
+export interface Dashboard { id: number; name: string; description: string; updated_at: string; items: Insight[] }
 export interface DeletionRequest {
   id: number; target_type: 'person' | 'distinct_id'; target_id: string; requested_by: string | null
   requested_at: string; processed_at: string | null
@@ -69,7 +76,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(method: 'GET' | 'POST' | 'PATCH' | 'DELETE', path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
+async function request<T>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', path: string, body?: unknown, signal?: AbortSignal): Promise<T> {
   const res = await fetch(path, {
     method,
     signal,
@@ -124,6 +131,16 @@ export const api = {
   apiKeys: (signal?: AbortSignal) => request<{ api_keys: ApiKey[] }>('GET', '/api/v1/api-keys', undefined, signal),
   createApiKey: (name: string) => request<{ api_key: ApiKey; key: string }>('POST', '/api/v1/api-keys', { name }),
   revokeApiKey: (id: number) => request<void>('DELETE', `/api/v1/api-keys/${id}`),
+  insights: (signal?: AbortSignal) => request<{ insights: Insight[] }>('GET', '/api/v1/insights', undefined, signal),
+  createInsight: (body: { name: string; kind: InsightKind; query: object }) => request<Insight>('POST', '/api/v1/insights', body),
+  updateInsight: (id: number, body: { name?: string; query?: object }) => request<Insight>('PUT', `/api/v1/insights/${id}`, body),
+  deleteInsight: (id: number) => request<void>('DELETE', `/api/v1/insights/${id}`),
+  dashboards: (signal?: AbortSignal) => request<{ dashboards: DashboardSummary[] }>('GET', '/api/v1/dashboards', undefined, signal),
+  dashboard: (id: number, signal?: AbortSignal) => request<Dashboard>('GET', `/api/v1/dashboards/${id}`, undefined, signal),
+  createDashboard: (body: { name: string; description?: string; insight_ids?: number[] }) => request<Dashboard>('POST', '/api/v1/dashboards', body),
+  updateDashboard: (id: number, body: { name?: string; description?: string; insight_ids?: number[] }) =>
+    request<Dashboard>('PUT', `/api/v1/dashboards/${id}`, body),
+  deleteDashboard: (id: number) => request<void>('DELETE', `/api/v1/dashboards/${id}`),
   deletionRequests: (signal?: AbortSignal) => request<{ deletion_requests: DeletionRequest[] }>('GET', '/api/v1/deletion-requests', undefined, signal),
   requestDeletion: (target_type: DeletionRequest['target_type'], target_id: string) =>
     request<DeletionRequest>('POST', '/api/v1/deletion-requests', { target_type, target_id }),
