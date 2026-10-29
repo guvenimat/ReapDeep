@@ -1,5 +1,8 @@
 # ReapDeep
 
+[![CI](https://github.com/guvenimat/ReapDeep/actions/workflows/ci.yml/badge.svg)](https://github.com/guvenimat/ReapDeep/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
+
 Multi-tenant, high-performance web product analytics, in the spirit of PostHog and Mixpanel.
 A tiny JavaScript SDK captures events, a Native AOT .NET ingestion API writes them to Kafka,
 StarRocks makes them queryable within seconds, and a React dashboard answers trend, funnel and
