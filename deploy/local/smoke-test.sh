@@ -2,11 +2,14 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-if [ ! -f .env ]; then
-  rand() { head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
-  printf 'POSTGRES_PASSWORD=%s\nREAD_API_KEY=rk_%s\n' "$(rand)" "$(rand)" > .env
-  echo "Created .env with random local credentials"
-fi
+rand() { head -c 16 /dev/urandom | od -An -tx1 | tr -d ' \n'; }
+touch .env
+add_env() { grep -q "^$1=" .env || { echo "$1=$2" >> .env; echo "Added $1 to .env"; }; }
+add_env POSTGRES_PASSWORD "$(rand)"
+add_env READ_API_KEY "rk_$(rand)"
+add_env ADMIN_EMAIL "admin@reapdeep.local"
+add_env ADMIN_PASSWORD "$(rand | cut -c1-20)"
+add_env STARROCKS_QUERY_PASSWORD "$(rand)"
 
 EVENT_ID="smoke-$(date +%s)"
 NOW="$(date -u '+%Y-%m-%d %H:%M:%S')"

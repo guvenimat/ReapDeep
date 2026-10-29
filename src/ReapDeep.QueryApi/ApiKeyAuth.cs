@@ -5,9 +5,18 @@ using Npgsql;
 
 namespace ReapDeep.QueryApi;
 
-public sealed record ProjectContext(long ProjectId, string TimeZoneId, TimeZoneInfo TimeZone)
+public sealed record ProjectContext(long ProjectId, string TimeZoneId, TimeZoneInfo TimeZone, string? Role)
 {
+    public bool CanManage => Role is "owner" or "admin";
+
     public static ProjectContext From(HttpContext ctx) => (ProjectContext)ctx.Items[nameof(ProjectContext)]!;
+
+    public static ProjectContext Create(long projectId, string tzId, string? role, ILogger log)
+    {
+        if (TimeZoneInfo.TryFindSystemTimeZoneById(tzId, out var tz)) return new ProjectContext(projectId, tzId, tz, role);
+        log.LogWarning("Project {Project}: unknown time zone {Tz}, falling back to UTC", projectId, tzId);
+        return new ProjectContext(projectId, "UTC", TimeZoneInfo.Utc, role);
+    }
 }
 
 public sealed class ApiKeyAuth(NpgsqlDataSource db, ILogger<ApiKeyAuth> log)
@@ -33,6 +42,9 @@ public sealed class ApiKeyAuth(NpgsqlDataSource db, ILogger<ApiKeyAuth> log)
         return project;
     }
 
+    public static bool HasKey(HttpRequest req) =>
+        req.Headers.Authorization.Count > 0 || req.Headers.ContainsKey("X-Api-Key");
+
     static string? ReadKey(HttpRequest req)
     {
         var auth = req.Headers.Authorization.ToString();
@@ -48,14 +60,6 @@ public sealed class ApiKeyAuth(NpgsqlDataSource db, ILogger<ApiKeyAuth> log)
             """);
         cmd.Parameters.AddWithValue("h", hash);
         await using var r = await cmd.ExecuteReaderAsync(ct);
-        if (!await r.ReadAsync(ct)) return null;
-
-        var tzId = r.GetString(1);
-        if (!TimeZoneInfo.TryFindSystemTimeZoneById(tzId, out var tz))
-        {
-            log.LogWarning("Project {Project}: unknown time zone {Tz}, falling back to UTC", r.GetInt64(0), tzId);
-            (tzId, tz) = ("UTC", TimeZoneInfo.Utc);
-        }
-        return new ProjectContext(r.GetInt64(0), tzId, tz);
+        return await r.ReadAsync(ct) ? ProjectContext.Create(r.GetInt64(0), r.GetString(1), null, log) : null;
     }
 }

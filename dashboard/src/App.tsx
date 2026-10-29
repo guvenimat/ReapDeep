@@ -1,29 +1,51 @@
-import { useState } from 'react'
-import { api, getApiKey, setApiKey } from './api'
+import { useEffect, useState } from 'react'
+import { api, setProject, setUnauthorizedHandler, storedProjectId, type Me } from './api'
 import { Events } from './Events'
 import { Funnels } from './Funnels'
+import { Login } from './Login'
 import { Persons } from './Persons'
 import { RANGE_PRESETS, rangeFromParams, TABS, useRoute, type RangePreset } from './route'
 import { Trends } from './Trends'
 import { MetaContext, MetaDatalists, useQuery } from './ui'
 
 export function App() {
+  const [me, setMe] = useState<Me | null | undefined>(undefined)
+
+  useEffect(() => {
+    setUnauthorizedHandler(() => setMe(null))
+    api.me().then(setMe, () => setMe(null))
+  }, [])
+
+  if (me === undefined) return <div className="notice login-wait">Loading...</div>
+  if (me === null) return <Login onLogin={setMe} />
+  return <Workspace me={me} onLogout={() => api.logout().finally(() => setMe(null))} />
+}
+
+function pickProject(me: Me): number | undefined {
+  const stored = storedProjectId()
+  return me.projects.find((p) => p.id === stored)?.id ?? me.projects[0]?.id
+}
+
+function Workspace({ me, onLogout }: { me: Me; onLogout: () => void }) {
   const { route, navigate, setParams } = useRoute()
   const range = rangeFromParams(route.params)
-  const [apiKey, setKey] = useState(getApiKey())
-  const [draftKey, setDraftKey] = useState(apiKey)
+  const [projectId, setProjectId] = useState(() => {
+    const id = pickProject(me)
+    if (id !== undefined) setProject(id)
+    return id
+  })
 
-  const meta = useQuery((signal) => api.metadata(signal), [apiKey])
+  const meta = useQuery((signal) => api.metadata(signal), [projectId])
   const err = meta.error ? (meta.loading ? undefined : meta.error) : undefined
-  const status = meta.data && !meta.error ? 'ok' : err ? (/401|api key/i.test(err) ? 'invalid' : 'down') : 'checking'
+  const status = meta.data && !meta.error ? 'ok' : err ? 'down' : 'checking'
 
-  const commitKey = () => {
-    const k = draftKey.trim()
-    if (k && k !== apiKey) {
-      setApiKey(k)
-      setKey(k)
-    }
+  const changeProject = (id: number) => {
+    setProject(id)
+    setProjectId(id)
   }
+
+  if (projectId === undefined)
+    return <div className="notice login-wait">Your account is not a member of any project. <button className="link" onClick={onLogout}>Sign out</button></div>
 
   const onQuery = (q: string) => setParams({ q })
   const openPerson = (id?: string) => navigate('persons', id)
@@ -61,17 +83,24 @@ export function App() {
             )}
           </div>
         )}
-        <div className="key">
-          <input value={draftKey} onChange={(e) => setDraftKey(e.target.value)} onBlur={commitKey}
-            onKeyDown={(e) => e.key === 'Enter' && commitKey()} aria-label="API key" spellCheck={false} />
+        <div className="account">
+          {me.projects.length > 1 ? (
+            <select value={projectId} onChange={(e) => changeProject(Number(e.target.value))} aria-label="Project" data-testid="project-select">
+              {me.projects.map((p) => <option key={p.id} value={p.id}>{p.organization_name} / {p.name}</option>)}
+            </select>
+          ) : (
+            <span className="small" data-testid="project-name">{me.projects[0].name}</span>
+          )}
           <span className={`status ${status}`} data-testid="connection-status" title={err}>
             <span className="status-dot" aria-hidden />
-            {status === 'ok' ? 'Connected' : status === 'invalid' ? 'Invalid key' : status === 'down' ? 'API unreachable' : 'Checking'}
+            {status === 'ok' ? 'Connected' : status === 'down' ? 'API unreachable' : 'Checking'}
           </span>
+          <span className="small muted" data-testid="user-email">{me.user.email}</span>
+          <button className="link" onClick={onLogout} data-testid="logout">Sign out</button>
         </div>
       </header>
 
-      <main key={apiKey}>
+      <main key={projectId}>
         {route.tab === 'trends' && <Trends params={route.params} range={range} onChange={onQuery} />}
         {route.tab === 'funnels' && <Funnels params={route.params} range={range} onChange={onQuery} />}
         {route.tab === 'events' && <Events params={route.params} range={range} onChange={onQuery} openPerson={openPerson} />}

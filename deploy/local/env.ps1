@@ -1,9 +1,19 @@
 function Initialize-LocalEnv {
     $path = Join-Path $PSScriptRoot ".env"
-    if (-not (Test-Path $path)) {
-        $content = "POSTGRES_PASSWORD=$([guid]::NewGuid().ToString('N'))`nREAD_API_KEY=rk_$([guid]::NewGuid().ToString('N'))`n"
-        [IO.File]::WriteAllText($path, $content, (New-Object Text.UTF8Encoding($false)))
-        Write-Host "Created $path with random local credentials"
+    $required = [ordered]@{
+        POSTGRES_PASSWORD        = { [guid]::NewGuid().ToString('N') }
+        READ_API_KEY             = { "rk_" + [guid]::NewGuid().ToString('N') }
+        ADMIN_EMAIL              = { "admin@reapdeep.local" }
+        ADMIN_PASSWORD           = { [guid]::NewGuid().ToString('N').Substring(0, 20) }
+        STARROCKS_QUERY_PASSWORD = { [guid]::NewGuid().ToString('N') }
+    }
+    $existing = if (Test-Path $path) { [IO.File]::ReadAllText($path) } else { "" }
+    $missing = @($required.Keys | Where-Object { $existing -cnotmatch "(?m)^\s*$_\s*=" })
+    if ($missing.Count -gt 0) {
+        $add = ($missing | ForEach-Object { "$_=$(& $required[$_])" }) -join "`n"
+        if ($existing.Length -gt 0 -and -not $existing.EndsWith("`n")) { $add = "`n" + $add }
+        [IO.File]::AppendAllText($path, $add + "`n", (New-Object Text.UTF8Encoding($false)))
+        Write-Host "Added to ${path}: $($missing -join ', ')"
     }
     $values = @{}
     foreach ($line in [IO.File]::ReadAllLines($path)) {

@@ -3,7 +3,8 @@ Set-Location -Path $PSScriptRoot
 . (Join-Path $PSScriptRoot "env.ps1")
 Add-Type -AssemblyName System.Net.Http
 
-$readKey = (Initialize-LocalEnv).READ_API_KEY
+$envValues = Initialize-LocalEnv
+$readKey = $envValues.READ_API_KEY
 $tag = "dt" + [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 $anonA = "anonA_$tag"; $user = "user_$tag"; $anonB = "anonB_$tag"
 $chrome = "$env:ProgramFiles\Google\Chrome\Application\chrome.exe"
@@ -84,7 +85,12 @@ function Section([string]$html, [string]$id) {
     $html.Substring($i, $j - $i)
 }
 
-$null = Dom "" "localStorage.setItem('reapdeep.apiKey', '$readKey') || true"
+Write-Host "`n0) Sign-in"
+$html = Dom "" "document.querySelector('[data-testid=login-form]')"
+Check "login screen is shown without a session" ($html -match 'data-testid="login-form"' -and $html -notmatch 'data-testid="trends-chart"')
+$fill = "(function(){const f=document.querySelector('[data-testid=login-form]');if(!f)return true;const set=(n,v)=>{const i=f.querySelector('input[name='+n+']');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(i,v);i.dispatchEvent(new Event('input',{bubbles:true}))};if(!window.__step){set('email','$($envValues.ADMIN_EMAIL)');set('password','$($envValues.ADMIN_PASSWORD)');window.__step=1;return false}if(window.__step===1){window.__step=2;f.requestSubmit()}return false})() && document.querySelector('[data-testid=user-email]')"
+$html = Dom "" $fill
+Check "signing in through the form shows the workspace with the user's email" ((Section $html "user-email") -match [regex]::Escape($envValues.ADMIN_EMAIL))
 
 Write-Host "`n1) Test data (tag: $tag)"
 Capture '[{"event":"page___TAG__","distinct_id":"__A__"},{"event":"page___TAG__","distinct_id":"__A__"},{"event":"step1___TAG__","distinct_id":"__A__","properties":{"$current_url":"https://example.com/products/1"}}]'
@@ -148,6 +154,12 @@ Check "person detail: properties (plan: pro)" ($ids -match '<pre class="json">[^
 $evTable = Section $html "events-table"
 $rows = ([regex]::Matches($evTable, '<tr class="clickable')).Count
 Check "person event history: anonymous + after identify = 7 events -> $rows" ($rows -eq 7)
+
+Write-Host "`n7) Sign-out"
+$html = Dom "#/trends" "(function(){const b=document.querySelector('[data-testid=logout]');if(b&&!window.__out){window.__out=1;b.click()}return false})() || document.querySelector('[data-testid=login-form]')"
+Check "Sign out returns to the login screen" ($html -match 'data-testid="login-form"')
+$html = Dom "#/trends" "document.querySelector('[data-testid=login-form]')"
+Check "session is gone after reload" ($html -match 'data-testid="login-form"')
 
 $bws = New-Object System.Net.WebSockets.ClientWebSocket; $bws.ConnectAsync([uri]$browserWs, [Threading.CancellationToken]::None).Wait(); CdpCall $bws "Browser.close" @{} | Out-Null
 Start-Sleep 1; Remove-Item $cdpProfile -Recurse -Force -ErrorAction SilentlyContinue

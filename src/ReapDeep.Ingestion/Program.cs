@@ -1,7 +1,7 @@
-using System.Net;
 using System.Text;
 using System.Text.Json;
 using Confluent.Kafka;
+using Microsoft.AspNetCore.HttpOverrides;
 using Npgsql;
 using ReapDeep.Ingestion;
 
@@ -10,6 +10,14 @@ var builder = WebApplication.CreateSlimBuilder(args);
 builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = 2 * 1024 * 1024);
 builder.Services.ConfigureHttpJsonOptions(o => o.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonContext.Default));
 builder.Services.AddCors(o => o.AddDefaultPolicy(p => p.AllowAnyOrigin().AllowAnyHeader().WithMethods("POST")));
+var trustedProxies = (builder.Configuration["ForwardedHeaders:TrustedNetworks"] ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+builder.Services.Configure<ForwardedHeadersOptions>(o =>
+{
+    o.ForwardedHeaders = ForwardedHeaders.XForwardedFor;
+    o.KnownIPNetworks.Clear();
+    o.KnownProxies.Clear();
+    foreach (var cidr in trustedProxies) o.KnownIPNetworks.Add(System.Net.IPNetwork.Parse(cidr));
+});
 
 builder.Services.AddSingleton(new NpgsqlSlimDataSourceBuilder(builder.Configuration.GetConnectionString("Postgres")).Build());
 builder.Services.AddSingleton<ProjectCache>();
@@ -29,6 +37,7 @@ builder.Services.AddSingleton(sp => new ProducerBuilder<Null, byte[]>(new Produc
 .Build());
 
 var app = builder.Build();
+if (trustedProxies.Length > 0) app.UseForwardedHeaders();
 app.UseCors();
 
 app.Lifetime.ApplicationStopping.Register(() => app.Services.GetRequiredService<IProducer<Null, byte[]>>().Flush(TimeSpan.FromSeconds(10)));
@@ -95,15 +104,5 @@ app.MapPost("/capture", async (HttpContext ctx, ProjectCache projects, IProducer
 
 app.Run();
 
-static string? ClientIp(HttpContext ctx)
-{
-    var xff = ctx.Request.Headers["X-Forwarded-For"].ToString();
-    if (xff.Length > 0)
-    {
-        var first = xff.Split(',')[0].Trim();
-        if (IPAddress.TryParse(first, out var parsed)) return Normalize(parsed);
-    }
-    return ctx.Connection.RemoteIpAddress is { } remote ? Normalize(remote) : null;
-
-    static string Normalize(IPAddress a) => (a.IsIPv4MappedToIPv6 ? a.MapToIPv4() : a).ToString();
-}
+static string? ClientIp(HttpContext ctx) =>
+    ctx.Connection.RemoteIpAddress is { } a ? (a.IsIPv4MappedToIPv6 ? a.MapToIPv4() : a).ToString() : null;

@@ -65,13 +65,13 @@ cd deploy/local
 docker compose --profile app up -d --build
 ```
 
-On first start, `.env` is created with a random PostgreSQL password and a random read API key (`READ_API_KEY`). It is git-ignored, and every port is bound to `127.0.0.1`.
+On first start, `.env` is created with random local credentials: the PostgreSQL password, a project read API key (`READ_API_KEY`), the dashboard admin account (`ADMIN_EMAIL`, `ADMIN_PASSWORD`) and the password of the read-only StarRocks user the Query API connects with. Missing keys are added to an existing `.env` automatically. The file is git-ignored, and every port is bound to `127.0.0.1`.
 
 | Service | Address |
 |---|---|
-| Dashboard | http://localhost:3000 (enter `READ_API_KEY` from `.env`) |
+| Dashboard | http://localhost:3000 (sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env`) |
 | Ingestion API | `POST http://localhost:8000/capture` (local project key `pk_dev_local`) |
-| Query API | http://localhost:8001 (`Authorization: Bearer <READ_API_KEY>`) |
+| Query API | http://localhost:8001 (`Authorization: Bearer <READ_API_KEY>`, or a dashboard session) |
 | StarRocks (MySQL protocol) | `localhost:9030`, user `root` |
 | PostgreSQL | `localhost:5432`, user `reapdeep`, password in `.env` |
 | Kafka | `localhost:9092` |
@@ -96,6 +96,13 @@ curl http://localhost:8001/api/v1/query/trends \
 ```
 
 Other endpoints: `POST /api/v1/query/funnels`, `GET /api/v1/events`, `GET /api/v1/persons[/{id}]`, `GET /api/v1/metadata`, `GET /healthz`.
+
+### Authentication
+
+- **API keys** (`Authorization: Bearer <key>`) are scoped to one project and are read-only. Use them for scripts and integrations.
+- **Dashboard sessions:** `POST /api/v1/auth/login` sets an HttpOnly, `SameSite=Strict` cookie valid for 14 days. Requests then name the project in the `X-Project-Id` header, and the API checks the user's organization membership. `GET /api/v1/auth/me` returns the user and their projects; `POST /api/v1/auth/logout` revokes the session.
+- Passwords are hashed with PBKDF2-SHA256 (600K iterations), and sign-in is rate limited to 10 attempts per minute per client IP.
+- On first start, the Query API creates the `ADMIN_EMAIL` user as owner of every organization when the `users` table is empty.
 
 ### Add the SDK to a page
 
@@ -147,6 +154,7 @@ The optimizations that got us here: a fixed-offset time bucketing path when the 
 ```powershell
 cd deploy/local
 .\identity-test.ps1     # identity resolution, 10 end-to-end scenarios
+.uth-test.ps1         # sign-in, sessions, project access, CORS, X-Forwarded-For, StarRocks grants
 .\query-test.ps1        # Query API: trends, funnels, events, persons, EXPLAIN, latency
 .\dashboard-test.ps1    # headless Chrome against the dashboard (Chrome DevTools Protocol)
 .\load-test.ps1         # ingestion load, 100M seed, query benchmark, cleanup
@@ -182,9 +190,9 @@ deploy/local                Docker Compose stack, schemas and test scripts
 
 ReapDeep is an early v1. It runs end to end locally but has not been operated in production yet.
 
-- The dashboard authenticates with a project read key stored in the browser; user accounts and sessions are not implemented yet.
+- There is no user management UI yet: the first owner comes from `.env`, other users are added in PostgreSQL.
 - Not in v1: session replay, mobile SDKs, autocapture, feature flags.
-- Production hardening still to do: a read-only StarRocks user, a restricted CORS origin for the Query API, trusted-proxy handling for `X-Forwarded-For`.
+- Behind a load balancer, set `ForwardedHeaders__TrustedNetworks` (CIDR list) on the ingestion and Query APIs; `X-Forwarded-For` is ignored otherwise. The Query API sends no CORS headers unless `QueryApi__CorsOrigins` is set.
 - Data deletion requests are planned as periodic batch `DELETE` jobs.
 
 ## License
