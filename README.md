@@ -20,6 +20,9 @@ retention, path and person questions over hundreds of millions of events.
 
 ## Architecture
 
+The design decisions, alternatives and measurements behind each component are written up in
+[docs/architecture.md](docs/architecture.md).
+
 ```mermaid
 flowchart LR
     SDK["JS SDK<br/>browser"] -->|"POST /capture"| ING["Ingestion API<br/>.NET, Native AOT"]
