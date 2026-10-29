@@ -16,6 +16,7 @@
 
   <ItemGroup>
     <TrimmerRootAssembly Include="Confluent.Kafka" />
+    <InternalsVisibleTo Include="ReapDeep.UnitTests" />
   </ItemGroup>
 
   <ItemGroup>

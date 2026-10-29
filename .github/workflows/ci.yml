@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   dotnet:
-    name: .NET build
+    name: .NET build and unit tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,6 +22,7 @@ jobs:
         with:
           dotnet-version: 10.0.x
       - run: dotnet build ReapDeep.sln -c Release
+      - run: dotnet test tests/ReapDeep.UnitTests -c Release --no-build
 
   sdk:
     name: JS SDK
