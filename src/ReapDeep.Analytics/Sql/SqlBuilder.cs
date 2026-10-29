@@ -1,10 +1,12 @@
 using System.Text;
 using System.Text.Json;
-using ReapDeep.QueryApi.Infrastructure;
+using ReapDeep.Analytics;
 
-namespace ReapDeep.QueryApi.Analytics.Sql;
+namespace ReapDeep.Analytics.Sql;
 
 public sealed record SqlQuery(string Sql, IReadOnlyList<(string Name, object Value)> Parameters);
+
+public sealed record CohortRef(long Id, string Name, long Version);
 
 public sealed class SqlBuilder
 {
@@ -13,6 +15,7 @@ public sealed class SqlBuilder
     readonly List<(string Name, object Value)> _params = [];
     readonly List<string> _where = [];
     readonly List<string> _personWhere = [];
+    readonly List<(string Id, string Version, bool Exclude)> _cohorts = [];
     bool _joinPdi;
     bool _joinPersons;
 
@@ -44,10 +47,31 @@ public sealed class SqlBuilder
 
     public void RequirePersons() => _joinPdi = _joinPersons = true;
 
-    public void AddFilters(IEnumerable<Filter>? filters)
+    public void AddFilters(IEnumerable<Filter>? filters, IReadOnlyDictionary<long, CohortRef>? cohorts = null)
     {
         if (filters is null) return;
-        foreach (var f in filters) (f.Scope == "person" ? _personWhere : _where).Add(Condition(f));
+        foreach (var f in filters)
+        {
+            if (f.Scope == "cohort") InCohort(Cohort(f, cohorts), exclude: f.Op == "not_in");
+            else (f.Scope == "person" ? _personWhere : _where).Add(Condition(f));
+        }
+    }
+
+    public void InCohort(CohortRef cohort, bool exclude = false) => _cohorts.Add((P(cohort.Id), P(cohort.Version), exclude));
+
+    string CohortJoins(string alias) => string.Concat(_cohorts.Select((c, i) =>
+        $" LEFT {(c.Exclude ? "ANTI" : "SEMI")} JOIN analytics.cohort_members cm{i} ON cm{i}.project_id = {alias}.project_id " +
+        $"AND cm{i}.distinct_id = {alias}.distinct_id AND cm{i}.cohort_id = {c.Id} AND cm{i}.version = {c.Version}"));
+
+    public static long CohortId(Filter f) => long.TryParse(f.Property, out var id) && id > 0
+        ? id
+        : throw new ValidationException($"Cohort filter needs a cohort id as property, got '{f.Property}'");
+
+    static CohortRef Cohort(Filter f, IReadOnlyDictionary<long, CohortRef>? cohorts)
+    {
+        Ensure.That(f.Op is "in" or "not_in", $"Invalid op for a cohort filter: '{f.Op}' (in | not_in)");
+        var id = CohortId(f);
+        return cohorts is not null && cohorts.TryGetValue(id, out var cohort) ? cohort : throw new ValidationException($"Unknown cohort: {id}");
     }
 
     public string Condition(Filter f)
@@ -68,7 +92,7 @@ public sealed class SqlBuilder
 
     public string Select(string select, string? groupBy = null, string? orderBy = null, int? limit = null)
     {
-        var sb = new StringBuilder("SELECT ").Append(select).Append(" FROM analytics.events e");
+        var sb = new StringBuilder("SELECT ").Append(select).Append(" FROM analytics.events e").Append(CohortJoins("e"));
         if (_joinPdi) sb.Append(PersonJoins("e"));
         sb.Append(" WHERE ").AppendJoin(" AND ", _where.Concat(_personWhere));
         if (groupBy is not null) sb.Append(" GROUP BY ").Append(groupBy);
@@ -77,8 +101,11 @@ public sealed class SqlBuilder
         return sb.ToString();
     }
 
-    public string EventsOnly(string select, string groupBy) =>
-        $"SELECT {select} FROM analytics.events e WHERE {string.Join(" AND ", _where)} GROUP BY {groupBy}";
+    public string EventsOnly(string select, string groupBy)
+    {
+        var grouped = $"SELECT {select} FROM analytics.events e WHERE {string.Join(" AND ", _where)} GROUP BY {groupBy}";
+        return _cohorts.Count == 0 ? grouped : $"SELECT a.* FROM ({grouped}) a{CohortJoins("a")}";
+    }
 
     public string PersonJoins(string alias)
     {

@@ -1,4 +1,5 @@
 using MySqlConnector;
+using ReapDeep.Analytics.Sql;
 
 namespace ReapDeep.PersonWorker.Deletion;
 
@@ -19,6 +20,18 @@ public sealed class StarRocksDeleter(MySqlDataSource db)
             { CommandTimeout = CommandTimeoutSeconds };
             cmd.Parameters.AddWithValue("p", projectId);
             for (var i = 0; i < chunk.Length; i++) cmd.Parameters.AddWithValue(names[i], chunk[i]);
+            await cmd.ExecuteNonQueryAsync(ct);
+        }
+    }
+
+    public async Task DeleteCohortMembershipsAsync(long projectId, IEnumerable<string> distinctIds, CancellationToken ct)
+    {
+        foreach (var chunk in distinctIds.Order(StringComparer.Ordinal).Chunk(ChunkSize))
+        {
+            var query = CohortSql.DeleteDistinctIds(projectId, chunk);
+            await using var conn = await db.OpenConnectionAsync(ct);
+            await using var cmd = new MySqlCommand(query.Sql, conn) { CommandTimeout = CommandTimeoutSeconds };
+            foreach (var (name, value) in query.Parameters) cmd.Parameters.AddWithValue(name, value);
             await cmd.ExecuteNonQueryAsync(ct);
         }
     }

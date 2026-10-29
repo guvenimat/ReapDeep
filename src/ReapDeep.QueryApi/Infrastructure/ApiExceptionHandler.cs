@@ -1,5 +1,7 @@
 using Microsoft.AspNetCore.Diagnostics;
 using MySqlConnector;
+using ReapDeep.Analytics;
+using ReapDeep.QueryApi.Cohorts;
 
 namespace ReapDeep.QueryApi.Infrastructure;
 
@@ -10,6 +12,8 @@ public sealed class ApiExceptionHandler(ILogger<ApiExceptionHandler> log) : IExc
         var (status, message) = exception switch
         {
             ValidationException e => (StatusCodes.Status400BadRequest, e.Message),
+            CohortNotFoundException e => (StatusCodes.Status404NotFound, e.Message),
+            CohortNotReadyException e => (StatusCodes.Status409Conflict, e.Message),
             MySqlException e when IsResourceLimit(e) =>
                 (StatusCodes.Status503ServiceUnavailable, "Query exceeded the database resource limits; narrow the date range or filters"),
             MySqlException => (StatusCodes.Status502BadGateway, "Query failed in the analytics database"),

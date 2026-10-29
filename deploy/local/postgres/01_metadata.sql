@@ -137,5 +137,43 @@ CREATE TABLE dashboard_items (
     PRIMARY KEY (dashboard_id, insight_id)
 );
 
+CREATE TABLE cohorts (
+    id                       BIGSERIAL   PRIMARY KEY,
+    project_id               BIGINT      NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    name                     TEXT        NOT NULL,
+    description              TEXT        NOT NULL DEFAULT '',
+    kind                     TEXT        NOT NULL CHECK (kind IN ('dynamic', 'static')),
+    definition               JSONB       NOT NULL DEFAULT '{}',
+    status                   TEXT        NOT NULL DEFAULT 'pending' CHECK (status IN ('pending', 'calculating', 'ready', 'error')),
+    active_version           BIGINT,
+    member_count             BIGINT,
+    calculated_at            TIMESTAMPTZ,
+    calculation_ms           INT,
+    last_error               TEXT,
+    refresh_interval_seconds INT         NOT NULL DEFAULT 3600,
+    created_by               BIGINT      REFERENCES users(id) ON DELETE SET NULL,
+    created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+    deleted_at               TIMESTAMPTZ
+);
+CREATE INDEX cohorts_project ON cohorts (project_id, updated_at DESC);
+CREATE INDEX cohorts_due ON cohorts (status, calculated_at);
+
+CREATE TABLE cohort_static_members (
+    cohort_id    BIGINT       NOT NULL REFERENCES cohorts(id) ON DELETE CASCADE,
+    project_id   BIGINT       NOT NULL,
+    distinct_id  VARCHAR(200) NOT NULL,
+    PRIMARY KEY (cohort_id, distinct_id)
+);
+CREATE INDEX cohort_static_members_distinct_id ON cohort_static_members (project_id, distinct_id);
+
+CREATE TABLE cohort_retired_versions (
+    cohort_id   BIGINT      NOT NULL REFERENCES cohorts(id) ON DELETE CASCADE,
+    project_id  BIGINT      NOT NULL,
+    version     BIGINT      NOT NULL,
+    retired_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (cohort_id, version)
+);
+
 INSERT INTO organizations (name) VALUES ('Local Org');
 INSERT INTO projects (organization_id, name, public_key) VALUES (1, 'Local Project', 'pk_dev_local');

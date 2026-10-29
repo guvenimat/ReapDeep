@@ -105,7 +105,7 @@ export function Trends({ params, range, onChange, onInsight }: {
         </EditorSection>
 
         <FilterEditor filters={state.filters} onChange={(filters) => set({ filters })} />
-        <BreakdownEditor value={state.breakdown} onChange={(breakdown) => set({ breakdown })} />
+        <BreakdownEditor value={state.breakdown} onChange={(breakdown) => set({ breakdown })} allowCohort />
       </aside>
 
       <section className="content">

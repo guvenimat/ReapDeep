@@ -1,5 +1,6 @@
 using Dapper;
 using Npgsql;
+using ReapDeep.PersonWorker.Cohorts;
 
 namespace ReapDeep.PersonWorker.Deletion;
 
@@ -51,23 +52,27 @@ public sealed class DeletionJob(NpgsqlDataSource db, StarRocksDeleter? starRocks
         var eventDistinctIds = 0;
         var mappings = 0;
         var persons = 0;
+        var staticMembers = 0;
         foreach (var project in requests.GroupBy(r => r.ProjectId))
         {
+            await CohortProjectLock.ExcludeRefreshesAsync(conn, tx, project.Key);
             var batch = new DeletionBatch(conn, tx, project.Key, project.ToList());
             await batch.ResolveAndLockAsync();
             await starRocks.DeleteEventsAsync(project.Key, batch.DistinctIds, ct);
+            await starRocks.DeleteCohortMembershipsAsync(project.Key, batch.DistinctIds, ct);
             var result = await batch.ApplyAsync();
             eventDistinctIds += batch.DistinctIds.Count;
             mappings += result.DistinctIds;
             persons += result.Persons;
+            staticMembers += result.StaticCohortMembers;
         }
 
         await conn.ExecuteAsync("UPDATE deletion_requests SET processed_at = now() WHERE id = ANY(@Ids)",
             new { Ids = requests.Select(r => r.Id).ToArray() }, tx);
         await tx.CommitAsync(ct);
 
-        log.LogInformation("Processed {Requests} deletion requests: events of {EventDistinctIds} distinct_ids, {DistinctIds} distinct_id mappings and {Persons} persons deleted",
-            requests.Count, eventDistinctIds, mappings, persons);
+        log.LogInformation("Processed {Requests} deletion requests: events and cohort memberships of {EventDistinctIds} distinct_ids, {DistinctIds} distinct_id mappings, {Persons} persons and {StaticMembers} static cohort members deleted",
+            requests.Count, eventDistinctIds, mappings, persons, staticMembers);
         return requests.Count;
     }
 }

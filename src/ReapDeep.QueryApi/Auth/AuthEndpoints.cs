@@ -1,3 +1,4 @@
+using ReapDeep.Analytics;
 using ReapDeep.QueryApi.Infrastructure;
 
 namespace ReapDeep.QueryApi.Auth;

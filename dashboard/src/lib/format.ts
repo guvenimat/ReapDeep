@@ -46,3 +46,12 @@ export const initials = (text: string) => {
   const words = local.split(/[\s._-]+/).filter((w) => /^\p{L}/u.test(w))
   return ((words[0]?.[0] ?? local[0] ?? '?') + (words[1]?.[0] ?? '')).toUpperCase()
 }
+
+export function ago(iso: string | null): string {
+  if (!iso) return 'never'
+  const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000))
+  if (s < 45) return 'just now'
+  if (s < 3600) return `${Math.round(s / 60)} min ago`
+  if (s < 86400) return `${Math.round(s / 3600)} h ago`
+  return `${Math.round(s / 86400)} d ago`
+}

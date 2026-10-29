@@ -18,6 +18,11 @@ static class Bench
         var range = $"\"date_from\":\"{today.AddDays(-29):yyyy-MM-dd}\",\"date_to\":\"{today:yyyy-MM-dd}\"";
         var person = Seeder.PersonIdFor(42);
         var from30 = Uri.EscapeDataString(today.AddDays(-29).ToString("yyyy-MM-dd"));
+        var cohorts = await CohortIds(http);
+        var heavy = cohorts.GetValueOrDefault(Cohorts.Heavy);
+        var noPurchase = cohorts.GetValueOrDefault(Cohorts.NoPurchase);
+        var pro = cohorts.GetValueOrDefault(Cohorts.Pro);
+        string InCohort(long id) => $$"""{"scope":"cohort","property":"{{id}}","op":"in"}""";
 
         Scenario[] scenarios =
         [
@@ -43,11 +48,24 @@ static class Bench
                 $$"""{"steps":[{"event":"$pageview"},{"event":"signup"},{"event":"purchase"}],"window_seconds":604800,"breakdown":{"property":"$device_type","limit":5},"sampling":0.25,{{range}}}"""),
             new("8a","Events of one person, 30 days (bucket pruning)", "-", $"/api/v1/events?person_id={person}&limit=200&date_from={from30}", null),
             new("8b", "Latest 50 events (7 days)", "-", "/api/v1/events?limit=50", null),
+            new("9a", "Trends total + cohort filter (vs 1)", "< 1 s", "/api/v1/query/trends",
+                $$"""{"series":[{"event":"$pageview","metric":"total"}],"interval":"day","filters":[{{InCohort(heavy)}}],{{range}}}"""),
+            new("9b", "Unique users + cohort filter (vs 2)", "< 1 s", "/api/v1/query/trends",
+                $$"""{"series":[{"event":"$pageview","metric":"unique_users"}],"interval":"day","filters":[{{InCohort(heavy)}}],{{range}}}"""),
+            new("9c", "Unique users, breakdown by 2 cohorts", "< 1 s", "/api/v1/query/trends",
+                $$"""{"series":[{"event":"$pageview","metric":"unique_users"}],"interval":"day","breakdown":{"scope":"cohort","cohort_ids":[{{heavy}},{{pro}}]},{{range}}}"""),
+            new("9d", "Funnel 3 steps + cohort filter (vs 6)", "< 3 s", "/api/v1/query/funnels",
+                $$"""{"steps":[{"event":"$pageview"},{"event":"signup"},{"event":"purchase"}],"window_seconds":604800,"filters":[{{InCohort(noPurchase)}}],{{range}}}"""),
+            new("9e", "Funnel, breakdown by 2 cohorts (vs 7)", "< 3 s", "/api/v1/query/funnels",
+                $$"""{"steps":[{"event":"$pageview"},{"event":"signup"},{"event":"purchase"}],"window_seconds":604800,"breakdown":{"scope":"cohort","cohort_ids":[{{heavy}},{{pro}}]},{{range}}}"""),
+            new("9f", "Funnel 10% sampling + cohort filter (vs 6s)", "< 3 s", "/api/v1/query/funnels",
+                $$"""{"steps":[{"event":"$pageview"},{"event":"signup"},{"event":"purchase"}],"window_seconds":604800,"sampling":0.1,"filters":[{{InCohort(heavy)}}],{{range}}}"""),
         ];
 
         var rows = new List<string[]>();
         foreach (var s in scenarios)
         {
+            if (s.Id.StartsWith('9') && cohorts.Count < 3) continue;
             var (cold, coldServer, sample) = await Call(http, s);
             var client = new List<double>();
             var server = new List<double>();
@@ -71,6 +89,14 @@ static class Bench
 
         Report.Heading($"Query benchmark (project 2, 30 days, {runs} warm runs after 1 cold run)");
         Report.Table(["#", "Scenario", "Cold", "p50", "p95", "p99", "Server p95", "Target (p95)", "Result", "Result sample"], rows);
+    }
+
+    static async Task<Dictionary<string, long>> CohortIds(HttpClient http)
+    {
+        using var doc = JsonDocument.Parse(await http.GetStringAsync("/api/v1/cohorts"));
+        return doc.RootElement.GetProperty("cohorts").EnumerateArray()
+            .Where(c => c.GetProperty("status").GetString() == "ready")
+            .ToDictionary(c => c.GetProperty("name").GetString()!, c => c.GetProperty("id").GetInt64());
     }
 
     static async Task<(double Ms, double ServerMs, string Sample)> Call(HttpClient http, Scenario s)

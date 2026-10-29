@@ -1,5 +1,5 @@
 import type {
-  ApiKey, Dashboard, DashboardSummary, DateRange, DeletionRequest, EventRow, FunnelRequest, FunnelResponse, Insight, InsightKind,
+  ApiKey, Cohort, CohortDefinition, CohortKind, CohortPerson, Dashboard, DashboardSummary, DateRange, DeletionRequest, EventRow, FunnelRequest, FunnelResponse, Insight, InsightKind,
   Me, Member, Metadata, PathsResponse, Person, RetentionResponse, Role, TrendRequest, TrendResponse,
 } from './types'
 
@@ -103,6 +103,22 @@ export const api = {
   updateDashboard: (id: number, body: { name?: string; description?: string; insight_ids?: number[] }) =>
     request<Dashboard>('PUT', `/api/v1/dashboards/${id}`, body),
   deleteDashboard: (id: number) => request<void>('DELETE', `/api/v1/dashboards/${id}`),
+
+  cohorts: (signal?: AbortSignal) => request<{ cohorts: Cohort[] }>('GET', '/api/v1/cohorts', undefined, signal),
+  cohort: (id: number, signal?: AbortSignal) => request<Cohort>('GET', `/api/v1/cohorts/${id}`, undefined, signal),
+  createCohort: (body: { name: string; description?: string; kind: CohortKind; definition?: CohortDefinition; members?: string[] }) =>
+    request<Cohort>('POST', '/api/v1/cohorts', body),
+  updateCohort: (id: number, body: { name?: string; description?: string; definition?: CohortDefinition }) =>
+    request<Cohort>('PUT', `/api/v1/cohorts/${id}`, body),
+  replaceCohortMembers: (id: number, members: string[]) => request<Cohort>('PUT', `/api/v1/cohorts/${id}/members`, { members }),
+  recalculateCohort: (id: number) => request<Cohort>('POST', `/api/v1/cohorts/${id}/recalculate`),
+  deleteCohort: (id: number) => request<void>('DELETE', `/api/v1/cohorts/${id}`),
+  cohortUsage: (id: number, signal?: AbortSignal) =>
+    request<{ insights: { id: number; name: string; kind: string }[] }>('GET', `/api/v1/cohorts/${id}/usage`, undefined, signal),
+  cohortPersons: (id: number, cursor?: string, signal?: AbortSignal) =>
+    request<{ persons: CohortPerson[]; next_cursor: string | null }>('GET', `/api/v1/cohorts/${id}/persons?${qs({ cursor, limit: 50 })}`, undefined, signal),
+  previewCohort: (definition: CohortDefinition, signal?: AbortSignal) =>
+    request<{ persons: number; took_ms: number }>('POST', '/api/v1/cohorts/preview', { definition }, signal),
 
   deletionRequests: (signal?: AbortSignal) => request<{ deletion_requests: DeletionRequest[] }>('GET', '/api/v1/deletion-requests', undefined, signal),
   requestDeletion: (target_type: DeletionRequest['target_type'], target_id: string) =>

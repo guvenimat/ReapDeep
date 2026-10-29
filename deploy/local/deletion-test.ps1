@@ -80,6 +80,14 @@ $ready = WaitFor {
 Check "data ready (person with 2 distinct_ids, 4 events; StarRocks mapping synced)" $ready
 $personId = $person.id
 
+Write-Host "`n1b) Cohorts containing the person"
+$dynBody = "{`"name`":`"Visitors $tag`",`"definition`":{`"groups`":[{`"conditions`":[{`"type`":`"performed_event`",`"event`":`"page_$tag`",`"count`":1,`"within_days`":1}]}]}}"
+$dynCohort = (Sess POST "/api/v1/cohorts" $dynBody).Json
+$staticCohort = (Sess POST "/api/v1/cohorts" "{`"name`":`"List $tag`",`"kind`":`"static`",`"members`":[`"$personId`",`"$control`"]}").Json
+$cohortRows = { StarRocks "SELECT count(*) FROM analytics.cohort_members WHERE project_id = 1 AND cohort_id IN ($($dynCohort.id), $($staticCohort.id)) AND distinct_id IN ('$anonA','$user')" }
+$inCohorts = WaitFor { (& $cohortRows) -eq "4" } 90
+Check "person's 2 distinct_ids are members of a dynamic and a static cohort" $inCohorts
+
 Write-Host "`n2) Creating deletion requests"
 Check "read API key cannot request deletion -> 403" ((Key POST "/api/v1/deletion-requests" "{`"target_type`":`"person`",`"target_id`":`"$personId`"}").Status -eq 403)
 Check "invalid target_type -> 400" ((Sess POST "/api/v1/deletion-requests" '{"target_type":"everything","target_id":"x"}').Status -eq 400)
@@ -108,6 +116,10 @@ $synced = WaitFor { (StarRocks "SELECT count(*) FROM analytics.person_distinct_i
 Check "StarRocks: distinct_id mappings deleted" $synced
 $erased = WaitFor { (StarRocks "SELECT count(*) FROM analytics.persons WHERE person_id = '$personId' AND (is_deleted = 0 OR json_length(properties) > 0)") -eq "0" } 30
 Check "StarRocks: no person properties left" $erased
+Check "cohort memberships of both distinct_ids deleted from StarRocks" ((& $cohortRows) -eq "0")
+Check "PostgreSQL: static cohort members removed, the other member kept" ((Postgres "SELECT string_agg(distinct_id, ',') FROM cohort_static_members WHERE cohort_id = $($staticCohort.id)") -eq $control)
+$null = Sess DELETE "/api/v1/cohorts/$($dynCohort.id)"
+$null = Sess DELETE "/api/v1/cohorts/$($staticCohort.id)"
 $t = Key POST "/api/v1/query/trends" "{`"series`":[{`"event`":`"page_$tag`",`"metric`":`"unique_users`"}]}"
 Check "trends: only the remaining users are counted (control, anon_only deleted, multi person) -> $($t.Json.results[0].total)" ($t.Json.results[0].total -eq 2)
 

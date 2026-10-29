@@ -108,7 +108,9 @@ services:
           GRANT SELECT ON ALL TABLES IN DATABASE analytics TO USER 'reapdeep_query'@'%';
           CREATE USER IF NOT EXISTS 'reapdeep_jobs'@'%' IDENTIFIED BY '$$STARROCKS_JOBS_PASSWORD';
           ALTER USER 'reapdeep_jobs'@'%' IDENTIFIED BY '$$STARROCKS_JOBS_PASSWORD';
-          GRANT SELECT, DELETE ON ALL TABLES IN DATABASE analytics TO USER 'reapdeep_jobs'@'%';"
+          GRANT SELECT, DELETE ON ALL TABLES IN DATABASE analytics TO USER 'reapdeep_jobs'@'%';
+          GRANT INSERT ON TABLE analytics.cohort_members TO USER 'reapdeep_jobs'@'%';
+          CREATE RESOURCE GROUP IF NOT EXISTS rg_jobs TO (user='reapdeep_jobs') WITH ('cpu_weight'='2', 'mem_limit'='0.3', 'concurrency_limit'='4');"
     environment:
       STARROCKS_QUERY_PASSWORD: ${STARROCKS_QUERY_PASSWORD:?Missing STARROCKS_QUERY_PASSWORD in .env - run run-local.ps1 or smoke-test.sh}
       STARROCKS_JOBS_PASSWORD: ${STARROCKS_JOBS_PASSWORD:?Missing STARROCKS_JOBS_PASSWORD in .env - run run-local.ps1 or smoke-test.sh}
@@ -150,7 +152,9 @@ services:
         condition: service_healthy
 
   person-worker:
-    build: ../../src/ReapDeep.PersonWorker
+    build:
+      context: ../../src
+      dockerfile: ReapDeep.PersonWorker/Dockerfile
     image: reapdeep-person-worker
     container_name: reapdeep-person-worker
     profiles: ["app"]
@@ -161,6 +165,8 @@ services:
       Deletion__IntervalSeconds: "30"
       Deletion__MinAgeSeconds: "20"
       Deletion__TombstoneSeconds: "60"
+      Cohorts__PollSeconds: "5"
+      Cohorts__MaxRefreshSeconds: "30"
     depends_on:
       kafka-init:
         condition: service_completed_successfully
@@ -171,7 +177,9 @@ services:
     restart: unless-stopped
 
   query-api:
-    build: ../../src/ReapDeep.QueryApi
+    build:
+      context: ../../src
+      dockerfile: ReapDeep.QueryApi/Dockerfile
     image: reapdeep-query-api
     container_name: reapdeep-query-api
     profiles: ["app"]

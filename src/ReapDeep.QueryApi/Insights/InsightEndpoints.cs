@@ -1,4 +1,5 @@
 using System.Text.Json;
+using ReapDeep.Analytics;
 using ReapDeep.QueryApi.Auth;
 using ReapDeep.QueryApi.Infrastructure;
 

@@ -1,21 +1,23 @@
 using System.Diagnostics;
-using ReapDeep.QueryApi.Analytics.Sql;
+using ReapDeep.Analytics;
+using ReapDeep.Analytics.Sql;
 using ReapDeep.QueryApi.Auth;
+using ReapDeep.QueryApi.Cohorts;
 using ReapDeep.QueryApi.Infrastructure;
 
 namespace ReapDeep.QueryApi.Analytics;
 
-public sealed class RetentionService(StarRocksClient starRocks)
+public sealed class RetentionService(StarRocksClient starRocks, CohortService cohortService)
 {
     sealed record Plan(string Period, int Periods, TimeRange Cohorts, SqlQuery Query);
 
-    public Task<ExplainResponse> ExplainAsync(ProjectContext project, RetentionRequest req, CancellationToken ct) =>
-        starRocks.ExplainAsync([BuildPlan(project, req).Query], ct);
+    public async Task<ExplainResponse> ExplainAsync(ProjectContext project, RetentionRequest req, CancellationToken ct) =>
+        await starRocks.ExplainAsync([(await BuildPlanAsync(project, req, ct)).Query], ct);
 
     public async Task<RetentionResponse> RunAsync(ProjectContext project, RetentionRequest req, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
-        var plan = BuildPlan(project, req);
+        var plan = await BuildPlanAsync(project, req, ct);
         var rows = await starRocks.QueryAsync(plan.Query,
             r => (Cohort: Convert.ToInt64(r.GetValue(0)), Period: Convert.ToInt64(r.GetValue(1)), Persons: r.GetInt64(2)), ct);
 
@@ -37,7 +39,7 @@ public sealed class RetentionService(StarRocksClient starRocks)
             sw.Elapsed.TotalMilliseconds);
     }
 
-    static Plan BuildPlan(ProjectContext project, RetentionRequest req)
+    async Task<Plan> BuildPlanAsync(ProjectContext project, RetentionRequest req, CancellationToken ct)
     {
         var startEvent = Ensure.NotBlank(req.StartEvent, "start_event");
         var returnEvent = string.IsNullOrWhiteSpace(req.ReturnEvent) ? startEvent : req.ReturnEvent.Trim();
@@ -52,7 +54,7 @@ public sealed class RetentionService(StarRocksClient starRocks)
             : cohorts;
 
         var b = new SqlBuilder(project.ProjectId, activity.FromUtc, activity.ToUtc);
-        b.AddFilters(req.Filters);
+        b.AddFilters(req.Filters, await cohortService.ResolveAsync(project, req.Filters, null, ct));
         var query = RetentionSql.Build(b, startEvent, returnEvent, period, periods, activity, project.TimeZoneId, cohorts.ToUtc);
         return new Plan(period, periods, cohorts, query);
     }
