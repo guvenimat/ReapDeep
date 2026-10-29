@@ -28,6 +28,7 @@ public static class EventMessage
         ["$screen_height"] = ("screen_height", 0),
         ["$lib"] = ("lib", 32),
         ["$lib_version"] = ("lib_version", 32),
+        ["item_id"] = ("item_id", 200),
     };
 
     public const int MaxIdBytes = 200;
@@ -65,7 +66,12 @@ public static class EventMessage
                 }
                 else
                 {
-                    var s = v.ValueKind == JsonValueKind.String ? v.GetString() : Derive(column, cols, ua);
+                    var s = v.ValueKind switch
+                    {
+                        JsonValueKind.String => v.GetString(),
+                        JsonValueKind.Number => v.GetRawText(),
+                        _ => Derive(column, cols, ua),
+                    };
                     w.WriteString(column, Truncate(s, maxBytes));
                 }
             }

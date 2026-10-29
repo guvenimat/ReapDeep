@@ -12,7 +12,7 @@ public static partial class ColumnMapper
         "current_url", "host", "pathname", "referrer", "referring_domain",
         "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
         "browser", "browser_version", "os", "os_version", "device_type", "screen_width", "screen_height",
-        "lib", "lib_version",
+        "lib", "lib_version", "item_id",
     ];
     public static readonly FrozenSet<string> EventColumns = EventColumnList.ToFrozenSet();
 
