@@ -1,64 +1,192 @@
 # ReapDeep
 
-Multi-tenant, high-performance web product analytics platform (in the spirit of PostHog / Mixpanel).
+Multi-tenant, high-performance web product analytics, in the spirit of PostHog and Mixpanel.
+A tiny JavaScript SDK captures events, a Native AOT .NET ingestion API writes them to Kafka,
+StarRocks makes them queryable within seconds, and a React dashboard answers trend, funnel and
+person questions over hundreds of millions of events.
 
-```
-JS SDK ──► Ingestion API ──► Kafka ──► StarRocks ◄── Query API ◄── Dashboard
-                               │                        │
-                               └──► Person worker ──► PostgreSQL
+- **Fast ingestion:** 50K events/s on a single machine with p99 under 10 ms; a `202` response means the event is durably in Kafka.
+- **Fresh data:** events are queryable in 4-11 s (Kafka -> StarRocks Routine Load).
+- **Identity resolution:** anonymous visitors are merged into identified users; their earlier events count as the same person in trends and funnels.
+- **Multi-tenant by design:** shared tables keyed by `project_id`; every StarRocks query comes from a single SQL builder that always adds the project and time filters.
+- **Small footprint:** ~2.4 KB gzip SDK with no dependencies, 30-50 MB ingestion process, dashboard without chart or UI libraries.
+- **Permissive licensing only:** Apache 2.0 for this repo; every dependency is MIT or Apache 2.0.
+
+## Architecture
+
+```mermaid
+flowchart LR
+    SDK["JS SDK<br/>browser"] -->|"POST /capture"| ING["Ingestion API<br/>.NET, Native AOT"]
+    ING -->|"acks=all, idempotent"| K[("Kafka<br/>events")]
+    K -->|"Routine Load"| SR[("StarRocks<br/>events, persons,<br/>person_distinct_ids")]
+    K -->|"$identify / $set"| PW["Person worker<br/>.NET, Native AOT"]
+    PW -->|"persons + outbox<br/>one transaction"| PG[("PostgreSQL<br/>metadata, persons")]
+    PG -->|"outbox publisher"| KU[("Kafka<br/>person updates")]
+    KU -->|"Routine Load<br/>merge_condition = version"| SR
+    QA["Query API<br/>.NET, Native AOT"] --> SR
+    QA --> PG
+    DB["Dashboard<br/>React"] -->|"/api"| QA
 ```
 
 | Component | Path | Stack |
 |---|---|---|
 | Ingestion API | `src/ReapDeep.Ingestion` | .NET 10 Minimal API, Native AOT, Confluent.Kafka |
-| Person worker (identity resolution) | `src/ReapDeep.PersonWorker` | .NET 10 Worker, Native AOT, transactional outbox |
-| Query API | `src/ReapDeep.QueryApi` | .NET 10 Minimal API, Native AOT, MySqlConnector + Npgsql |
-| JS SDK | `sdk/js` | TypeScript, esbuild, ~2.4 KB gzip |
+| Person worker | `src/ReapDeep.PersonWorker` | .NET 10 Worker, Native AOT, transactional outbox |
+| Query API | `src/ReapDeep.QueryApi` | .NET 10 Minimal API, Native AOT, MySqlConnector, Npgsql |
+| JS SDK | `sdk/js` | TypeScript, esbuild (ESM + IIFE) |
 | Dashboard | `dashboard` | React 19, TypeScript, Vite, hand-written SVG charts |
+| Load test | `tests/ReapDeep.LoadTest` | .NET 10 console app |
 | Local stack | `deploy/local` | Docker Compose: Kafka 4.1 (KRaft), StarRocks 4.0, PostgreSQL 17 |
 
-## Getting started
+### How it works
 
-Requirements: Docker with at least **8 GB RAM**, .NET 10 SDK and Node.js 22+ for local development.
+- **Ingestion.** The API validates the project key, parses the user agent, corrects client clock skew using `sent_at`, and promotes common properties (URL, UTM, browser, OS, device) to columns. It returns `202` only after Kafka acknowledges every event in the batch, and `503` otherwise. The SDK retries with the same `event_id`.
+- **Storage.** `events` is a Duplicate Key table partitioned by day. `persons` and `person_distinct_ids` are Primary Key tables. `events` and `person_distinct_ids` share a colocate group distributed by `HASH(project_id, distinct_id)`, so the person join runs locally on each node.
+- **Identity.** PostgreSQL is the source of truth for persons. The worker applies merge rules (two identified persons are never merged) and writes changes to an outbox in the same transaction. A publisher forwards them to Kafka, and StarRocks applies them in version order.
+- **Queries.** A person is `COALESCE(pdi.person_id, e.distinct_id)` over a `LEFT JOIN`, so anonymous events are never dropped. Date filters use UTC boundaries for partition pruning; the project time zone is used only for bucketing.
+
+## Quick start
+
+Requirements: Docker with at least **8 GB of RAM**. The .NET 10 SDK and Node.js 22+ are only needed for development outside Docker.
+
+**Windows (PowerShell):**
 
 ```powershell
 cd deploy/local
-.\run-local.ps1                                  # creates .env, starts the stack, runs a smoke test
-docker compose --profile app up -d --build      # ingestion, person worker, query API, dashboard
+.\run-local.ps1                               # creates .env, starts the data stack, runs a smoke test
+docker compose --profile app up -d --build    # ingestion, person worker, query API, dashboard
 ```
 
-On Linux/macOS: `cp .env.example .env` (or let `./smoke-test.sh` generate it), then `docker compose up -d`.
+**Linux / macOS:**
 
-`run-local.ps1` creates `deploy/local/.env` with a random PostgreSQL password and a random read API key (`READ_API_KEY`). The file is git-ignored. All ports are bound to `127.0.0.1` only.
+```bash
+cd deploy/local
+./smoke-test.sh                               # creates .env if missing (run after the stack is up)
+docker compose --profile app up -d --build
+```
+
+On first start, `.env` is created with a random PostgreSQL password and a random read API key (`READ_API_KEY`). It is git-ignored, and every port is bound to `127.0.0.1`.
 
 | Service | Address |
 |---|---|
 | Dashboard | http://localhost:3000 (enter `READ_API_KEY` from `.env`) |
-| Ingestion API | `POST http://localhost:8000/capture` (public project key `pk_dev_local`) |
+| Ingestion API | `POST http://localhost:8000/capture` (local project key `pk_dev_local`) |
 | Query API | http://localhost:8001 (`Authorization: Bearer <READ_API_KEY>`) |
 | StarRocks (MySQL protocol) | `localhost:9030`, user `root` |
 | PostgreSQL | `localhost:5432`, user `reapdeep`, password in `.env` |
 | Kafka | `localhost:9092` |
 
-To run a .NET service outside Docker, pass the connection string through the environment, e.g. `ConnectionStrings__Postgres="Host=localhost;Database=reapdeep;Username=reapdeep;Password=<from .env>"`.
+### Send an event
+
+```bash
+curl -i http://localhost:8000/capture -d '{
+  "api_key": "pk_dev_local",
+  "batch": [{ "event": "$pageview", "distinct_id": "user_1",
+              "properties": { "$current_url": "https://example.com/pricing" } }]
+}'
+```
+
+### Query it
+
+```bash
+READ_API_KEY=$(grep READ_API_KEY .env | cut -d= -f2)
+curl http://localhost:8001/api/v1/query/trends \
+  -H "Authorization: Bearer $READ_API_KEY" -H "Content-Type: application/json" \
+  -d '{ "series": [{ "event": "$pageview", "metric": "unique_users" }], "interval": "day" }'
+```
+
+Other endpoints: `POST /api/v1/query/funnels`, `GET /api/v1/events`, `GET /api/v1/persons[/{id}]`, `GET /api/v1/metadata`, `GET /healthz`.
+
+### Add the SDK to a page
+
+```html
+<script src="reapdeep.min.js"></script>
+<script>
+  const rd = reapdeep.init('pk_dev_local', { apiHost: 'http://localhost:8000' })
+  rd.capture('signed_up', { plan: 'pro' })
+  rd.identify('user_123', { email: 'a@example.com' })
+</script>
+```
+
+Page views (including SPA navigation), sessions, UTM parameters, batching, retries and `sendBeacon` on page unload are handled automatically. See [`sdk/js/README.md`](sdk/js/README.md).
+
+## Performance
+
+Measured with `deploy/local/load-test.ps1` on **a single machine** (16 CPU, 15 GB shared by Docker): the load generator, ingestion, Kafka, a single-node StarRocks and PostgreSQL all run on the same host. The numbers show where the bottlenecks are, not production capacity.
+
+### Ingestion
+
+| Scenario | Achieved | p50 | p95 | p99 | Lost events | Freshness | Ingestion API |
+|---|---|---|---|---|---|---|---|
+| 10K/s, batch 10, 30 s | 9,999/s | 4.0 ms | 6.5 ms | **7.0 ms** | 0 / 300K | - | 51% CPU, 30 MB |
+| 10K/s sustained, batch 50, 60 s | 10,000/s | 6.1 ms | 7.2 ms | **7.4 ms** | 0 / 600K | **3.9 s** | 28% CPU, 31 MB |
+| 50K/s peak, batch 100, 20 s | 49,975/s | 5.6 ms | 7.8 ms | **9.2 ms** | 0 / 1M | **10.6 s** | 113% CPU, 49 MB |
+
+Targets: p99 < 50 ms, freshness < 30 s, no loss after `202`. All met with zero Routine Load error rows.
+
+### Queries over 100M events
+
+The seed is 100M events over 30 days, 150K identified persons and 300K distinct IDs. It takes 2.59 GB on disk (ZSTD, 27.3 bytes per event). Each query ran once cold and then 20 times warm.
+
+| Query | p95 | Target |
+|---|---|---|
+| Trend, total count, daily | **110 ms** | < 1 s, met |
+| Trend, unique users (person join) | **1,135 ms** | < 1 s, borderline |
+| Trend, unique users + breakdown + filter | **1,115 ms** | < 1 s, borderline |
+| Trend with person property filter | **779 ms** | < 1 s, met |
+| Trend with exact deduplication | 1,404 ms | optional |
+| Funnel, 3 steps, exact | 4,128 ms | < 3 s, **not met** on one node |
+| Funnel, 3 steps, 10% sampling | **790 ms** | met (error ~0.3%) |
+| Funnel + breakdown, 25% sampling | **1,243 ms** | met (error ~0.5%) |
+| Events of one person (bucket pruning) | **28 ms** | - |
+
+The optimizations that got us here: a fixed-offset time bucketing path when the range has no DST change, separate parallel queries instead of `GROUPING SETS`, aggregating to `(distinct_id, bucket)` before the person join, 64-bit hashes for deduplication and funnel keys, and optional deterministic person sampling for funnels. Exact results stay the default. The unique-user and exact-funnel numbers still need to be measured on a multi-node StarRocks cluster.
 
 ## Tests
 
 ```powershell
 cd deploy/local
-.\identity-test.ps1     # identity resolution scenarios end to end
+.\identity-test.ps1     # identity resolution, 10 end-to-end scenarios
 .\query-test.ps1        # Query API: trends, funnels, events, persons, EXPLAIN, latency
 .\dashboard-test.ps1    # headless Chrome against the dashboard (Chrome DevTools Protocol)
+.\load-test.ps1         # ingestion load, 100M seed, query benchmark, cleanup
 
 cd ../../sdk/js
-npm test                # SDK unit tests
+npm test                # SDK unit tests (vitest + jsdom)
 .\demo\e2e.ps1          # real browser -> ingestion -> Kafka -> StarRocks
 ```
 
-## Useful commands
+Useful commands:
 
 ```bash
 docker compose exec starrocks mysql -h127.0.0.1 -P9030 -uroot
 docker compose exec starrocks mysql -h127.0.0.1 -P9030 -uroot -e "SHOW ROUTINE LOAD FROM analytics\G"
 docker compose --profile app down -v    # reset everything, including data
 ```
+
+Init SQL runs only on empty volumes. After a schema change, run `docker compose down -v` and start again. To run a .NET service outside Docker, pass connection strings through the environment, for example `ConnectionStrings__Postgres="Host=localhost;Database=reapdeep;Username=reapdeep;Password=<from .env>"`.
+
+## Repository layout
+
+```
+src/ReapDeep.Ingestion      Ingestion API
+src/ReapDeep.PersonWorker   identity resolution worker
+src/ReapDeep.QueryApi       Query API and the single SQL builder (SqlBuilder.cs)
+sdk/js                      browser SDK
+dashboard                   React dashboard, served by nginx
+tests/ReapDeep.LoadTest     load generator, seeder and query benchmark
+deploy/local                Docker Compose stack, schemas and test scripts
+```
+
+## Status and limitations
+
+ReapDeep is an early v1. It runs end to end locally but has not been operated in production yet.
+
+- The dashboard authenticates with a project read key stored in the browser; user accounts and sessions are not implemented yet.
+- Not in v1: session replay, mobile SDKs, autocapture, feature flags.
+- Production hardening still to do: a read-only StarRocks user, a restricted CORS origin for the Query API, trusted-proxy handling for `X-Forwarded-For`.
+- Data deletion requests are planned as periodic batch `DELETE` jobs.
+
+## License
+
+Licensed under the [Apache License, Version 2.0](LICENSE). See [NOTICE](NOTICE) for attribution.
