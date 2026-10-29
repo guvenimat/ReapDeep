@@ -42,8 +42,10 @@ export const trendLabel = (r: TrendResponse['results'][number]) =>
   [r.event, METRICS.find((m) => m.id === r.metric)?.label, r.breakdown_value].filter(Boolean).join(' · ')
 
 export function trendChartSeries(data?: TrendResponse): ChartSeries[] {
-  return (data?.results ?? []).slice(0, MAX_SERIES).map((r, i) => ({
-    key: `${i}`, label: trendLabel(r), colorIndex: i, values: r.data.map((d) => d.count),
+  const results = data?.results ?? []
+  const single = new Set(results.map((r) => `${r.event}|${r.metric}`)).size === 1
+  return results.slice(0, MAX_SERIES).map((r, i) => ({
+    key: `${i}`, label: single && r.breakdown_value !== null ? r.breakdown_value : trendLabel(r), colorIndex: i, values: r.data.map((d) => d.count),
   }))
 }
 

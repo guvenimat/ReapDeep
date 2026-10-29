@@ -5,9 +5,12 @@
 
 Multi-tenant, high-performance web product analytics, in the spirit of PostHog and Mixpanel.
 A tiny JavaScript SDK captures events, a Native AOT .NET ingestion API writes them to Kafka,
-StarRocks makes them queryable within seconds, and a React dashboard answers trend, funnel and
-person questions over hundreds of millions of events.
+StarRocks makes them queryable within seconds, and a React dashboard answers trend, funnel,
+retention, path and person questions over hundreds of millions of events.
 
+![Demo Shop dashboard](docs/images/dashboard.png)
+
+- **Analyses:** trends (totals, unique users, breakdowns), funnels with conversion windows, weekly or daily retention cohorts, user paths, a live event stream and person profiles; any of them can be saved and arranged on dashboards.
 - **Fast ingestion:** 50K events/s on a single machine with p99 under 10 ms; a `202` response means the event is durably in Kafka.
 - **Fresh data:** events are queryable in 4-11 s (Kafka -> StarRocks Routine Load).
 - **Identity resolution:** anonymous visitors are merged into identified users; their earlier events count as the same person in trends and funnels.
@@ -100,7 +103,31 @@ curl http://localhost:8001/api/v1/query/trends \
   -d '{ "series": [{ "event": "$pageview", "metric": "unique_users" }], "interval": "day" }'
 ```
 
-Other endpoints: `POST /api/v1/query/funnels`, `GET /api/v1/events`, `GET /api/v1/persons[/{id}]`, `GET /api/v1/metadata`, `GET /healthz`.
+Other endpoints: `POST /api/v1/query/funnels`, `POST /api/v1/query/retention`, `POST /api/v1/query/paths`, `GET /api/v1/events`, `GET /api/v1/persons[/{id}]`, `GET /api/v1/metadata`, `GET /healthz`.
+
+### Demo data
+
+```powershell
+cd deploy/local
+.\demo-data.ps1     # ~22K events from 3,000 visitors over 8 weeks, sent through the ingestion API
+```
+
+The seed creates a **Demo Shop** project with a deterministic store scenario: traffic sources, desktop and mobile browsers, product pages, a cart and checkout funnel, sign-ups that merge anonymous history, and returning visitors over the following weeks. It also creates a "Demo Shop overview" dashboard. Pick the project in the top bar and choose "Last 30 days".
+
+| Funnel with breakdown | Weekly retention |
+|---|---|
+| ![Funnel](docs/images/funnel.png) | ![Retention](docs/images/retention.png) |
+
+| Paths | Person profile |
+|---|---|
+| ![Paths](docs/images/paths.png) | ![Person](docs/images/person.png) |
+
+Dark mode uses its own validated color steps: [screenshot](docs/images/dashboard-dark.png).
+
+### Retention and paths
+
+- **Retention:** cohorts are formed from the first time a person did the start event in the selected range, daily or weekly. Each cell is the share of the cohort that did the return event in that period; periods that have not happened yet are empty, and the average row is weighted by cohort size.
+- **Paths:** each person's first start event in the range, followed by their next events within a window (30 min to 1 day), with repeats in a row collapsed and `$pageview` split by page. The result has the top events per step and the most common full paths.
 
 ### Saved insights and dashboards
 
@@ -204,6 +231,8 @@ deploy/local                Docker Compose stack, schemas and test scripts
 ReapDeep is an early v1. It runs end to end locally but has not been operated in production yet.
 
 - Members are added with a temporary password; there are no invitation emails or password reset by email.
+- A person's `created_at` is the time the person worker processed their first `$identify` or `$set`, not the event's own timestamp; it only differs for backfilled data such as the demo seed.
+- Retention and paths read raw events and join persons on every query; they are fast on the demo and test data but were not part of the 100M-event benchmark.
 - Not in v1: session replay, mobile SDKs, autocapture, feature flags.
 - Behind a load balancer, set `ForwardedHeaders__TrustedNetworks` (CIDR list) on the ingestion and Query APIs; `X-Forwarded-For` is ignored otherwise. The Query API sends no CORS headers unless `QueryApi__CorsOrigins` is set.
 - The deletion job runs every 30 s in the local compose file so tests finish quickly; the default is once a day (`Deletion__IntervalSeconds`). Raw events also stay in Kafka for its 7-day retention.
