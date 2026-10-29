@@ -154,7 +154,7 @@ The optimizations that got us here: a fixed-offset time bucketing path when the 
 ```powershell
 cd deploy/local
 .\identity-test.ps1     # identity resolution, 10 end-to-end scenarios
-.uth-test.ps1         # sign-in, sessions, project access, CORS, X-Forwarded-For, StarRocks grants
+.\auth-test.ps1         # sign-in, sessions, project access, CORS, X-Forwarded-For, StarRocks grants
 .\query-test.ps1        # Query API: trends, funnels, events, persons, EXPLAIN, latency
 .\dashboard-test.ps1    # headless Chrome against the dashboard (Chrome DevTools Protocol)
 .\load-test.ps1         # ingestion load, 100M seed, query benchmark, cleanup
