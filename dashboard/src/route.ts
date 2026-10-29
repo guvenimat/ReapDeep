@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { DateRange, Interval } from './api'
 
-export type Tab = 'dashboards' | 'trends' | 'funnels' | 'events' | 'persons' | 'settings'
+export type Tab = 'dashboards' | 'trends' | 'funnels' | 'retention' | 'paths' | 'events' | 'persons' | 'settings'
 export const TABS: { id: Tab; label: string }[] = [
   { id: 'dashboards', label: 'Dashboards' },
   { id: 'trends', label: 'Trends' },
   { id: 'funnels', label: 'Funnels' },
+  { id: 'retention', label: 'Retention' },
+  { id: 'paths', label: 'Paths' },
   { id: 'events', label: 'Events' },
   { id: 'persons', label: 'Persons' },
   { id: 'settings', label: 'Settings' },

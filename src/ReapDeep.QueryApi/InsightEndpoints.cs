@@ -61,7 +61,7 @@ public static class InsightEndpoints
     {
         var project = ProjectContext.From(ctx);
         if (RequireUser(project) is { } denied) return denied;
-        if (req.Kind is not ("trends" or "funnels")) throw new QueryException("kind: trends | funnels");
+        if (req.Kind is not ("trends" or "funnels" or "retention" or "paths")) throw new QueryException("kind: trends | funnels | retention | paths");
         var name = Name(req.Name);
         var query = Query(req.Query);
 

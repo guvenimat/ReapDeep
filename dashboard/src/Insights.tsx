@@ -3,13 +3,15 @@ import { api, type Insight, type InsightKind } from './api'
 import { FunnelChart, Legend, TimeChart } from './charts'
 import { dateTime, num } from './format'
 import { FUNNEL_DEFAULT, funnelBody, funnelGroups, type FunnelState } from './Funnels'
+import { PathList, PATHS_DEFAULT, pathsBody, type PathsState } from './Paths'
+import { RETENTION_DEFAULT, retentionBody, RetentionTable, type RetentionState } from './Retention'
 import type { rangeFromParams } from './route'
 import { TREND_DEFAULT, trendBody, trendChartSeries, trendInterval, type TrendState } from './Trends'
 import { Status, useQuery } from './ui'
 
 type Range = ReturnType<typeof rangeFromParams>
 
-const KIND_LABEL: Record<InsightKind, string> = { trends: 'Trend', funnels: 'Funnel' }
+const KIND_LABEL: Record<InsightKind, string> = { trends: 'Trend', funnels: 'Funnel', retention: 'Retention', paths: 'Paths' }
 
 export function insightHref(insight: Insight, params: URLSearchParams) {
   const p = new URLSearchParams()
@@ -261,6 +263,8 @@ function DashboardView({ id, params, range, onClose }: { id: number; params: URL
 
 function InsightTile({ insight, range }: { insight: Insight; range: Range }) {
   if (insight.kind === 'trends') return <TrendTile state={{ ...TREND_DEFAULT, ...(insight.query as Partial<TrendState>) }} range={range} />
+  if (insight.kind === 'retention') return <RetentionTile state={{ ...RETENTION_DEFAULT, ...(insight.query as Partial<RetentionState>) }} range={range} />
+  if (insight.kind === 'paths') return <PathsTile state={{ ...PATHS_DEFAULT, ...(insight.query as Partial<PathsState>) }} range={range} />
   return <FunnelTile state={{ ...FUNNEL_DEFAULT, ...(insight.query as Partial<FunnelState>) }} range={range} />
 }
 
@@ -287,6 +291,26 @@ function FunnelTile({ state, range }: { state: FunnelState; range: Range }) {
     <Status state={q} empty={groups.every((g) => g.counts[0] === 0)}>
       <Legend items={groups.map((g) => ({ label: g.label, colorIndex: g.colorIndex }))} />
       <FunnelChart steps={q.data?.results[0]?.steps.map((s) => s.event) ?? []} groups={groups} />
+    </Status>
+  )
+}
+
+function RetentionTile({ state, range }: { state: RetentionState; range: Range }) {
+  const body = JSON.stringify(retentionBody(state, range))
+  const q = useQuery((signal) => api.retention(JSON.parse(body), signal), [body])
+  return (
+    <Status state={q} empty={q.data?.cohorts.every((c) => c.size === 0)}>
+      {q.data && <RetentionTable data={q.data} maxCohorts={5} />}
+    </Status>
+  )
+}
+
+function PathsTile({ state, range }: { state: PathsState; range: Range }) {
+  const body = JSON.stringify(pathsBody(state, range))
+  const q = useQuery((signal) => api.paths(JSON.parse(body), signal), [body])
+  return (
+    <Status state={q} empty={q.data?.persons === 0}>
+      {q.data && <PathList data={q.data} limit={6} />}
     </Status>
   )
 }

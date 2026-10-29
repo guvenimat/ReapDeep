@@ -13,6 +13,17 @@ export interface TrendResponse { interval: Interval; timezone: string; results: 
 export interface FunnelStepResult { step: number; event: string; count: number; conversion_from_first: number; conversion_from_previous: number }
 export interface FunnelResponse { window_seconds: number; sampling: number; results: { breakdown_value: string | null; steps: FunnelStepResult[] }[]; took_ms: number }
 
+export interface RetentionResponse {
+  period: 'day' | 'week'; periods: number; timezone: string
+  cohorts: { cohort_start: string; size: number; counts: (number | null)[] }[]
+  average: (number | null)[]; took_ms: number
+}
+export interface PathsResponse {
+  start_event: string; depth: number; persons: number
+  steps: { step: number; persons: number; nodes: { name: string; persons: number }[] }[]
+  paths: { nodes: string[]; persons: number }[]; took_ms: number
+}
+
 export interface EventRow {
   event_id: string; event: string; timestamp: string; distinct_id: string; resolved_person_id: string
   columns: Record<string, string>; properties: Record<string, unknown> | null
@@ -33,7 +44,7 @@ export interface Me { user: User; projects: Project[] }
 export type Role = Project['role']
 export interface Member { user_id: number; email: string; name: string; role: Role; created_at: string }
 export interface ApiKey { id: number; name: string; prefix: string; created_by: string | null; created_at: string; revoked_at: string | null }
-export type InsightKind = 'trends' | 'funnels'
+export type InsightKind = 'trends' | 'funnels' | 'retention' | 'paths'
 export interface Insight {
   id: number; name: string; kind: InsightKind; query: Record<string, unknown>
   created_by: string | null; created_at: string; updated_at: string
@@ -117,6 +128,8 @@ export const api = {
     request<TrendResponse>('POST', '/api/v1/query/trends', body, signal),
   funnels: (body: { steps: { event: string }[]; window_seconds: number; filters: Filter[]; breakdown?: Breakdown; sampling: number } & DateRange, signal?: AbortSignal) =>
     request<FunnelResponse>('POST', '/api/v1/query/funnels', body, signal),
+  retention: (body: object, signal?: AbortSignal) => request<RetentionResponse>('POST', '/api/v1/query/retention', body, signal),
+  paths: (body: object, signal?: AbortSignal) => request<PathsResponse>('POST', '/api/v1/query/paths', body, signal),
   events: (params: { event?: string; distinct_id?: string; person_id?: string; limit?: number } & DateRange, signal?: AbortSignal) =>
     request<{ events: EventRow[]; took_ms: number }>('GET', `/api/v1/events?${qs(params)}`, undefined, signal),
   persons: (params: { search?: string; cursor?: string; limit?: number; identified?: boolean }, signal?: AbortSignal) =>

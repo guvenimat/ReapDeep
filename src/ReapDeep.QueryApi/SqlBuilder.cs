@@ -208,4 +208,55 @@ public static class Queries
     }
 
     static int Limit(Breakdown bd) => bd.Limit is null ? 10 : Math.Clamp(bd.Limit.Value, 1, 100);
+
+    public const string PathSeparator = "\u001f";
+    static readonly string[] PathExcluded = ["$identify", "$set"];
+
+    static string LocalTime(SqlBuilder b, TimeRange range, string tz) => range.FixedOffsetSeconds is { } offset
+        ? $"seconds_add(e.timestamp, {offset})"
+        : $"convert_tz(e.timestamp, 'UTC', {b.P(tz)})";
+
+    public static string PeriodIndex(string period, string local) => period == "week"
+        ? $"CAST(floor(datediff({local}, '1970-01-05') / 7) AS BIGINT)"
+        : $"CAST(datediff({local}, '1970-01-05') AS BIGINT)";
+
+    public static string Retention(SqlBuilder b, string startEvent, string returnEvent, string period, int periods,
+        TimeRange range, string tz, DateTime cohortEndUtc)
+    {
+        b.Where($"e.event IN ({b.P(startEvent)}, {b.P(returnEvent)})");
+        var start = b.P(startEvent);
+        var ret = b.P(returnEvent);
+        var ev = b.Select($"{b.Person()} AS person, {PeriodIndex(period, LocalTime(b, range, tz))} AS p, " +
+                          $"e.event = {start} AND e.timestamp < {b.P(cohortEndUtc)} AS is_start, e.event = {ret} AS is_ret");
+        return $"WITH ev AS ({ev}), " +
+               "cohort AS (SELECT person, MIN(p) AS c FROM ev WHERE is_start GROUP BY person), " +
+               "act AS (SELECT DISTINCT person, p FROM ev WHERE is_ret) " +
+               "SELECT c.c AS cohort, a.p - c.c AS k, COUNT(*) AS n FROM cohort c JOIN act a ON a.person = c.person " +
+               $"AND a.p >= c.c AND a.p <= c.c + {periods} GROUP BY 1, 2 " +
+               "UNION ALL SELECT c AS cohort, -1 AS k, COUNT(*) AS n FROM cohort GROUP BY c";
+    }
+
+    static string PathCtes(SqlBuilder b, string startEvent, int windowSeconds, bool pageviewPaths)
+    {
+        b.Where($"e.event NOT IN ({string.Join(", ", PathExcluded.Select(x => b.P(x)))})");
+        var pageview = b.P("$pageview");
+        var node = pageviewPaths
+            ? $"IF(e.event = {pageview}, concat({b.P("$pageview ")}, COALESCE(e.pathname, '')), e.event)"
+            : "e.event";
+        var ev = b.Select($"{b.Person()} AS person, e.timestamp AS ts, e.event_id AS eid, {node} AS node, e.event = {b.P(startEvent)} AS is_start");
+        return $"WITH ev AS ({ev}), " +
+               "s AS (SELECT person, MIN(ts) AS t0 FROM ev WHERE is_start GROUP BY person), " +
+               "seq AS (SELECT ev.person, ev.ts, ev.eid, ev.node, ev.is_start, LAG(ev.node) OVER (PARTITION BY ev.person ORDER BY ev.ts, ev.is_start DESC, ev.eid) AS prev " +
+               $"FROM ev JOIN s ON s.person = ev.person AND ev.ts >= s.t0 AND ev.ts < seconds_add(s.t0, {windowSeconds})), " +
+               "ranked AS (SELECT person, node, ROW_NUMBER() OVER (PARTITION BY person ORDER BY ts, is_start DESC, eid) AS rn FROM seq WHERE prev IS NULL OR prev <> node) ";
+    }
+
+    public static string PathSteps(SqlBuilder b, string startEvent, int depth, int windowSeconds, bool pageviewPaths) =>
+        PathCtes(b, startEvent, windowSeconds, pageviewPaths) +
+        $"SELECT rn, node, COUNT(*) AS n FROM ranked WHERE rn <= {depth} GROUP BY rn, node";
+
+    public static string PathSequences(SqlBuilder b, string startEvent, int depth, int windowSeconds, bool pageviewPaths, int limit) =>
+        PathCtes(b, startEvent, windowSeconds, pageviewPaths) +
+        $"SELECT path, COUNT(*) AS n FROM (SELECT person, group_concat(node ORDER BY rn SEPARATOR '{PathSeparator}') AS path " +
+        $"FROM ranked WHERE rn <= {depth} GROUP BY person) x GROUP BY path ORDER BY n DESC, path LIMIT {limit}";
 }
