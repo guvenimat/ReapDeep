@@ -15,7 +15,7 @@ public sealed class SqlBuilder
     readonly List<(string Name, object Value)> _params = [];
     readonly List<string> _where = [];
     readonly List<string> _personWhere = [];
-    readonly List<string> _eventJoins = [];
+    readonly List<(string Id, string Version, bool Exclude)> _cohorts = [];
     bool _joinPdi;
     bool _joinPersons;
 
@@ -57,12 +57,11 @@ public sealed class SqlBuilder
         }
     }
 
-    public void InCohort(CohortRef cohort, bool exclude = false)
-    {
-        var alias = "cm" + _eventJoins.Count;
-        _eventJoins.Add($" LEFT {(exclude ? "ANTI" : "SEMI")} JOIN analytics.cohort_members {alias} ON {alias}.project_id = e.project_id " +
-                        $"AND {alias}.distinct_id = e.distinct_id AND {alias}.cohort_id = {P(cohort.Id)} AND {alias}.version = {P(cohort.Version)}");
-    }
+    public void InCohort(CohortRef cohort, bool exclude = false) => _cohorts.Add((P(cohort.Id), P(cohort.Version), exclude));
+
+    string CohortJoins(string alias) => string.Concat(_cohorts.Select((c, i) =>
+        $" LEFT {(c.Exclude ? "ANTI" : "SEMI")} JOIN analytics.cohort_members cm{i} ON cm{i}.project_id = {alias}.project_id " +
+        $"AND cm{i}.distinct_id = {alias}.distinct_id AND cm{i}.cohort_id = {c.Id} AND cm{i}.version = {c.Version}"));
 
     public static long CohortId(Filter f) => long.TryParse(f.Property, out var id) && id > 0
         ? id
@@ -93,7 +92,7 @@ public sealed class SqlBuilder
 
     public string Select(string select, string? groupBy = null, string? orderBy = null, int? limit = null)
     {
-        var sb = new StringBuilder("SELECT ").Append(select).Append(" FROM analytics.events e").AppendJoin("", _eventJoins);
+        var sb = new StringBuilder("SELECT ").Append(select).Append(" FROM analytics.events e").Append(CohortJoins("e"));
         if (_joinPdi) sb.Append(PersonJoins("e"));
         sb.Append(" WHERE ").AppendJoin(" AND ", _where.Concat(_personWhere));
         if (groupBy is not null) sb.Append(" GROUP BY ").Append(groupBy);
@@ -102,8 +101,11 @@ public sealed class SqlBuilder
         return sb.ToString();
     }
 
-    public string EventsOnly(string select, string groupBy) =>
-        $"SELECT {select} FROM analytics.events e{string.Concat(_eventJoins)} WHERE {string.Join(" AND ", _where)} GROUP BY {groupBy}";
+    public string EventsOnly(string select, string groupBy)
+    {
+        var grouped = $"SELECT {select} FROM analytics.events e WHERE {string.Join(" AND ", _where)} GROUP BY {groupBy}";
+        return _cohorts.Count == 0 ? grouped : $"SELECT a.* FROM ({grouped}) a{CohortJoins("a")}";
+    }
 
     public string PersonJoins(string alias)
     {

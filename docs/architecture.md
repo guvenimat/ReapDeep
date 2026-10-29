@@ -190,9 +190,10 @@ its deletion tombstone has a higher version than the new row.
 
 ## 6. Query layer
 
-**One SQL builder.** Every StarRocks statement is produced by `SqlBuilder`. Its constructor takes the
-project ID and a UTC time range and adds both filters; there is no code path that builds a query
-without them. Values are always parameters, JSON paths are parameters too, and property names are
+**One SQL builder.** Every StarRocks analytics statement is produced in the shared `ReapDeep.Analytics`
+library by `SqlBuilder` (and `CohortSql`, which uses its parameters and conditions). The builder's
+constructor takes the project ID and a UTC time range and adds both filters; there is no code path that
+builds a query without them, and every cohort statement filters by project as well. Values are always parameters, JSON paths are parameters too, and property names are
 validated against a strict pattern before they reach SQL.
 
 **Time zones without losing partition pruning.** Projects have a time zone, but `WHERE` clauses use UTC
@@ -232,6 +233,26 @@ scanned before, 2 of 8 after).
 
 **Duplicates** from SDK retries are rare. Exact deduplication is 13x slower, so it is an option per
 query rather than the default. Unique users and funnels are unaffected by duplicates anyway.
+
+### Cohorts
+
+A cohort is either a rule set (OR'ed groups of AND'ed conditions: performed an event N times in the
+last D days, did not perform an event, person property) or a static list of IDs. The design choices:
+
+| Decision | Alternative | Why |
+|---|---|---|
+| Materialize membership into `cohort_members` | expand the rules into every analysis | a rule scans up to 90 days of events; doing that inside every trend and funnel would double their cost. Materialized, the analysis pays only a join. The live preview in the editor still evaluates the rules on the fly. |
+| Key membership by `(project_id, distinct_id)` in the `events_pdi` colocate group | key by person | the cohort filter becomes a bucket-local `LEFT SEMI JOIN` on `events` (verified with EXPLAIN) and does not need the person mapping; the `COALESCE(pdi.person_id, e.distinct_id)` rule is untouched. A person is expanded to all of their distinct IDs when the cohort is calculated. |
+| Count per distinct ID first, then `LEFT JOIN` the mapping and sum per person | join first | the same pre-aggregation that made unique users fast; anonymous events still count for the merged person, and "did not do Y" is checked across all of the person's IDs. |
+| Calculate in the person worker | in the Query API | the Query API's StarRocks user can only `SELECT`. The rule compiler lives in the shared `ReapDeep.Analytics` library so both services use the same SQL. |
+| Versioned writes with a 60 s grace period | overwrite in place | a refresh writes a new version and switches `active_version` in PostgreSQL in one transaction; queries already running finish on the old version, which is dropped once it has been retired for 60 s. |
+| Shared/exclusive per-project advisory lock between refreshes and deletion batches | none | without it a refresh that read the static list before a deletion committed could write the deleted IDs back afterwards (found by `deletion-test.ps1`). |
+
+Semantics: analyses use current membership. Refreshes run hourly by default (every 30 s in the local
+compose file), at most two at a time, and the jobs' StarRocks user is in its own resource group with a
+CPU weight of 2 so calculations do not starve interactive queries. Behavioral windows are capped at
+90 days, because each refresh scans that much data; longer windows would need a daily per-person
+summary table.
 
 ## 7. Authentication and tenancy
 
@@ -294,6 +315,16 @@ Unique users is at the edge of its target and the exact funnel misses it on one 
 CPU-bound in StarRocks and should be re-measured on a multi-node cluster; the next steps would be daily
 pre-aggregated tables and HLL sketches for unique counts.
 
+Cohorts were measured on a 30M-event seed (the 100M run hit host memory limits), each against its own
+baseline on the same data. The largest cohort (434K persons, ~580K distinct IDs) is calculated in
+434 ms. With it as a filter: trend total 60 -> 215 ms, unique users 563 -> 775 ms, funnel with 10%
+sampling 237 -> 522 ms; a funnel filtered to a small cohort gets faster (1,314 -> 233 ms). The first
+version of the unique-users query joined the cohort on raw events and cost 1,200 ms; joining after the
+`(distinct_id, bucket)` pre-aggregation gives identical results at 775 ms. On raw-event queries the
+overhead is still above the 20% we aimed for, though far inside the latency targets; a narrower
+membership representation (for example a per-cohort bitmap of person hashes) would be the next step if
+it matters.
+
 ## 10. Testing
 
 The system is verified end to end against the real stack rather than with mocks:
@@ -302,12 +333,14 @@ The system is verified end to end against the real stack rather than with mocks:
 |---|---|
 | `identity-test.ps1` | all identity rules, replays, outbox ordering, the colocated `LEFT JOIN` |
 | `query-test.ps1` | every query type against data with known answers, EXPLAIN plans, latency |
-| `deletion-test.ps1` | person and distinct ID deletion, returning users, tombstone purge |
+| `deletion-test.ps1` | person and distinct ID deletion, returning users, tombstone purge, removal from cohorts |
+| `cohort-test.ps1` | cohort rules against known answers (identity merge, negation, OR, static lists), filters and breakdowns, 404/409, recalculation, purge |
 | `auth-test.ps1`, `settings-test.ps1` | sessions, roles, API keys, CORS, forwarded headers, StarRocks grants |
 | `dashboard-test.ps1`, `insights-test.ps1` | headless Chrome over the DevTools Protocol, every tab and dashboards |
 | `load-test.ps1` | throughput, latency, loss and freshness; the 100M-event query benchmark |
 
-Unit tests cover the pure logic: the SQL builder's mandatory filters and parameterization, time range
+Unit tests cover the pure logic: the SQL builder's mandatory filters and parameterization, the cohort rule
+compiler and its validation, time range
 parsing and bucketing, password hashing and user agent parsing. CI builds everything and runs the SDK and
 unit tests on every push.
 

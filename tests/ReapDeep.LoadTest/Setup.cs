@@ -43,6 +43,7 @@ static class Setup
                 "DELETE FROM analytics.events WHERE project_id IN (2, 3)",
                 "DELETE FROM analytics.persons WHERE project_id IN (2, 3)",
                 "DELETE FROM analytics.person_distinct_ids WHERE project_id IN (2, 3)",
+                "DELETE FROM analytics.cohort_members WHERE project_id IN (2, 3)",
             })
             {
                 await using var cmd = new MySqlCommand(sql, conn) { CommandTimeout = 600 };

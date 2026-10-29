@@ -11,6 +11,7 @@ retention, path and person questions over hundreds of millions of events.
 ![Demo Shop dashboard](docs/images/dashboard.png)
 
 - **Analyses:** trends (totals, unique users, breakdowns), funnels with conversion windows, weekly or daily retention cohorts, user paths, a live event stream and person profiles; any of them can be saved and arranged on dashboards.
+- **Cohorts:** segments defined by behavior ("viewed a product 3+ times in 30 days but did not buy") or person properties, or uploaded as a list; every analysis can filter or break down by them.
 - **Fast ingestion:** 50K events/s on a single machine with p99 under 10 ms; a `202` response means the event is durably in Kafka.
 - **Fresh data:** events are queryable in 4-11 s (Kafka -> StarRocks Routine Load).
 - **Identity resolution:** anonymous visitors are merged into identified users; their earlier events count as the same person in trends and funnels.
@@ -106,7 +107,7 @@ curl http://localhost:8001/api/v1/query/trends \
   -d '{ "series": [{ "event": "$pageview", "metric": "unique_users" }], "interval": "day" }'
 ```
 
-Other endpoints: `POST /api/v1/query/funnels`, `POST /api/v1/query/retention`, `POST /api/v1/query/paths`, `GET /api/v1/events`, `GET /api/v1/persons[/{id}]`, `GET /api/v1/metadata`, `GET /healthz`.
+Other endpoints: `POST /api/v1/query/funnels`, `/api/v1/cohorts` (CRUD, `preview`, `persons`, `recalculate`), `POST /api/v1/query/retention`, `POST /api/v1/query/paths`, `GET /api/v1/events`, `GET /api/v1/persons[/{id}]`, `GET /api/v1/metadata`, `GET /healthz`.
 
 ### Demo data
 
@@ -131,6 +132,17 @@ The dashboard opens in a dark theme; the light theme is one click away in the si
 
 - **Retention:** cohorts are formed from the first time a person did the start event in the selected range, daily or weekly. Each cell is the share of the cohort that did the return event in that period; periods that have not happened yet are empty, and the average row is weighted by cohort size.
 - **Paths:** each person's first start event in the range, followed by their next events within a window (30 min to 1 day), with repeats in a row collapsed and `$pageview` split by page. The result has the top events per step and the most common full paths.
+
+### Cohorts
+
+![Cohort](docs/images/cohort.png)
+
+A dynamic cohort is a set of OR'ed groups of AND'ed conditions: *did event X at least / at most / exactly N times in the last D days* (optionally where an event property matches), *did not do event Y in the last D days*, or *person property matches*. Windows are 1-90 days. A static cohort is a list of person ids or distinct_ids, pasted or loaded from a CSV.
+
+- **Materialized membership:** the person worker evaluates the rules in StarRocks and writes the members to `cohort_members` (every distinct_id of each person, so anonymous history counts for the merged person). Cohorts refresh hourly by default; the editor shows a live count computed on the fly.
+- **Cheap to use in analyses:** `cohort_members` is keyed by `(project_id, distinct_id)` in the same colocate group as `events`, so a cohort filter (`{"scope":"cohort","property":"<id>","op":"in" | "not_in"}`) is a bucket-local semi or anti join on the events table. Trends and funnels can also break down by up to 5 cohorts.
+- **Consistent versions:** each refresh writes a new version and switches to it atomically; the previous version is kept for 60 s so queries already running are not affected.
+- **Privacy:** deletion requests also remove the person from every cohort, and refreshes never run at the same time as a deletion batch of the same project.
 
 ### Saved insights and dashboards
 
@@ -189,10 +201,26 @@ The seed is 100M events over 30 days, 150K identified persons and 300K distinct 
 
 The optimizations that got us here: a fixed-offset time bucketing path when the range has no DST change, separate parallel queries instead of `GROUPING SETS`, aggregating to `(distinct_id, bucket)` before the person join, 64-bit hashes for deduplication and funnel keys, and optional deterministic person sampling for funnels. Exact results stay the default. The unique-user and exact-funnel numbers still need to be measured on a multi-node StarRocks cluster.
 
+### Cohorts over 30M events
+
+Measured on a 30M-event seed (the 100M run was stopped by host memory pressure on this machine), so compare each row with its own baseline, not with the 100M table above. The large cohort has 434K persons (about 580K distinct IDs).
+
+| Query | Without cohort | With cohort | Target |
+|---|---|---|---|
+| First calculation of a cohort ("20+ pageviews in 30 days", 434K persons) | - | **434 ms** | - |
+| Trend, total count | 60 ms | **215 ms** | < 1 s, met |
+| Trend, unique users | 563 ms | **775 ms** (+38%) | < 1 s, met |
+| Trend, unique users, breakdown by 2 cohorts | - | 1,086 ms | < 1 s, borderline |
+| Funnel, 3 steps, exact (small cohort narrows the input) | 1,314 ms | **233 ms** | < 3 s, met |
+| Funnel, breakdown by 2 cohorts | 1,371 ms | **1,072 ms** | < 3 s, met |
+| Funnel, 10% sampling | 237 ms | **522 ms** | < 3 s, met |
+
+The cohort filter is a colocated semi join. For unique users it is applied after the `(distinct_id, bucket)` pre-aggregation, which halved its cost (1,200 ms before). On raw-event queries (totals, funnels) a large cohort still costs a hash probe per event: well inside the targets, but more than the 20% overhead we aimed for.
+
 ## Tests
 
 ```powershell
-dotnet test tests/ReapDeep.UnitTests   # SQL builder tenancy and parameters, time ranges, passwords, user agents
+dotnet test tests/ReapDeep.UnitTests   # SQL builder tenancy and parameters, cohort rule compiler, time ranges, passwords, user agents
 
 cd deploy/local
 .\identity-test.ps1     # identity resolution, 10 end-to-end scenarios
@@ -200,9 +228,10 @@ cd deploy/local
 .\deletion-test.ps1     # deletion requests and the batch job, end to end
 .\settings-test.ps1     # members, roles, password change, API keys
 .\insights-test.ps1     # saved insights and dashboards, API and browser
+.\cohort-test.ps1       # cohorts: rules, identity merge, static lists, filters and breakdowns, recalculation, deletion
 .\query-test.ps1        # Query API: trends, funnels, retention, paths, events, persons, EXPLAIN, latency
 .\dashboard-test.ps1    # headless Chrome against the dashboard (Chrome DevTools Protocol)
-.\load-test.ps1         # ingestion load, 100M seed, query benchmark, cleanup
+.\load-test.ps1         # ingestion load, 100M seed, cohort calculation, query benchmark, cleanup
 
 cd ../../sdk/js
 npm test                # SDK unit tests (vitest + jsdom)
@@ -223,9 +252,9 @@ Init SQL runs only on empty volumes. After a schema change, run `docker compose 
 
 ```
 src/ReapDeep.Ingestion      Ingestion API
-src/ReapDeep.PersonWorker   identity resolution worker
-src/ReapDeep.QueryApi       Query API: feature folders (Analytics, Persons, Insights, Organization, ...);
-                            all StarRocks SQL is built in Analytics/Sql (SqlBuilder)
+src/ReapDeep.PersonWorker   identity resolution, cohort calculation and deletion jobs
+src/ReapDeep.QueryApi       Query API: feature folders (Analytics, Cohorts, Persons, Insights, Organization, ...)
+src/ReapDeep.Analytics      shared library: every StarRocks analytics query is built here (SqlBuilder, CohortSql)
 sdk/js                      browser SDK
 dashboard                   React dashboard, served by nginx
 tests/ReapDeep.LoadTest     load generator, 100M seeder, demo data and query benchmark
@@ -241,6 +270,7 @@ ReapDeep is an early v1. It runs end to end locally but has not been operated in
 - Members are added with a temporary password; there are no invitation emails or password reset by email.
 - A person's `created_at` is the time the person worker processed their first `$identify` or `$set`, not the event's own timestamp; it only differs for backfilled data such as the demo seed.
 - Retention and paths read raw events and join persons on every query; they are fast on the demo and test data but were not part of the 100M-event benchmark.
+- Cohort membership is the current membership: a 90-day trend filtered by a cohort uses who is in the cohort now, not who was in it on each day. Behavioral windows are limited to 90 days.
 - Not in v1: session replay, mobile SDKs, autocapture, feature flags.
 - Behind a load balancer, set `ForwardedHeaders__TrustedNetworks` (CIDR list) on the ingestion and Query APIs; `X-Forwarded-For` is ignored otherwise. The Query API sends no CORS headers unless `QueryApi__CorsOrigins` is set.
 - The deletion job runs every 30 s in the local compose file so tests finish quickly; the default is once a day (`Deletion__IntervalSeconds`). Raw events also stay in Kafka for its 7-day retention.

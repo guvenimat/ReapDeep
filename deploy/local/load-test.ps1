@@ -113,8 +113,12 @@ if (-not $SkipSeed) {
 }
 
 if (-not $SkipBench) {
-    Step "Query benchmark"
-    Tool bench --api "http://localhost:8001" --key $benchKey --runs $Runs
+    Step "Cohorts (calculated by the person worker)"
+    Tool cohorts --pg $pg
+    Step "Query benchmark (person worker paused so the 30 s local cohort refresh does not compete; production refreshes hourly)"
+    & { $ErrorActionPreference = "Continue"; docker compose stop person-worker 2>&1 | Out-Null }
+    try { Tool bench --api "http://localhost:8001" --key $benchKey --runs $Runs }
+    finally { & { $ErrorActionPreference = "Continue"; docker compose start person-worker 2>&1 | Out-Null } }
 }
 
 if (-not $KeepData) {

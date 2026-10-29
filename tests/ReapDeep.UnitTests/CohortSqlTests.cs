@@ -175,7 +175,7 @@ public class CohortSqlTests
     }
 
     [Fact]
-    public void Cohort_filter_applies_inside_the_unique_users_pre_aggregation()
+    public void Cohort_filter_joins_after_the_unique_users_pre_aggregation()
     {
         var plan = TrendSql.Build(() =>
         {
@@ -184,8 +184,7 @@ public class CohortSqlTests
             return b;
         }, new Series("$pageview", "unique_users"), false, "day", TimeRange.Parse("2026-10-20", "2026-10-26", TimeZoneInfo.Utc, TimeSpan.FromDays(7)), "UTC", null);
 
-        Assert.Contains("FROM (SELECT e.project_id, e.distinct_id", plan.Buckets.Sql);
-        Assert.Matches(@"FROM analytics\.events e LEFT SEMI JOIN analytics\.cohort_members cm0 .* GROUP BY 1, 2, 3\) d LEFT JOIN analytics\.person_distinct_ids pdi", plan.Buckets.Sql);
+        Assert.Matches(@"FROM \(SELECT a\.\* FROM \(SELECT e\.project_id, e\.distinct_id, .* FROM analytics\.events e WHERE .* GROUP BY 1, 2, 3\) a LEFT SEMI JOIN analytics\.cohort_members cm0 ON cm0\.project_id = a\.project_id AND cm0\.distinct_id = a\.distinct_id .*\) d LEFT JOIN analytics\.person_distinct_ids pdi", plan.Buckets.Sql);
     }
 
     [Fact]
