@@ -78,7 +78,7 @@ export function Funnels({ params, range, onChange, onInsight }: {
           <Segmented<number> size="sm" label="Sampling" value={state.sampling} options={SAMPLING} onChange={(v) => set({ sampling: v })} />
         </EditorSection>
         <FilterEditor filters={state.filters} onChange={(filters) => set({ filters })} />
-        <BreakdownEditor value={state.breakdown} onChange={(breakdown) => set({ breakdown })} />
+        <BreakdownEditor value={state.breakdown} onChange={(breakdown) => set({ breakdown })} allowCohort />
       </aside>
 
       <section className="content">

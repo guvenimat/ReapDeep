@@ -1,10 +1,10 @@
-export type Scope = 'event' | 'person'
-export type Op = 'eq' | 'neq' | 'contains' | 'not_contains' | 'in' | 'is_set' | 'is_not_set'
+export type Scope = 'event' | 'person' | 'cohort'
+export type Op = 'eq' | 'neq' | 'contains' | 'not_contains' | 'in' | 'not_in' | 'is_set' | 'is_not_set'
 export type Metric = 'total' | 'unique_users'
 export type Interval = 'hour' | 'day' | 'week' | 'month'
 
 export interface Filter { scope: Scope; property: string; op: Op; value?: string }
-export interface Breakdown { scope: Scope; property: string; limit?: number }
+export interface Breakdown { scope: Scope; property: string; limit?: number; cohort_ids?: number[] }
 export interface Series { event: string; metric: Metric }
 export interface DateRange { date_from?: string; date_to?: string }
 
@@ -61,3 +61,19 @@ export interface DeletionRequest {
   id: number; target_type: 'person' | 'distinct_id'; target_id: string; requested_by: string | null
   requested_at: string; processed_at: string | null
 }
+
+export type CohortKind = 'dynamic' | 'static'
+export type CohortStatus = 'pending' | 'calculating' | 'ready' | 'error'
+export type CountOp = 'gte' | 'lte' | 'eq'
+export type CohortCondition =
+  | { type: 'performed_event'; event: string; count_op: CountOp; count: number; within_days: number; filters?: Filter[] }
+  | { type: 'not_performed_event'; event: string; within_days: number }
+  | { type: 'person_property'; property: string; op: Op; value?: string }
+export interface CohortDefinition { groups: { conditions: CohortCondition[] }[] }
+export interface Cohort {
+  id: number; name: string; description: string; kind: CohortKind; definition: CohortDefinition | null
+  status: CohortStatus; member_count: number | null; static_members: number | null
+  calculated_at: string | null; calculation_ms: number | null; last_error: string | null
+  created_by: string | null; created_at: string; updated_at: string
+}
+export interface CohortPerson { id: string; is_identified: boolean; distinct_ids: string[]; properties: Record<string, unknown> }
