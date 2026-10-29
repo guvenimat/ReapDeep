@@ -21,6 +21,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\ReapDeep.QueryApi\ReapDeep.QueryApi.csproj" />
     <ProjectReference Include="..\..\src\ReapDeep.Ingestion\ReapDeep.Ingestion.csproj" />
+    <ProjectReference Include="..\..\src\ReapDeep.PersonWorker\ReapDeep.PersonWorker.csproj" />
   </ItemGroup>
 
   <ItemGroup>
