@@ -189,13 +189,15 @@ The optimizations that got us here: a fixed-offset time bucketing path when the 
 ## Tests
 
 ```powershell
+dotnet test tests/ReapDeep.UnitTests   # SQL builder tenancy and parameters, time ranges, passwords, user agents
+
 cd deploy/local
 .\identity-test.ps1     # identity resolution, 10 end-to-end scenarios
 .\auth-test.ps1         # sign-in, sessions, project access, CORS, X-Forwarded-For, StarRocks grants
 .\deletion-test.ps1     # deletion requests and the batch job, end to end
 .\settings-test.ps1     # members, roles, password change, API keys
 .\insights-test.ps1     # saved insights and dashboards, API and browser
-.\query-test.ps1        # Query API: trends, funnels, events, persons, EXPLAIN, latency
+.\query-test.ps1        # Query API: trends, funnels, retention, paths, events, persons, EXPLAIN, latency
 .\dashboard-test.ps1    # headless Chrome against the dashboard (Chrome DevTools Protocol)
 .\load-test.ps1         # ingestion load, 100M seed, query benchmark, cleanup
 
@@ -222,7 +224,9 @@ src/ReapDeep.PersonWorker   identity resolution worker
 src/ReapDeep.QueryApi       Query API and the single SQL builder (SqlBuilder.cs)
 sdk/js                      browser SDK
 dashboard                   React dashboard, served by nginx
-tests/ReapDeep.LoadTest     load generator, seeder and query benchmark
+tests/ReapDeep.LoadTest     load generator, 100M seeder, demo data and query benchmark
+tests/ReapDeep.UnitTests    unit tests for the pure logic
+docs/architecture.md        design decisions, alternatives and measurements
 deploy/local                Docker Compose stack, schemas and test scripts
 ```
 

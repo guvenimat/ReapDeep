@@ -57,7 +57,7 @@ public sealed class DefinitionTracker(NpgsqlDataSource db, ILogger<DefinitionTra
             key.Scope == EventPropertyScope ? EventMessage.ColumnFor(key.Name) : null));
     }
 
-    static string? TypeOf(JsonElement v) => v.ValueKind switch
+    internal static string? TypeOf(JsonElement v) => v.ValueKind switch
     {
         JsonValueKind.Number => "number",
         JsonValueKind.True or JsonValueKind.False => "boolean",
