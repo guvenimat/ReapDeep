@@ -178,6 +178,23 @@ services:
         condition: service_completed_successfully
     restart: unless-stopped
 
+  recommender:
+    build:
+      context: ../../src
+      dockerfile: ReapDeep.Recommender/Dockerfile
+    image: reapdeep-recommender
+    container_name: reapdeep-recommender
+    profiles: ["app"]
+    ports:
+      - "127.0.0.1:8002:8002"
+    environment:
+      ConnectionStrings__Postgres: *postgres-connection
+      Recommender__RefreshSeconds: "5"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
   query-api:
     build:
       context: ../../src
