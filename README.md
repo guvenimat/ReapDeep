@@ -11,12 +11,13 @@ retention, path and person questions over hundreds of millions of events.
 ![Demo Shop dashboard](docs/images/dashboard.png)
 
 - **Analyses:** trends (totals, unique users, breakdowns), funnels with conversion windows, weekly or daily retention cohorts, user paths, a live event stream and person profiles; any of them can be saved and arranged on dashboards.
+- **Recommendations:** a product catalog plus popular, trending, viewed-together and bought-together suggestions, served to your site by a public endpoint from memory and measured with a hit-rate check.
 - **Cohorts:** segments defined by behavior ("viewed a product 3+ times in 30 days but did not buy") or person properties, or uploaded as a list; every analysis can filter or break down by them.
 - **Fast ingestion:** 50K events/s on a single machine with p99 under 10 ms; a `202` response means the event is durably in Kafka.
 - **Fresh data:** events are queryable in 4-11 s (Kafka -> StarRocks Routine Load).
 - **Identity resolution:** anonymous visitors are merged into identified users; their earlier events count as the same person in trends and funnels.
 - **Multi-tenant by design:** shared tables keyed by `project_id`; every StarRocks query comes from a single SQL builder that always adds the project and time filters.
-- **Small footprint:** ~2.4 KB gzip SDK with no dependencies, 30-50 MB ingestion process, dashboard without chart or UI libraries.
+- **Small footprint:** ~2.6 KB gzip SDK with no dependencies, 30-50 MB ingestion process, dashboard without chart or UI libraries.
 - **Permissive licensing only:** Apache 2.0 for this repo; every code dependency is MIT or Apache 2.0, and the self-hosted Inter font is under the SIL Open Font License 1.1.
 
 ## Architecture
@@ -36,6 +37,9 @@ flowchart LR
     QA["Query API<br/>.NET, Native AOT"] --> SR
     QA --> PG
     DB["Dashboard<br/>React"] -->|"/api"| QA
+    PW -->|"cohorts, recommendations"| SR
+    RC["Recommender<br/>.NET, Native AOT"] -->|"catalog + lists, in memory"| PG
+    SDK -->|"GET /recommend"| RC
 ```
 
 | Component | Path | Stack |
@@ -43,6 +47,7 @@ flowchart LR
 | Ingestion API | `src/ReapDeep.Ingestion` | .NET 10 Minimal API, Native AOT, Confluent.Kafka |
 | Person worker | `src/ReapDeep.PersonWorker` | .NET 10 Worker, Native AOT, transactional outbox |
 | Query API | `src/ReapDeep.QueryApi` | .NET 10 Minimal API, Native AOT, MySqlConnector, Npgsql + Dapper.AOT |
+| Recommender | `src/ReapDeep.Recommender` | .NET 10 Minimal API, Native AOT, public `GET /recommend` |
 | JS SDK | `sdk/js` | TypeScript, esbuild (ESM + IIFE) |
 | Dashboard | `dashboard` | React 19, TypeScript, Vite, hand-written SVG charts |
 | Load test | `tests/ReapDeep.LoadTest` | .NET 10 console app |
@@ -55,6 +60,7 @@ flowchart LR
 - **Identity.** PostgreSQL is the source of truth for persons. The worker applies merge rules (two identified persons are never merged) and writes changes to an outbox in the same transaction. A publisher forwards them to Kafka, and StarRocks applies them in version order.
 - **Definitions.** The ingestion API keeps an in-memory set of the event names, event properties and `$set` person properties it has seen per project, with an inferred type (string, number, boolean, datetime). New names are written to PostgreSQL (`event_definitions`, `property_definitions`) in batches every 10 s, and known names are refreshed at most once an hour, so the hot path never waits on the database. The dashboard's autocomplete reads them from `GET /api/v1/metadata`. Each project is capped at 10K names per scope.
 - **Deletion.** Owners and admins request deletion of a person or a `distinct_id` (`POST /api/v1/deletion-requests`). A periodic batch job in the person worker (daily by default) deletes the events from StarRocks with one `DELETE` per project, removes the identity rows from PostgreSQL, and sends tombstones through the outbox so StarRocks drops the mappings and person properties in version order; the tombstones are purged later. Batching keeps StarRocks delete-predicate and compaction load low.
+- **Recommendations.** Product events carry `item_id`, which ingestion stores in its own column. The person worker computes four models in StarRocks (popular, trending, co_viewed, bought_together) and writes each project's lists to PostgreSQL. The Recommender answers `GET /recommend?api_key=pk_...` from an in-memory copy of the catalog and the lists, so it never queries StarRocks; stock and category are applied per request.
 - **Queries.** A person is `COALESCE(pdi.person_id, e.distinct_id)` over a `LEFT JOIN`, so anonymous events are never dropped. Date filters use UTC boundaries for partition pruning; the project time zone is used only for bucketing.
 
 ## Quick start
@@ -144,6 +150,40 @@ A dynamic cohort is a set of OR'ed groups of AND'ed conditions: *did event X at 
 - **Consistent versions:** each refresh writes a new version and switches to it atomically; the previous version is kept for 60 s so queries already running are not affected.
 - **Privacy:** deletion requests also remove the person from every cohort, and refreshes never run at the same time as a deletion batch of the same project.
 
+### Catalog and recommendations
+
+![Catalog](docs/images/catalog.png)
+
+The commerce contract is small: `product_viewed`, `add_to_cart` and `purchase` events with `properties.item_id` (one `purchase` per item, linked by `order_id`; the SDK's `trackPurchase` does that). The catalog lives in PostgreSQL and is written with `PUT /api/v1/items` by an owner or admin, a CSV upload in the dashboard, or a `catalog_write` API key (`ck_...`), which can only reach the catalog endpoints.
+
+| Model | Signal | Window |
+|---|---|---|
+| `popular` | sum of each person's strongest interaction per item (view 1, cart 3, purchase 5) | 30 days |
+| `trending` | last 7 days against the expected share from the 21 days before | 28 days |
+| `co_viewed` | cosine similarity of items in the same person's 50 most recent items | 30 days |
+| `bought_together` | the same, purchases only | 90 days |
+
+Interactions are counted per `distinct_id` first and then merged per person, so a product viewed before signing in still counts for the signed-in person. The person worker refreshes each project hourly (every minute locally) and keeps 50 candidates per item and 200 for the global lists. The Recommender filters them at request time (in stock, category, not the item itself) and fills short item-based lists with popular items of the same category, marking each item's `source`.
+
+```bash
+curl "http://localhost:8002/recommend?api_key=pk_demo_shop&model=co_viewed&item_id=linen-shirt&limit=5"
+```
+
+Quality is measured on demand (`POST /api/v1/recommendations/evaluate`, the Catalog tab's "Measure now"): the models are trained on the 30 days before the last week, and for each person the second item they touched last week counts as a hit if it was in the top 10 for their first. On the demo data co_viewed reaches a 27.1% hit rate against 25.4% for the popular baseline; the demo browsing is strongly popularity-driven, so the gap is small.
+
+The recommendation tables hold aggregates over many people, not personal data. A deleted person's interactions drop out at the next refresh.
+
+Measured on the 30M-event seed with a 2,000-item catalog (`load-test.ps1`):
+
+| | Result |
+|---|---|
+| Recommender, 16 concurrent clients inside the compose network | **p99 3.6 ms**, p50 0.5 ms, 22K requests/s, 0 errors (target p99 < 15 ms) |
+| Model calculation: co_viewed / bought_together / popular / trending | 2.8 s / 0.9 s / 0.5 s / 0.6 s |
+| Hit-rate evaluation query | 2.0 s |
+| Person x item aggregation from the `item_id` column vs. `properties.item_id` | 216 ms vs. 231 ms |
+
+The column is only 7% faster than reading the JSON property, because StarRocks' flat JSON already stores frequent keys as subcolumns; it was kept for simpler SQL and zone maps.
+
 ### Saved insights and dashboards
 
 Any trend or funnel can be saved by name from its tab (`/api/v1/insights`). A dashboard (`/api/v1/dashboards`) is an ordered list of saved insights rendered as tiles; the date range picker applies to every tile, and a tile's title opens the insight for editing. Insights store the editor state, not the date range, so the same insight works for "last 24 hours" and "last 30 days". Project members can create and edit them; read API keys can only list them.
@@ -220,7 +260,7 @@ The cohort filter is a colocated semi join. For unique users it is applied after
 ## Tests
 
 ```powershell
-dotnet test tests/ReapDeep.UnitTests   # SQL builder tenancy and parameters, cohort rule compiler, time ranges, passwords, user agents
+dotnet test tests/ReapDeep.UnitTests   # SQL builder tenancy and parameters, cohort and recommendation SQL, recommender selection, time ranges, passwords, user agents
 
 cd deploy/local
 .\identity-test.ps1     # identity resolution, 10 end-to-end scenarios
@@ -229,6 +269,7 @@ cd deploy/local
 .\settings-test.ps1     # members, roles, password change, API keys
 .\insights-test.ps1     # saved insights and dashboards, API and browser
 .\cohort-test.ps1       # cohorts: rules, identity merge, static lists, filters and breakdowns, recalculation, deletion
+.\recommender-test.ps1  # catalog, key scopes, models from real events, the public Recommender, stock changes
 .\query-test.ps1        # Query API: trends, funnels, retention, paths, events, persons, EXPLAIN, latency
 .\dashboard-test.ps1    # headless Chrome against the dashboard (Chrome DevTools Protocol)
 .\load-test.ps1         # ingestion load, 100M seed, cohort calculation, query benchmark, cleanup
@@ -252,9 +293,10 @@ Init SQL runs only on empty volumes. After a schema change, run `docker compose 
 
 ```
 src/ReapDeep.Ingestion      Ingestion API
-src/ReapDeep.PersonWorker   identity resolution, cohort calculation and deletion jobs
-src/ReapDeep.QueryApi       Query API: feature folders (Analytics, Cohorts, Persons, Insights, Organization, ...)
-src/ReapDeep.Analytics      shared library: every StarRocks analytics query is built here (SqlBuilder, CohortSql)
+src/ReapDeep.PersonWorker   identity resolution, cohort and recommendation calculation, deletion jobs
+src/ReapDeep.QueryApi       Query API: feature folders (Analytics, Catalog, Cohorts, Persons, Insights, Organization, ...)
+src/ReapDeep.Recommender    public recommendation endpoint, served from memory
+src/ReapDeep.Analytics      shared library: every StarRocks analytics query is built here (SqlBuilder, CohortSql, RecommendationSql)
 sdk/js                      browser SDK
 dashboard                   React dashboard, served by nginx
 tests/ReapDeep.LoadTest     load generator, 100M seeder, demo data and query benchmark

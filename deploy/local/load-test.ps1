@@ -115,10 +115,14 @@ if (-not $SkipSeed) {
 if (-not $SkipBench) {
     Step "Cohorts (calculated by the person worker)"
     Tool cohorts --pg $pg
+    Step "Recommendation models and item_id column vs JSON"
+    Tool recommendations --sr $sr --pg $pg
     Step "Query benchmark (person worker paused so the 30 s local cohort refresh does not compete; production refreshes hourly)"
     & { $ErrorActionPreference = "Continue"; docker compose stop person-worker 2>&1 | Out-Null }
     try { Tool bench --api "http://localhost:8001" --key $benchKey --runs $Runs }
     finally { & { $ErrorActionPreference = "Continue"; docker compose start person-worker 2>&1 | Out-Null } }
+    Step "Recommender latency (inside the compose network)"
+    ToolInNetwork recommend-latency --url "http://recommender:8002" --key "pk_benchmark" --seconds 20 --concurrency 16
 }
 
 if (-not $KeepData) {

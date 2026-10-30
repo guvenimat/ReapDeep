@@ -9,6 +9,8 @@ if (args.Length == 0)
           ingest   --name <label> --rate <events/s> --seconds <n> --batch <n> --run-id <id> --sr <conn> [--marker]
           seed     --sr <conn> --pg <conn> [--events 100000000] [--days 30] [--persons 150000] [--report-only]
           cohorts  --pg <conn> [--timeout 900]
+          recommendations     --sr <conn> --pg <conn> [--timeout 900]
+          recommend-latency   --url <recommender url> --key <public key> [--seconds 20] [--concurrency 16]
           bench    --api <url> --key <read key> [--runs 20]
           cleanup  --sr <conn> --pg <conn>
           demo     --pg <conn> [--url http://localhost:8000/capture] [--visitors 3000] [--days 56] [--seed 42] [--reset --sr <conn>]
@@ -45,6 +47,12 @@ try
             break;
         case "cohorts":
             await Cohorts.Run(opts.Require("pg"), opts.Int("timeout", 900));
+            break;
+        case "recommendations":
+            await Recommendations.Run(opts.Require("sr"), opts.Require("pg"), opts.Int("timeout", 900));
+            break;
+        case "recommend-latency":
+            await Recommendations.Latency(opts.Require("url"), opts.Require("key"), opts.Int("seconds", 20), opts.Int("concurrency", 16));
             break;
         case "bench":
             await Bench.Run(opts.Get("api") ?? "http://localhost:8001", opts.Require("key"), opts.Int("runs", 20));

@@ -34,6 +34,9 @@ flowchart LR
     QA["Query API"] --> SR
     QA --> PG
     DB["Dashboard"] -->|"/api via nginx"| QA
+    PW -. "cohorts, recommendation lists" .-> PG
+    RC["Recommender"] -->|"reload on change"| PG
+    SDK -->|"GET /recommend"| RC
 ```
 
 | Component | Responsibility | Why it is separate |
@@ -43,10 +46,11 @@ flowchart LR
 | StarRocks | event, person and mapping tables for analytics | columnar scans plus real joins and upserts |
 | PostgreSQL | accounts, projects, keys, persons (source of truth), saved insights | transactional data and row-level locking |
 | Person worker (.NET, Native AOT) | identity resolution, outbox publishing, deletion job | keeps identity logic off the ingestion hot path |
-| Query API (.NET, Native AOT) | the only producer of analytical SQL; auth and tenancy | one place to enforce `project_id` filters |
+| Query API (.NET, Native AOT) | analytics, catalog and management endpoints; auth and tenancy | one place to enforce `project_id` filters |
+| Recommender (.NET, Native AOT) | public `GET /recommend` with the project's public key | different security model (public key, open CORS) and latency budget; never touches StarRocks |
 | Dashboard (React, nginx) | UI; same origin as the API | no CORS needed, cookie sessions work |
 
-All three .NET services are Minimal API or Worker projects, and compile to Native AOT (about 30-60 MB
+All four .NET services are Minimal API or Worker projects, and compile to Native AOT (about 30-60 MB
 of memory each). JSON uses System.Text.Json source generation throughout.
 
 ### Code structure
@@ -254,6 +258,27 @@ CPU weight of 2 so calculations do not starve interactive queries. Behavioral wi
 90 days, because each refresh scans that much data; longer windows would need a daily per-person
 summary table.
 
+### Recommendations
+
+| Decision | Alternative | Why |
+|---|---|---|
+| `item_id` as its own `events` column | read `properties.item_id` from JSON | the person x item aggregation and self-join run on it; a column compresses better and keeps the SQL simple (measured in section 9) |
+| One `purchase` event per item, linked by `order_id` | an `items` array inside one event | exploding JSON arrays in SQL is slow and brittle; `trackPurchase` in the SDK hides the difference |
+| Models computed in the person worker, lists stored in PostgreSQL | compute per request | a model scans 30-90 days; the serving path has a single-digit-millisecond budget |
+| Lists hold only `item_id` and `score`; catalog fields are joined at request time | store titles and stock in the lists | a product that goes out of stock disappears immediately instead of at the next refresh |
+| Separate public Recommender service | an endpoint in the Query API | public key and open CORS instead of secret keys and sessions; it reads only PostgreSQL and keeps everything in memory |
+| Cosine similarity over each person's 50 most recent items | raw co-occurrence over full histories | raw counts favor popular items; the cap bounds the self-join, which grows with the square of a person's item count (bots, crawlers) |
+| Hit rate against a popular baseline, on demand | offline evaluation in a notebook | it runs as one read-only StarRocks query from the Query API, so anyone can check a model on their own data |
+
+`catalog_write` API keys (`ck_...`) exist so a store backend can sync products without being able to read
+analytics: the project-access middleware rejects them on every endpoint not marked as a catalog endpoint.
+
+The recommendation tables are aggregates over many people and hold no personal data; when a person is
+deleted, their interactions drop out at the next refresh. Personalized recommendations ("for this
+visitor") were left out on purpose: they would be fetched with the public key, so anyone who knows or
+guesses a `distinct_id` could read what that person looked at. They need a token signed by the store's
+backend first.
+
 ## 7. Authentication and tenancy
 
 - **API keys** are project-scoped and read-only. Only a SHA-256 hash is stored; the key is shown once.
@@ -324,6 +349,12 @@ version of the unique-users query joined the cohort on raw events and cost 1,200
 overhead is still above the 20% we aimed for, though far inside the latency targets; a narrower
 membership representation (for example a per-cohort bitmap of person hashes) would be the next step if
 it matters.
+
+Recommendations on the same 30M-event seed with 2,000 items: the public Recommender answered 22K
+requests/s from 16 concurrent clients with p50 0.5 ms and p99 3.6 ms (target 15 ms), measured inside the
+compose network. The worker calculates co_viewed in 2.8 s and the other models in under 1 s; the
+hit-rate query takes 2.0 s. Reading `item_id` from its column instead of `properties` saved only 7%
+(216 vs. 231 ms) because flat JSON already extracts frequent keys; the column stays for simpler SQL.
 
 ## 10. Testing
 
