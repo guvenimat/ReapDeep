@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { DateRange, Interval } from '../api/types'
 import type { IconName } from '../components/icons'
 
-export type Tab = 'dashboards' | 'trends' | 'funnels' | 'retention' | 'paths' | 'lifecycle' | 'rfm' | 'events' | 'persons' | 'cohorts' | 'catalog' | 'settings'
+export type Tab = 'dashboards' | 'trends' | 'funnels' | 'retention' | 'paths' | 'lifecycle' | 'rfm' | 'alerts' | 'events' | 'persons' | 'cohorts' | 'catalog' | 'settings'
 export interface TabInfo { id: Tab; label: string; icon: IconName; description: string; group: 'analyze' | 'data' | 'admin' }
 export const TABS: TabInfo[] = [
   { id: 'dashboards', label: 'Dashboards', icon: 'dashboards', description: 'Saved insights, side by side', group: 'analyze' },
@@ -12,6 +12,7 @@ export const TABS: TabInfo[] = [
   { id: 'paths', label: 'Paths', icon: 'paths', description: 'What people do after a starting event', group: 'analyze' },
   { id: 'lifecycle', label: 'Lifecycle', icon: 'lifecycle', description: 'New, returning, resurrecting and dormant persons per period', group: 'analyze' },
   { id: 'rfm', label: 'RFM', icon: 'rfm', description: 'Customers segmented by recency, frequency and monetary value', group: 'analyze' },
+  { id: 'alerts', label: 'Alerts', icon: 'bell', description: 'Webhooks when a saved trend crosses a threshold or changes sharply', group: 'analyze' },
   { id: 'events', label: 'Events', icon: 'events', description: 'Raw event stream', group: 'data' },
   { id: 'persons', label: 'Persons', icon: 'persons', description: 'Identified people and their history', group: 'data' },
   { id: 'cohorts', label: 'Cohorts', icon: 'users', description: 'Segments of people by what they did and who they are', group: 'data' },

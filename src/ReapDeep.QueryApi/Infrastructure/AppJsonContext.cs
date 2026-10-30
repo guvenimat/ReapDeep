@@ -1,4 +1,5 @@
 using System.Text.Json.Serialization;
+using ReapDeep.QueryApi.Alerts;
 using ReapDeep.QueryApi.Analytics;
 using ReapDeep.QueryApi.Auth;
 using ReapDeep.QueryApi.Catalog;
@@ -13,6 +14,12 @@ using ReapDeep.QueryApi.Persons;
 namespace ReapDeep.QueryApi.Infrastructure;
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower)]
+[JsonSerializable(typeof(AlertBody))]
+[JsonSerializable(typeof(AlertRow))]
+[JsonSerializable(typeof(AlertsResponse))]
+[JsonSerializable(typeof(AlertEventsResponse))]
+[JsonSerializable(typeof(AlertCheckResponse))]
+[JsonSerializable(typeof(AlertWebhookPayload))]
 [JsonSerializable(typeof(ErrorResponse))]
 [JsonSerializable(typeof(ExplainResponse))]
 [JsonSerializable(typeof(HealthResponse))]

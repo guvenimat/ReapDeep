@@ -158,6 +158,9 @@ Check "Lifecycle: one new person today" ((Section $html "lifecycle-new") -match 
 Check "Lifecycle: one stacked bar for the new person" (([regex]::Matches((Section $html "lifecycle-chart"), '<path fill="var\(--series-1\)"')).Count -eq 1)
 Check "Lifecycle: table's latest period has new = 1, active = 1" ((Section $html "lifecycle-table") -match '<tbody><tr><td class="nowrap">[^<]+</td><td class="num">1</td><td class="num">0</td><td class="num">0</td><td class="num neg">0</td><td class="num strong">1</td>')
 
+$html = Dom "#/alerts" "document.querySelector('[data-testid=alerts-card]') && !document.querySelector('.skeleton')"
+Check "Alerts tab renders for the owner with a 'New alert' action" ($html -match 'data-testid="alerts-card"' -and $html -match 'data-testid="new-alert"')
+
 Write-Host "`n5) Events tab"
 $q = Q '{"event":"","distinct_id":"","person_id":"","limit":50}'
 $table = Section (Dom "#/events?range=7d&q=$q" (& $hasTable "events-table")) "events-table"

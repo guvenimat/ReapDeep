@@ -3,6 +3,7 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.HttpOverrides;
 using MySqlConnector;
 using Npgsql;
+using ReapDeep.QueryApi.Alerts;
 using ReapDeep.QueryApi.Analytics;
 using ReapDeep.QueryApi.Auth;
 using ReapDeep.QueryApi.Catalog;
@@ -82,6 +83,10 @@ public static class HostingExtensions
         services.AddSingleton<CohortService>();
         services.AddSingleton<CatalogRepository>();
         services.AddSingleton<CatalogService>();
+        services.AddSingleton<AlertRepository>();
+        services.AddSingleton<WebhookSender>();
+        services.AddSingleton<AlertService>();
+        services.AddHostedService<AlertJob>();
         return builder;
     }
 
