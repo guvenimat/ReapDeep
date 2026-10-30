@@ -8,12 +8,14 @@ static class Cohorts
     public const string Heavy = "Bench: 20+ pageviews in 30 days";
     public const string NoPurchase = "Bench: signed up, no purchase in 7 days";
     public const string Pro = "Bench: pro plan";
+    public const string Champions = "Bench: RFM champions and loyal";
 
     static readonly (string Name, string Definition)[] Definitions =
     [
         (Heavy, """{"groups":[{"conditions":[{"type":"performed_event","event":"$pageview","count_op":"gte","count":20,"within_days":30}]}]}"""),
         (NoPurchase, """{"groups":[{"conditions":[{"type":"performed_event","event":"signup","count_op":"gte","count":1,"within_days":7},{"type":"not_performed_event","event":"purchase","within_days":7}]}]}"""),
         (Pro, """{"groups":[{"conditions":[{"type":"person_property","property":"plan","op":"eq","value":"pro"}]}]}"""),
+        (Champions, """{"groups":[{"conditions":[{"type":"rfm_segment","segments":["champions","loyal"],"within_days":365}]}]}"""),
     ];
 
     public static async Task Run(string pg, int timeoutSeconds)

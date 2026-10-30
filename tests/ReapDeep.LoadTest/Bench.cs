@@ -24,6 +24,9 @@ static class Bench
         var pro = cohorts.GetValueOrDefault(Cohorts.Pro);
         string InCohort(long id) => $$"""{"scope":"cohort","property":"{{id}}","op":"in"}""";
 
+        var rfm = "\"purchase_event\":\"purchase\",\"amount_property\":\"cart_value\"";
+        var weeks = $"\"date_from\":\"{today.AddDays(-27):yyyy-MM-dd}\",\"date_to\":\"{today:yyyy-MM-dd}\"";
+
         Scenario[] scenarios =
         [
             new("1", "Trends total, 30 days daily", "< 1 s", "/api/v1/query/trends",
@@ -60,12 +63,21 @@ static class Bench
                 $$"""{"steps":[{"event":"$pageview"},{"event":"signup"},{"event":"purchase"}],"window_seconds":604800,"breakdown":{"scope":"cohort","cohort_ids":[{{heavy}},{{pro}}]},{{range}}}"""),
             new("9f", "Funnel 10% sampling + cohort filter (vs 6s)", "< 3 s", "/api/v1/query/funnels",
                 $$"""{"steps":[{"event":"$pageview"},{"event":"signup"},{"event":"purchase"}],"window_seconds":604800,"sampling":0.1,"filters":[{{InCohort(heavy)}}],{{range}}}"""),
+            new("10a", "RFM, 365-day window (all buyers)", "< 1.5 s", "/api/v1/query/rfm", $$"""{"window_days":365,{{rfm}}}"""),
+            new("10b", "RFM + person property filter", "< 1.5 s", "/api/v1/query/rfm",
+                $$"""{"window_days":365,{{rfm}},"filters":[{"scope":"person","property":"plan","op":"eq","value":"pro"}]}"""),
+            new("11a", "Lifecycle weekly, any event, 90-day look-back", "< 2 s", "/api/v1/query/lifecycle",
+                $$"""{"period":"week","lookback_days":90,{{weeks}}}"""),
+            new("11b", "Lifecycle daily, purchase, 365-day look-back", "< 2 s", "/api/v1/query/lifecycle",
+                $$"""{"event":"purchase","period":"day","lookback_days":365,{{range}}}"""),
+            new("11c", "Lifecycle weekly, any event + cohort filter", "< 2 s", "/api/v1/query/lifecycle",
+                $$"""{"period":"week","lookback_days":90,"filters":[{{InCohort(heavy)}}],{{weeks}}}"""),
         ];
 
         var rows = new List<string[]>();
         foreach (var s in scenarios)
         {
-            if (s.Id.StartsWith('9') && cohorts.Count < 3) continue;
+            if ((s.Id.StartsWith('9') || s.Id == "11c") && cohorts.Count < 3) continue;
             var (cold, coldServer, sample) = await Call(http, s);
             var client = new List<double>();
             var server = new List<double>();
@@ -78,7 +90,7 @@ static class Bench
             client.Sort();
             server.Sort();
             var p95 = Stats.Percentile(client, 0.95);
-            var limit = s.Target switch { "< 1 s" => 1000, "< 3 s" => 3000, _ => double.MaxValue };
+            var limit = s.Target switch { "< 1 s" => 1000, "< 1.5 s" => 1500, "< 2 s" => 2000, "< 3 s" => 3000, _ => double.MaxValue };
             Console.WriteLine($"  {s.Id,-3} {s.Name,-50} cold {cold,8:0} ms  p50 {Stats.Percentile(client, 0.5),7:0} ms  p95 {p95,7:0} ms   {sample}");
             rows.Add([
                 s.Id, s.Name, $"{Stats.Ms(cold)} ms", $"{Stats.Ms(Stats.Percentile(client, 0.5))} ms", $"{Stats.Ms(p95)} ms",
@@ -118,6 +130,13 @@ static class Bench
     static string Summarize(JsonElement root)
     {
         if (root.TryGetProperty("events", out var events)) return $"{events.GetArrayLength()} events";
+        if (root.TryGetProperty("customers", out var customers))
+            return $"{Stats.N(customers.GetDouble())} customers, {Stats.N(root.GetProperty("segments").EnumerateArray().Count(x => x.GetProperty("persons").GetInt64() > 0))} segments";
+        if (root.TryGetProperty("periods", out var periods))
+        {
+            var last = periods[periods.GetArrayLength() - 1];
+            return $"{periods.GetArrayLength()} periods, last: new {Stats.N(last.GetProperty("new").GetDouble())}, returning {Stats.N(last.GetProperty("returning").GetDouble())}, dormant {Stats.N(last.GetProperty("dormant").GetDouble())}";
+        }
         var results = root.GetProperty("results");
         if (results.GetArrayLength() == 0) return "no results";
         var first = results[0];

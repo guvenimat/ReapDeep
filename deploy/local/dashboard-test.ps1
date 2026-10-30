@@ -137,6 +137,19 @@ $counts = [regex]::Matches($table, '<td class="num strong">(\d+)</td>') | ForEac
 Check "table: persons per step 2/1/1 -> $($counts -join '/')" (($counts -join '/') -eq "2/1/1")
 Check "table: step 3 conversion 50%" ($table -match '>50%<')
 
+Write-Host "`n4b) RFM and Lifecycle tabs"
+$q = Q '{"window_days":365,"purchase_event":"step3___TAG__","amount_property":"amount","filters":[]}'
+$html = Dom "#/rfm?q=$q" "document.querySelector('[data-testid=rfm-grid] td') && document.querySelector('[data-testid=rfm-segments] tbody tr')"
+Check "RFM: one customer (anonymous + identified merged)" ((Section $html "rfm-customers") -match '>1</div>')
+Check "RFM: 5x5 grid of cells" (([regex]::Matches((Section $html "rfm-grid"), '<td class="heat ')).Count -eq 25)
+Check "RFM: the only customer is scored R1 F1 (Lost)" ((Section $html "rfm-grid") -match 'R1 · F1 · Lost: 1 customers')
+Check "RFM: segment table lists all 11 segments with a cohort action" (([regex]::Matches($html, 'data-testid="cohort-[a-z_]+"')).Count -eq 11)
+$q = Q '{"event":"page___TAG__","period":"day","lookback_days":90,"filters":[]}'
+$html = Dom "#/lifecycle?range=7d&q=$q" "document.querySelector('[data-testid=lifecycle-chart] svg path[fill]') && document.querySelector('[data-testid=lifecycle-table] tbody tr')"
+Check "Lifecycle: one new person today" ((Section $html "lifecycle-new") -match '>1</div>')
+Check "Lifecycle: one stacked bar for the new person" (([regex]::Matches((Section $html "lifecycle-chart"), '<path fill="var\(--series-1\)"')).Count -eq 1)
+Check "Lifecycle: table's latest period has new = 1, active = 1" ((Section $html "lifecycle-table") -match '<tbody><tr><td class="nowrap">[^<]+</td><td class="num">1</td><td class="num">0</td><td class="num">0</td><td class="num neg">0</td><td class="num strong">1</td>')
+
 Write-Host "`n5) Events tab"
 $q = Q '{"event":"","distinct_id":"","person_id":"","limit":50}'
 $table = Section (Dom "#/events?range=7d&q=$q" (& $hasTable "events-table")) "events-table"

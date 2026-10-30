@@ -279,6 +279,30 @@ visitor") were left out on purpose: they would be fetched with the public key, s
 guesses a `distinct_id` could read what that person looked at. They need a token signed by the store's
 backend first.
 
+### RFM and lifecycle
+
+RFM scores every person who bought in a 90, 180 or 365-day window on recency (time since the last
+purchase), frequency (distinct orders) and monetary value (sum of `amount`), and maps the recency and
+frequency scores to the 11 standard segments (Champions ... Lost). Lifecycle labels each person in each
+period as new, returning, resurrecting or dormant.
+
+| Decision | Alternative | Why |
+|---|---|---|
+| Scores from `RANK()` percentiles: `1 + floor(5 * (rank - 1) / n)` | `NTILE(5)`, or `CUME_DIST()` | most customers have exactly one order. `NTILE` splits equal values across scores, and `CUME_DIST` gives the tied lowest value a high score (one order at 70% cumulative share = score 4). Rank-based percentiles give ties the same score and give the lowest value score 1. |
+| Recency ranked on the last purchase timestamp | rank on days in the project time zone | no time zone dependency, so the report and the cohort job score identically; days are only shown |
+| Orders = `COUNT(DISTINCT COALESCE(order_id, event_id))` | count purchase events | a purchase event is one item; orders without `order_id` still count, one per event |
+| Segments from R and F; M is reported per segment | an R x F x M cube | the standard 11-segment map is a 5x5 R-F grid; M stays visible as average value and revenue share |
+| Computed at query time; segments are stored only when saved as a cohort | a nightly `person_rfm` table | always fresh, nothing extra to delete; the purchase scan is narrow because `events` is sorted by `(project_id, event, timestamp)` |
+| `rfm_segment` cohort condition, calculated by the existing cohort job | a separate segment store | segment membership gets filters, breakdowns, versioning and deletion for free |
+| Lifecycle "new" = not seen in the last N days (default 90, up to 365) | first event ever | "any event" over a full year is a scan of every event of the project; the look-back is shown in the UI |
+
+Both queries aggregate per `distinct_id` first and then merge persons with the `LEFT JOIN` on
+`person_distinct_ids`, so purchases made before signing in count for the signed-in person. Lifecycle
+uses `LAG`/`LEAD` over each person's distinct active periods; a period is "dormant" for people who were
+active in the previous one and not in this one. Scores are relative to the population: a filter or a
+cohort filter re-ranks only the matching customers, while an `rfm_segment` cohort always scores all
+customers of the project.
+
 ## 7. Authentication and tenancy
 
 - **API keys** are project-scoped and read-only. Only a SHA-256 hash is stored; the key is shown once.
@@ -366,12 +390,13 @@ The system is verified end to end against the real stack rather than with mocks:
 | `query-test.ps1` | every query type against data with known answers, EXPLAIN plans, latency |
 | `deletion-test.ps1` | person and distinct ID deletion, returning users, tombstone purge, removal from cohorts |
 | `cohort-test.ps1` | cohort rules against known answers (identity merge, negation, OR, static lists), filters and breakdowns, 404/409, recalculation, purge |
+| `rfm-lifecycle-test.ps1` | one customer per RFM segment with known scores (ties, merged identities, orders without `order_id`, invalid amounts), `rfm_segment` cohorts, every lifecycle state per day and the look-back |
 | `auth-test.ps1`, `settings-test.ps1` | sessions, roles, API keys, CORS, forwarded headers, StarRocks grants |
 | `dashboard-test.ps1`, `insights-test.ps1` | headless Chrome over the DevTools Protocol, every tab and dashboards |
 | `load-test.ps1` | throughput, latency, loss and freshness; the 100M-event query benchmark |
 
 Unit tests cover the pure logic: the SQL builder's mandatory filters and parameterization, the cohort rule
-compiler and its validation, time range
+compiler and its validation, the RFM segment map and the RFM and lifecycle SQL, time range
 parsing and bucketing, password hashing and user agent parsing. CI builds everything and runs the SDK and
 unit tests on every push.
 

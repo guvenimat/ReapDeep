@@ -82,6 +82,7 @@ static class Demo
             return (1 + 0.8 * d / days) * weekend;
         }).ToArray();
         var totalWeight = dayWeights.Sum();
+        var buyers = new List<(Visitor Visitor, DateTime FirstPurchase)>();
 
         for (var v = 0; v < visitors; v++)
         {
@@ -91,6 +92,7 @@ static class Demo
             var visitor = new Visitor($"anon-{Guid.CreateVersion7()}", device, source);
 
             AddSession(rng, sessions, visitor, start.AddDays(firstDay), now, first: true);
+            if (visitor.FirstPurchase is { } bought) buyers.Add((visitor, bought));
             for (var week = 1; week < 8; week++)
             {
                 var p = visitor.UserId is not null ? 0.48 * Math.Pow(0.86, week - 1) : 0.16 * Math.Pow(0.72, week - 1);
@@ -100,6 +102,20 @@ static class Demo
                 AddSession(rng, sessions, visitor, day, now, first: false);
             }
         }
+
+        foreach (var buyer in buyers)
+        {
+            if (rng.NextDouble() >= 0.4) continue;
+            var repeats = 1 + rng.Next(5);
+            var day = buyer.FirstPurchase;
+            for (var k = 0; k < repeats; k++)
+            {
+                day = day.AddDays(3 + rng.Next(12));
+                if (day > now) break;
+                PurchaseSession(rng, sessions, buyer.Visitor, day, now);
+            }
+        }
+        AddHistoricalCustomers(rng, sessions, now, start, visitors / 3);
 
         var events = sessions.Sum(s => s.Events.Count);
         Console.WriteLine($"Sending {events:N0} events in {sessions.Count:N0} sessions from {visitors:N0} visitors ({_signups:N0} sign-ups) over {days} days...");
@@ -117,7 +133,8 @@ static class Demo
         Console.WriteLine($"Sent in {sw.Elapsed.TotalSeconds:0.0} s.");
 
         await CreateDashboard(db);
-        Console.WriteLine("Created the 'Demo Shop overview' dashboard. Select the 'Demo Shop' project and the last 30 days in the dashboard.");
+        await CreateCohorts(db);
+        Console.WriteLine("Created the 'Demo Shop overview' dashboard and sample cohorts. Select the 'Demo Shop' project and the last 30 days in the dashboard.");
     }
 
     sealed class Visitor(string anonId, Device device, Source source)
@@ -126,6 +143,7 @@ static class Demo
         public Device Device { get; } = device;
         public Source Source { get; } = source;
         public string? UserId { get; set; }
+        public DateTime? FirstPurchase { get; set; }
         public string DistinctId => UserId ?? AnonId;
     }
 
@@ -206,6 +224,7 @@ static class Demo
                         if (rng.NextDouble() < 0.71)
                         {
                             Add("purchase", "/checkout", new() { ["amount"] = product.Price, ["currency"] = "EUR", ["item_id"] = product.Id, ["category"] = product.Category, ["order_id"] = $"o-{Guid.CreateVersion7():N}" });
+                            v.FirstPurchase ??= day;
                             break;
                         }
                     }
@@ -227,6 +246,85 @@ static class Demo
             };
         }
         if (list.Count > 0) sessions.Add((v.Device, list));
+    }
+
+    static Dictionary<string, object?> BaseProps(Visitor v, string sessionId, string path) => new()
+    {
+        ["$current_url"] = "https://demo-shop.example" + path,
+        ["$host"] = "demo-shop.example",
+        ["$pathname"] = path,
+        ["$session_id"] = sessionId,
+        ["$screen_width"] = v.Device.Width,
+        ["$screen_height"] = v.Device.Height,
+        ["$lib"] = "web",
+        ["$lib_version"] = "0.1.0",
+    };
+
+    static void PurchaseSession(Random rng, List<(Device, List<Ev>)> sessions, Visitor v, DateTime day, DateTime now, string? identifyAs = null)
+    {
+        var t = day.AddHours(9 + rng.Next(13)).AddMinutes(rng.Next(60)).AddSeconds(rng.Next(60));
+        if (t > now) return;
+        var sessionId = Guid.CreateVersion7().ToString();
+        var list = new List<Ev>();
+        void Add(string ev, string path, Dictionary<string, object?>? extra = null)
+        {
+            var props = BaseProps(v, sessionId, path);
+            if (extra is not null) foreach (var (k, val) in extra) props[k] = val;
+            if (t <= now) list.Add(new Ev(ev, v.DistinctId, t, props));
+            t = t.AddSeconds(8 + rng.Next(70));
+        }
+
+        var products = new List<DemoItem> { DemoCatalog.Popular(rng) };
+        if (rng.NextDouble() < 0.3) products.Add(DemoCatalog.Next(rng, products[0]));
+        foreach (var product in products)
+        {
+            var path = "/products/" + product.Id;
+            var item = new Dictionary<string, object?> { ["item_id"] = product.Id, ["product_name"] = product.Name, ["category"] = product.Category, ["price"] = product.Price };
+            Add("$pageview", path);
+            Add("product_viewed", path, item);
+            Add("add_to_cart", path, item);
+        }
+        Add("$pageview", "/checkout");
+        if (identifyAs is not null)
+        {
+            v.UserId = identifyAs;
+            Add("$identify", "/checkout", new()
+            {
+                ["$anon_distinct_id"] = v.AnonId,
+                ["$set"] = new Dictionary<string, object?>
+                {
+                    ["email"] = $"{identifyAs}@example.com",
+                    ["name"] = $"Customer {identifyAs["user-".Length..]}",
+                    ["plan"] = rng.NextDouble() < 0.3 ? "pro" : "free",
+                    ["signup_source"] = "direct",
+                },
+            });
+        }
+        Add("checkout_started", "/checkout", new() { ["cart_value"] = products.Sum(p => p.Price), ["items"] = products.Count });
+        var order = $"o-{Guid.CreateVersion7():N}";
+        foreach (var product in products)
+            Add("purchase", "/checkout", new() { ["amount"] = product.Price, ["currency"] = "EUR", ["item_id"] = product.Id, ["category"] = product.Category, ["order_id"] = order });
+        if (list.Count > 0) sessions.Add((v.Device, list));
+    }
+
+    static void AddHistoricalCustomers(Random rng, List<(Device, List<Ev>)> sessions, DateTime now, DateTime start, int count)
+    {
+        var historyStart = now.Date.AddDays(-330);
+        var historyDays = Math.Max(1, (int)(start - historyStart).TotalDays);
+        for (var i = 1; i <= count; i++)
+        {
+            var visitor = new Visitor($"anon-{Guid.CreateVersion7()}", PickWeighted(rng, Devices), Sources[1]);
+            var persona = rng.NextDouble();
+            var orders = persona < 0.3 ? 3 + rng.Next(6) : persona < 0.75 ? 1 : 1 + rng.Next(3);
+            var day = historyStart.AddDays(rng.Next(Math.Max(1, historyDays - orders * 14)));
+            for (var k = 0; k < orders; k++)
+            {
+                PurchaseSession(rng, sessions, visitor, day, now, k == 0 ? $"user-h{i:D5}" : null);
+                day = day.AddDays(5 + rng.Next(25));
+            }
+            if (persona >= 0.75 && rng.NextDouble() < 0.6)
+                PurchaseSession(rng, sessions, visitor, start.AddDays(rng.Next(Math.Max(1, (int)(now - start).TotalDays))), now);
+        }
     }
 
     static string RandomProduct(Random rng) => "/products/" + DemoCatalog.Popular(rng).Id;
@@ -299,6 +397,35 @@ static class Demo
         Console.WriteLine("Removed the previous demo data (project 4).");
     }
 
+    static async Task CreateCohorts(NpgsqlDataSource db)
+    {
+        (string Name, string Description, string Definition)[] cohorts =
+        [
+            ("Champions", "Recent customers who buy often (RFM)",
+                """{"groups":[{"conditions":[{"type":"rfm_segment","segments":["champions"],"within_days":365}]}]}"""),
+            ("Customers at risk", "Frequent buyers who have not bought for a while (RFM at risk and can't lose)",
+                """{"groups":[{"conditions":[{"type":"rfm_segment","segments":["at_risk","cant_lose"],"within_days":365}]}]}"""),
+            ("Window shoppers", "Viewed 3+ products in the last 30 days without buying",
+                """{"groups":[{"conditions":[{"type":"performed_event","event":"product_viewed","count_op":"gte","count":3,"within_days":30},{"type":"not_performed_event","event":"purchase","within_days":30}]}]}"""),
+            ("Pro plan", "Persons on the pro plan",
+                """{"groups":[{"conditions":[{"type":"person_property","property":"plan","op":"eq","value":"pro"}]}]}"""),
+        ];
+        await using var conn = await db.OpenConnectionAsync();
+        foreach (var (name, description, definition) in cohorts)
+        {
+            await using var cmd = new NpgsqlCommand("""
+                INSERT INTO cohorts (project_id, name, description, kind, definition, created_by)
+                VALUES (@p, @n, @d, 'dynamic', @def::jsonb,
+                        (SELECT user_id FROM organization_members WHERE organization_id = 1 AND role = 'owner' ORDER BY user_id LIMIT 1))
+                """, conn);
+            cmd.Parameters.AddWithValue("p", ProjectId);
+            cmd.Parameters.AddWithValue("n", name);
+            cmd.Parameters.AddWithValue("d", description);
+            cmd.Parameters.AddWithValue("def", definition);
+            await cmd.ExecuteNonQueryAsync();
+        }
+    }
+
     static async Task CreateDashboard(NpgsqlDataSource db)
     {
         (string Name, string Kind, string Query)[] insights =
@@ -309,6 +436,8 @@ static class Demo
             ("Weekly retention after sign-up", "retention", """{"start_event":"$identify","return_event":"$pageview","period":"week","periods":6,"filters":[]}"""),
             ("Purchases by device", "trends", """{"series":[{"event":"purchase","metric":"total"}],"interval":"week","filters":[],"breakdown":{"scope":"event","property":"$device_type"},"deduplicate":false,"chart":"bar"}"""),
             ("Journeys after the first page", "paths", """{"start_event":"$pageview","depth":4,"window_seconds":3600,"pageview_paths":true,"filters":[]}"""),
+            ("Customer segments (RFM)", "rfm", """{"window_days":365,"purchase_event":"purchase","amount_property":"amount","filters":[]}"""),
+            ("Weekly visitor lifecycle", "lifecycle", """{"event":"","period":"week","lookback_days":90,"filters":[]}"""),
         ];
         await using var conn = await db.OpenConnectionAsync();
         await using var tx = await conn.BeginTransactionAsync();
