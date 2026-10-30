@@ -67,6 +67,8 @@ public static class HostingExtensions
         services.AddSingleton<FunnelService>();
         services.AddSingleton<RetentionService>();
         services.AddSingleton<PathService>();
+        services.AddSingleton<RfmService>();
+        services.AddSingleton<LifecycleService>();
         services.AddSingleton<EventService>();
 
         services.AddSingleton<PersonRepository>();

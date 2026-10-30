@@ -4,7 +4,7 @@ namespace ReapDeep.QueryApi.Insights;
 
 public static class InsightKinds
 {
-    public static readonly string[] All = ["trends", "funnels", "retention", "paths"];
+    public static readonly string[] All = ["trends", "funnels", "retention", "paths", "rfm", "lifecycle"];
 }
 
 public sealed record InsightBody(string? Name, string? Kind, JsonElement? Query);

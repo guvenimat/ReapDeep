@@ -105,8 +105,12 @@ public static class CohortSql
         var props = conditions.Where(c => c.Type == ConditionTypes.PersonProperty)
             .Select(c => b.Condition(new Filter("person", c.Property!, c.Op!, c.Value)))
             .ToList();
-        var behavioral = conditions.Where(c => c.Type != ConditionTypes.PersonProperty).ToList();
+        var behavioral = conditions.Where(c => c.Type is ConditionTypes.Performed or ConditionTypes.NotPerformed).ToList();
+        var rfm = conditions.Where(c => c.Type == ConditionTypes.RfmSegment).ToList();
         const string alivePerson = "p.is_deleted = 0";
+
+        if (rfm.Count > 0)
+            return RfmGroup(b, project, now, nowUtc, rfm, behavioral, props);
 
         if (behavioral.Count == 0)
             return $"SELECT p.person_id AS person FROM analytics.persons p WHERE p.project_id = {project} AND {alivePerson} AND {string.Join(" AND ", props)}";
@@ -122,6 +126,19 @@ public static class CohortSql
         var absent = behavioral.Select((c, k) => CountCondition(b, c, $"COALESCE(x.c{k}, 0)"));
         return $"SELECT p.person_id AS person FROM analytics.persons p LEFT JOIN ({perPerson}) x ON x.person = p.person_id " +
                $"WHERE p.project_id = {project} AND {alivePerson} AND {string.Join(" AND ", props.Concat(absent))}";
+    }
+
+    static string RfmGroup(SqlBuilder b, string project, string now, DateTime nowUtc, List<CohortCondition> rfm,
+        List<CohortCondition> behavioral, List<string> props)
+    {
+        var population = rfm.Select(c => RfmSql.Members(b, project, c.Event!, c.WithinDays!.Value, c.Segments!, nowUtc))
+            .Aggregate((acc, next) => $"SELECT g.person FROM ({acc}) g LEFT SEMI JOIN ({next}) n ON n.person = g.person");
+        if (behavioral.Count == 0 && props.Count == 0) return population;
+
+        var counts = behavioral.Count == 0 ? "" : $" LEFT JOIN ({PerPerson(b, project, now, nowUtc, behavioral)}) x ON x.person = r.person";
+        var persons = props.Count == 0 ? "" : $" JOIN analytics.persons p ON p.project_id = {project} AND p.person_id = r.person AND p.is_deleted = 0";
+        var where = behavioral.Select((c, k) => CountCondition(b, c, $"COALESCE(x.c{k}, 0)")).Concat(props);
+        return $"SELECT r.person FROM ({population}) r{counts}{persons} WHERE {string.Join(" AND ", where)}";
     }
 
     static string PerPerson(SqlBuilder b, string project, string now, DateTime nowUtc, List<CohortCondition> behavioral)

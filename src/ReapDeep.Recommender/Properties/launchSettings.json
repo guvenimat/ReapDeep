@@ -1,0 +1,12 @@
+{
+  "profiles": {
+    "ReapDeep.Recommender": {
+      "commandName": "Project",
+      "launchBrowser": true,
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development"
+      },
+      "applicationUrl": "https://localhost:62556;http://localhost:62557"
+    }
+  }
+}

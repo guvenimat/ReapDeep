@@ -1,3 +1,4 @@
+using ReapDeep.Analytics.Rfm;
 using ReapDeep.Analytics.Sql;
 
 namespace ReapDeep.Analytics.Cohorts;
@@ -21,8 +22,8 @@ public static class CohortRules
         {
             var conditions = g.Conditions ?? [];
             Ensure.That(conditions.Count > 0, "Each group needs at least one condition");
-            Ensure.That(conditions.Any(c => c.Type is ConditionTypes.Performed or ConditionTypes.PersonProperty),
-                "Each group needs a performed_event or person_property condition; not_performed_event alone has no population");
+            Ensure.That(conditions.Any(c => c.Type is ConditionTypes.Performed or ConditionTypes.PersonProperty or ConditionTypes.RfmSegment),
+                "Each group needs a performed_event, person_property or rfm_segment condition; not_performed_event alone has no population");
             return new CohortGroup(conditions.Select(NormalizeCondition).ToList());
         }).ToList());
     }
@@ -35,6 +36,17 @@ public static class CohortRules
             ColumnMapper.Validate(c.Property ?? "");
             Ensure.That(!string.IsNullOrEmpty(c.Op), $"Condition on '{c.Property}' requires op");
             return new CohortCondition(c.Type, Property: c.Property, Op: c.Op, Value: c.Value);
+        }
+
+        if (c.Type == ConditionTypes.RfmSegment)
+        {
+            var segments = (c.Segments ?? []).Distinct().ToList();
+            Ensure.That(segments.Count > 0, "An rfm_segment condition needs at least one segment");
+            foreach (var s in segments) Ensure.OneOf(s, "segments", RfmSegments.Keys);
+            var window = c.WithinDays ?? RfmSql.WindowDays[^1];
+            Ensure.That(RfmSql.WindowDays.Contains(window), $"within_days of an rfm_segment condition: {string.Join(" | ", RfmSql.WindowDays)}");
+            return new CohortCondition(c.Type, Event: string.IsNullOrWhiteSpace(c.Event) ? RfmSql.DefaultEvent : Ensure.NotBlank(c.Event, "event"),
+                WithinDays: window, Segments: segments);
         }
 
         var eventName = Ensure.NotBlank(c.Event, "event");

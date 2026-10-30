@@ -4,8 +4,10 @@ import type { Insight, InsightKind } from '../../api/types'
 import { Icon } from '../../components/icons'
 import { useQuery } from '../../lib/hooks'
 
-export const KIND_LABEL: Record<InsightKind, string> = { trends: 'Trend', funnels: 'Funnel', retention: 'Retention', paths: 'Paths' }
-const KIND_NOUN: Record<InsightKind, string> = { trends: 'trend', funnels: 'funnel', retention: 'retention analysis', paths: 'paths analysis' }
+export const KIND_LABEL: Record<InsightKind, string> = { trends: 'Trend', funnels: 'Funnel', retention: 'Retention', paths: 'Paths', lifecycle: 'Lifecycle', rfm: 'RFM' }
+const KIND_NOUN: Record<InsightKind, string> = {
+  trends: 'trend', funnels: 'funnel', retention: 'retention analysis', paths: 'paths analysis', lifecycle: 'lifecycle analysis', rfm: 'RFM analysis',
+}
 
 export function insightHref(insight: Insight, params: URLSearchParams) {
   const p = new URLSearchParams()

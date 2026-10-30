@@ -9,7 +9,7 @@ import { useQuery } from '../../lib/hooks'
 import { InsightTile } from './InsightTile'
 import { insightHref, KIND_LABEL } from './SaveInsight'
 
-const KIND_ICON: Record<InsightKind, IconName> = { trends: 'trends', funnels: 'funnels', retention: 'retention', paths: 'paths' }
+const KIND_ICON: Record<InsightKind, IconName> = { trends: 'trends', funnels: 'funnels', retention: 'retention', paths: 'paths', lifecycle: 'lifecycle', rfm: 'rfm' }
 
 export function Dashboards({ id, params, range, openDashboard }: {
   id?: string; params: URLSearchParams; range: Range; openDashboard: (id?: string) => void

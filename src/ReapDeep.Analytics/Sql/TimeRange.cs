@@ -15,9 +15,11 @@ public readonly record struct TimeRange(DateTime FromUtc, DateTime ToUtc, DateTi
         var fromUtc = from is null ? toUtc - defaultSpan : ParseBoundary(from, tz, isEnd: false, nameof(from));
         if (fromUtc >= toUtc) throw new ValidationException("date_from must be before date_to");
         if (toUtc - fromUtc > TimeSpan.FromDays(MaxDays)) throw new ValidationException($"Date range can be at most {MaxDays} days");
-        return new TimeRange(fromUtc, toUtc, TimeZoneInfo.ConvertTimeFromUtc(fromUtc, tz), TimeZoneInfo.ConvertTimeFromUtc(toUtc, tz),
-            FixedOffset(tz, fromUtc, toUtc));
+        return Between(fromUtc, toUtc, tz);
     }
+
+    public static TimeRange Between(DateTime fromUtc, DateTime toUtc, TimeZoneInfo tz) =>
+        new(fromUtc, toUtc, TimeZoneInfo.ConvertTimeFromUtc(fromUtc, tz), TimeZoneInfo.ConvertTimeFromUtc(toUtc, tz), FixedOffset(tz, fromUtc, toUtc));
 
     static int? FixedOffset(TimeZoneInfo tz, DateTime fromUtc, DateTime toUtc)
     {
@@ -47,7 +49,7 @@ public readonly record struct TimeRange(DateTime FromUtc, DateTime ToUtc, DateTi
         return list;
     }
 
-    static DateTime Truncate(DateTime t, string interval) => interval switch
+    public static DateTime Truncate(DateTime t, string interval) => interval switch
     {
         "hour" => new DateTime(t.Year, t.Month, t.Day, t.Hour, 0, 0),
         "day" => t.Date,
@@ -55,7 +57,7 @@ public readonly record struct TimeRange(DateTime FromUtc, DateTime ToUtc, DateTi
         _ => new DateTime(t.Year, t.Month, 1),
     };
 
-    static DateTime Next(DateTime t, string interval) => interval switch
+    public static DateTime Next(DateTime t, string interval) => interval switch
     {
         "hour" => t.AddHours(1),
         "day" => t.AddDays(1),
