@@ -208,6 +208,8 @@ services:
       ConnectionStrings__Postgres: *postgres-connection
       ConnectionStrings__StarRocks: Server=starrocks;Port=9030;User ID=reapdeep_query;Password=${STARROCKS_QUERY_PASSWORD:?Missing STARROCKS_QUERY_PASSWORD in .env};Database=analytics;ConnectionReset=false;Pooling=true;MaximumPoolSize=50
       QueryApi__AllowExplain: "true"
+      Alerts__PollSeconds: "5"
+      Alerts__AllowPrivateWebhooks: "true"
       Auth__BootstrapEmail: ${ADMIN_EMAIL:-admin@reapdeep.local}
       Auth__BootstrapPassword: ${ADMIN_PASSWORD:?Missing ADMIN_PASSWORD in .env - run run-local.ps1 or smoke-test.sh}
       Auth__SecureCookie: "false"

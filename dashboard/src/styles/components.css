@@ -461,3 +461,5 @@ button.link.active { text-decoration: underline; }
 .movement-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .movement-bar { height: 8px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
 .movement-bar > span { display: block; height: 100%; border-radius: 4px; background: var(--series-1); }
+.alert-rule { margin: 12px 0; flex-wrap: wrap; }
+.alert-rule select:not(.op) { width: auto; }

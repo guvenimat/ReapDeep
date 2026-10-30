@@ -211,5 +211,43 @@ CREATE TABLE recommendation_runs (
     PRIMARY KEY (project_id, model)
 );
 
+CREATE TABLE alerts (
+    id               BIGSERIAL        PRIMARY KEY,
+    project_id       BIGINT           NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    insight_id       BIGINT           NOT NULL REFERENCES insights(id) ON DELETE CASCADE,
+    name             TEXT             NOT NULL,
+    condition        TEXT             NOT NULL CHECK (condition IN ('above', 'below', 'increase', 'decrease')),
+    threshold        DOUBLE PRECISION NOT NULL,
+    window_unit      TEXT             NOT NULL CHECK (window_unit IN ('hour', 'day', 'week')),
+    webhook_url      TEXT             NOT NULL,
+    secret           TEXT             NOT NULL,
+    enabled          BOOLEAN          NOT NULL DEFAULT true,
+    state            TEXT             NOT NULL DEFAULT 'pending' CHECK (state IN ('pending', 'ok', 'firing', 'error')),
+    last_value       DOUBLE PRECISION,
+    previous_value   DOUBLE PRECISION,
+    last_error       TEXT,
+    last_checked_at  TIMESTAMPTZ,
+    next_check_at    TIMESTAMPTZ      NOT NULL DEFAULT now(),
+    created_by       BIGINT           REFERENCES users(id) ON DELETE SET NULL,
+    created_at       TIMESTAMPTZ      NOT NULL DEFAULT now(),
+    updated_at       TIMESTAMPTZ      NOT NULL DEFAULT now()
+);
+CREATE INDEX alerts_project ON alerts (project_id, created_at DESC);
+CREATE INDEX alerts_due ON alerts (next_check_at) WHERE enabled;
+
+CREATE TABLE alert_events (
+    id               BIGSERIAL        PRIMARY KEY,
+    alert_id         BIGINT           NOT NULL REFERENCES alerts(id) ON DELETE CASCADE,
+    project_id       BIGINT           NOT NULL,
+    kind             TEXT             NOT NULL CHECK (kind IN ('fired', 'resolved', 'error')),
+    value            DOUBLE PRECISION,
+    previous_value   DOUBLE PRECISION,
+    message          TEXT             NOT NULL,
+    response_status  INT,
+    delivery_error   TEXT,
+    created_at       TIMESTAMPTZ      NOT NULL DEFAULT now()
+);
+CREATE INDEX alert_events_alert ON alert_events (alert_id, created_at DESC);
+
 INSERT INTO organizations (name) VALUES ('Local Org');
 INSERT INTO projects (organization_id, name, public_key) VALUES (1, 'Local Project', 'pk_dev_local');

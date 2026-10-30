@@ -12,6 +12,7 @@ retention, path and person questions over hundreds of millions of events.
 
 - **Analyses:** trends (totals, unique users, sum/average/median/p90 of a property, formulas such as `A / B`, comparison with the previous period, breakdowns), funnels with conversion windows, time to convert and the list of persons who dropped off at each step (savable as a cohort), weekly or daily retention cohorts, user paths, lifecycle (new, returning, resurrecting, dormant), RFM customer segments, a live event stream and person profiles; any of them can be saved and arranged on dashboards.
 - **Recommendations:** a product catalog plus popular, trending, viewed-together and bought-together suggestions, served to your site by a public endpoint from memory and measured with a hit-rate check.
+- **Alerts:** a saved trend can call a webhook when it goes above or below a threshold, or grows or drops by a percentage against the previous window; payloads are signed with HMAC-SHA256.
 - **Cohorts:** segments defined by behavior ("viewed a product 3+ times in 30 days but did not buy") or person properties, or uploaded as a list; every analysis can filter or break down by them.
 - **Fast ingestion:** 50K events/s on a single machine with p99 under 10 ms; a `202` response means the event is durably in Kafka.
 - **Fresh data:** events are queryable in 4-11 s (Kafka -> StarRocks Routine Load).
@@ -113,7 +114,7 @@ curl http://localhost:8001/api/v1/query/trends \
   -d '{ "series": [{ "event": "$pageview", "metric": "unique_users" }], "interval": "day" }'
 ```
 
-Other endpoints: `POST /api/v1/query/funnels`, `POST /api/v1/query/funnels/persons`, `/api/v1/cohorts` (CRUD, `preview`, `persons`, `recalculate`), `POST /api/v1/query/retention`, `POST /api/v1/query/paths`, `POST /api/v1/query/lifecycle`, `POST /api/v1/query/rfm`, `POST /api/v1/query/rfm/migration`, `GET /api/v1/persons/{id}/rfm`, `GET /api/v1/events`, `GET /api/v1/persons[/{id}]`, `GET /api/v1/metadata`, `GET /healthz`.
+Other endpoints: `POST /api/v1/query/funnels`, `POST /api/v1/query/funnels/persons`, `/api/v1/cohorts` (CRUD, `preview`, `persons`, `recalculate`), `POST /api/v1/query/retention`, `POST /api/v1/query/paths`, `POST /api/v1/query/lifecycle`, `POST /api/v1/query/rfm`, `POST /api/v1/query/rfm/migration`, `GET /api/v1/persons/{id}/rfm`, `/api/v1/alerts` (CRUD, `check`, `events`), `GET /api/v1/events`, `GET /api/v1/persons[/{id}]`, `GET /api/v1/metadata`, `GET /healthz`.
 
 ### Demo data
 
@@ -153,6 +154,14 @@ A trend series counts events, counts unique persons, or aggregates a numeric eve
 - **RFM:** every person who bought in the last 90, 180 or 365 days gets 1-5 scores for recency, frequency (distinct `order_id`s) and monetary value (sum of `amount`). Scores are rank percentiles, so customers with the same number of orders share a score. The recency and frequency scores map to the 11 standard segments, from Champions to Lost, and each segment shows its customers, average recency, orders, value and share of revenue.
 - **Segment movement:** pick a segment to see where today's members were N days ago (7, 30 or 90) and where that segment's members of N days ago are now, including "not a customer then" and "no purchase in the window now". The person profile shows each customer's segment, scores, days since the last purchase, orders and spend.
 - **Segments as cohorts:** one click saves a segment as a dynamic cohort with an `rfm_segment` condition. The cohort job recalculates it like any other cohort, so a segment can filter or break down every analysis, for example a funnel of "Customers at risk". Both analyses merge anonymous and identified IDs before counting.
+
+### Alerts
+
+![Alerts](docs/images/alerts.png)
+
+An alert watches a saved trend over the last hour, day or week: *above* or *below* a value, or a *growth* or *drop* of at least N% against the window before. It follows the trend's first series, or its formula when there is one. A background job in the Query API checks hourly-window alerts every 10 minutes, daily ones every hour and weekly ones every 6 hours (instances claim alerts with `FOR UPDATE SKIP LOCKED`), and "Check now" runs one on demand.
+
+A webhook is called only when an alert starts or stops firing, with a JSON body (`state`, `value`, `previous_value`, `message`, the insight) and an `X-ReapDeep-Signature: sha256=<HMAC-SHA256(secret, body)>` header; the secret is shown when the alert is created. Each event and the HTTP status of its delivery are kept in the alert's history. Webhook URLs that resolve to private, loopback or link-local addresses are refused, and the check is repeated on the connection itself so DNS rebinding cannot bypass it; the local compose file sets `Alerts__AllowPrivateWebhooks=true` so tests can use a receiver on the host. Only owners and admins manage alerts.
 
 ### Cohorts
 
@@ -299,8 +308,8 @@ cd deploy/local
 .\settings-test.ps1     # members, roles, password change, API keys
 .\insights-test.ps1     # saved insights and dashboards, API and browser
 .\cohort-test.ps1       # cohorts: rules, identity merge, static lists, filters and breakdowns, recalculation, deletion
-.
-fm-lifecycle-test.ps1  # RFM scores and segments with known answers, rfm_segment cohorts, lifecycle states and look-back
+.\rfm-lifecycle-test.ps1  # RFM scores and segments with known answers, rfm_segment cohorts, lifecycle states and look-back
+.\alerts-test.ps1       # alerts: validation, firing and resolving, signed webhooks to a local receiver, change and formula conditions, errors
 .\recommender-test.ps1  # catalog, key scopes, models from real events, the public Recommender, stock changes
 .\query-test.ps1        # Query API: trends, funnels, retention, paths, events, persons, EXPLAIN, latency
 .\dashboard-test.ps1    # headless Chrome against the dashboard (Chrome DevTools Protocol)
@@ -341,6 +350,7 @@ deploy/local                Docker Compose stack, schemas and test scripts
 
 ReapDeep is an early v1. It runs end to end locally but has not been operated in production yet.
 
+- Alerts notify through webhooks only; there is no e-mail or Slack integration yet, and a failed delivery is recorded but not retried.
 - Members are added with a temporary password; there are no invitation emails or password reset by email.
 - A person's `created_at` is the time the person worker processed their first `$identify` or `$set`, not the event's own timestamp; it only differs for backfilled data such as the demo seed.
 - Retention and paths read raw events and join persons on every query; they are fast on the demo and test data but were not part of the 100M-event benchmark.

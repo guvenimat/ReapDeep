@@ -318,6 +318,20 @@ the two sets with a `FULL OUTER JOIN` on the person key, so people who became or
 appear as "none" on one side. A person's own RFM uses the same project-wide scoring filtered to one
 person key, which keeps the profile, the cohorts and the movement view consistent.
 
+### Alerts
+
+| Decision | Alternative | Why |
+|---|---|---|
+| Alerts watch a saved trend | a separate metric definition | one query language; whatever a trend can express (filters, cohorts, property sums, formulas) can be alerted on |
+| Evaluated by a hosted job in the Query API | the person worker | evaluation reuses `TrendService` and the read-only StarRocks user; claims use `FOR UPDATE SKIP LOCKED` with a 5-minute lease, so several API instances do not evaluate the same alert |
+| Notify on transitions only (fired, resolved, error) | notify on every check | a threshold that stays crossed would otherwise send a webhook every 10 minutes |
+| Webhooks signed with a per-alert HMAC-SHA256 secret | no signature | receivers can reject forged calls |
+| Private, loopback, link-local and metadata addresses refused, checked again in `ConnectCallback` | allow any URL | webhook URLs are user input; without this an admin could make the server call internal services (SSRF). Checking the address the socket actually connects to defeats DNS rebinding |
+
+Only owners and admins can create alerts, because a webhook sends project numbers to a URL outside
+ReapDeep. Rule changes keep the current state and schedule an immediate check, so raising a threshold
+above the current value produces a "resolved" notification instead of silently resetting.
+
 ## 7. Authentication and tenancy
 
 - **API keys** are project-scoped and read-only. Only a SHA-256 hash is stored; the key is shown once.
@@ -411,6 +425,7 @@ The system is verified end to end against the real stack rather than with mocks:
 | `query-test.ps1` | every query type against data with known answers, EXPLAIN plans, latency |
 | `deletion-test.ps1` | person and distinct ID deletion, returning users, tombstone purge, removal from cohorts |
 | `cohort-test.ps1` | cohort rules against known answers (identity merge, negation, OR, static lists), filters and breakdowns, 404/409, recalculation, purge |
+| `alerts-test.ps1` | alert validation, firing and resolving against known values, signed webhooks received by a local listener, change and formula conditions, error states, cascade on insight deletion |
 | `rfm-lifecycle-test.ps1` | one customer per RFM segment with known scores (ties, merged identities, orders without `order_id`, invalid amounts), `rfm_segment` cohorts, every lifecycle state per day and the look-back |
 | `auth-test.ps1`, `settings-test.ps1` | sessions, roles, API keys, CORS, forwarded headers, StarRocks grants |
 | `dashboard-test.ps1`, `insights-test.ps1` | headless Chrome over the DevTools Protocol, every tab and dashboards |

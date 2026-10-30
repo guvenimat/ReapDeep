@@ -131,3 +131,17 @@ export interface HitRate {
   k: number; cases: number; covered: number; co_viewed_hits: number; co_viewed_hit_rate: number; popular_hits: number; popular_hit_rate: number
   train_from: string; test_from: string; test_to: string; took_ms: number
 }
+
+export type AlertCondition = 'above' | 'below' | 'increase' | 'decrease'
+export type AlertWindow = 'hour' | 'day' | 'week'
+export interface Alert {
+  id: number; name: string; insight_id: number; insight_name: string; condition: AlertCondition; threshold: number; window: AlertWindow
+  webhook_url: string; secret: string | null; enabled: boolean; state: 'pending' | 'ok' | 'firing' | 'error'
+  last_value: number | null; previous_value: number | null; last_error: string | null; last_checked_at: string | null
+  next_check_at: string; created_by: string | null; created_at: string
+}
+export interface AlertEvent {
+  id: number; kind: 'fired' | 'resolved' | 'error'; value: number | null; previous_value: number | null; message: string
+  response_status: number | null; delivery_error: string | null; created_at: string
+}
+export interface AlertInput { name: string; insight_id: number; condition: AlertCondition; threshold: number; window: AlertWindow; webhook_url: string; enabled: boolean }

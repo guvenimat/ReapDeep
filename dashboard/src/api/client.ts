@@ -1,4 +1,5 @@
 import type {
+  Alert, AlertEvent, AlertInput,
   ApiKey, CatalogItem, CatalogItemDetail, CatalogItemInput, Cohort, CohortDefinition, CohortKind, CohortPerson, Dashboard, DashboardSummary, DateRange, DeletionRequest, EventRow, FunnelPersonsResponse, FunnelRequest, FunnelResponse, Insight, InsightKind,
   HitRate, KeyScope, Me, Member, Metadata, ModelRun, LifecycleResponse, PathsResponse, Person, RetentionResponse, RfmMigrationResponse, RfmPerson, RfmResponse, Role, TrendRequest, TrendResponse,
 } from './types'
@@ -132,6 +133,14 @@ export const api = {
   upsertItems: (items: CatalogItemInput[]) => request<{ upserted: number }>('PUT', '/api/v1/items', { items }),
   recommendationModels: (signal?: AbortSignal) => request<{ models: ModelRun[] }>('GET', '/api/v1/recommendations/models', undefined, signal),
   evaluateRecommendations: (k = 10) => request<HitRate>('POST', `/api/v1/recommendations/evaluate?k=${k}`),
+
+  alerts: (signal?: AbortSignal) => request<{ alerts: Alert[] }>('GET', '/api/v1/alerts', undefined, signal),
+  createAlert: (body: AlertInput) => request<Alert>('POST', '/api/v1/alerts', body),
+  updateAlert: (id: number, body: Partial<AlertInput>) => request<Alert>('PUT', `/api/v1/alerts/${id}`, body),
+  deleteAlert: (id: number) => request<void>('DELETE', `/api/v1/alerts/${id}`),
+  checkAlert: (id: number) =>
+    request<{ state: Alert['state']; value: number | null; previous_value: number | null; message: string; event: AlertEvent | null }>('POST', `/api/v1/alerts/${id}/check`),
+  alertEvents: (id: number, signal?: AbortSignal) => request<{ events: AlertEvent[] }>('GET', `/api/v1/alerts/${id}/events`, undefined, signal),
 
   deletionRequests: (signal?: AbortSignal) => request<{ deletion_requests: DeletionRequest[] }>('GET', '/api/v1/deletion-requests', undefined, signal),
   requestDeletion: (target_type: DeletionRequest['target_type'], target_id: string) =>

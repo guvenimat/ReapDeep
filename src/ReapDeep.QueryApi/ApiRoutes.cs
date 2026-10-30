@@ -1,3 +1,4 @@
+using ReapDeep.QueryApi.Alerts;
 using ReapDeep.QueryApi.Analytics;
 using ReapDeep.QueryApi.Auth;
 using ReapDeep.QueryApi.Catalog;
@@ -29,5 +30,6 @@ public static class ApiRoutes
         api.MapDeletionRequests();
         api.MapCohorts();
         api.MapCatalog();
+        api.MapAlerts();
     }
 }
