@@ -10,6 +10,7 @@ public static class AnalyticsEndpoints
     {
         api.MapPost("/query/trends", Trends);
         api.MapPost("/query/funnels", Funnels);
+        api.MapPost("/query/funnels/persons", FunnelPersons);
         api.MapPost("/query/retention", Retention);
         api.MapPost("/query/paths", Paths);
         api.MapPost("/query/rfm", Rfm);
@@ -24,6 +25,9 @@ public static class AnalyticsEndpoints
     static async Task<IResult> Funnels(FunnelRequest req, ProjectContext project, FunnelService funnels, CancellationToken ct) => req.Explain
         ? ApiResults.Ok(await funnels.ExplainAsync(project, req, ct), AppJsonContext.Default.ExplainResponse)
         : ApiResults.Ok(await funnels.RunAsync(project, req, ct), AppJsonContext.Default.FunnelResponse);
+
+    static async Task<IResult> FunnelPersons(FunnelPersonsRequest req, ProjectContext project, FunnelService funnels, CancellationToken ct) =>
+        ApiResults.Ok(await funnels.PersonsAsync(project, req, ct), AppJsonContext.Default.FunnelPersonsResponse);
 
     static async Task<IResult> Retention(RetentionRequest req, ProjectContext project, RetentionService retention, CancellationToken ct) => req.Explain
         ? ApiResults.Ok(await retention.ExplainAsync(project, req, ct), AppJsonContext.Default.ExplainResponse)

@@ -64,3 +64,34 @@ public class TrendFormulaTests
         Assert.Contains("AVG(base.v)", plan.Buckets.Sql);
     }
 }
+
+public class FunnelInsightTests
+{
+    static SqlBuilder Builder() => new(42, new DateTime(2026, 10, 1, 0, 0, 0, DateTimeKind.Utc), new DateTime(2026, 10, 8, 0, 0, 0, DateTimeKind.Utc));
+
+    static readonly FunnelStep[] Steps = [new("view", null), new("cart", null), new("buy", null)];
+
+    [Fact]
+    public void Times_chain_each_step_to_the_previous_inside_the_window()
+    {
+        var q = FunnelSql.Times(Builder(), Steps, 3600, 1);
+
+        Assert.Contains("array_min(array_filter(v -> v >= x.t1 AND v <= x.t1 + 3600, x.a2)) AS t2", q.Sql);
+        Assert.Contains("array_min(array_filter(v -> v >= x.t2 AND v <= x.t1 + 3600, x.a3)) AS t3", q.Sql);
+        Assert.Contains("percentile_approx(t3 - t1, 0.5)", q.Sql);
+        Assert.Contains("LEFT JOIN analytics.person_distinct_ids pdi", q.Sql);
+        Assert.Contains("e.project_id = @p0", q.Sql);
+    }
+
+    [Theory]
+    [InlineData(FunnelSql.Dropped, "lvl = 2")]
+    [InlineData(FunnelSql.Converted, "lvl >= 2")]
+    public void Persons_select_by_funnel_level_with_the_raw_person_key(string kind, string match)
+    {
+        var q = FunnelSql.Persons(Builder(), Steps, 3600, 2, kind, 100);
+
+        Assert.Contains($"WHERE {match} ORDER BY person LIMIT 100", q.Sql);
+        Assert.Contains("SELECT COALESCE(pdi.person_id, e.distinct_id) AS person, window_funnel(3600", q.Sql);
+        Assert.DoesNotContain("xx_hash3_64", q.Sql);
+    }
+}

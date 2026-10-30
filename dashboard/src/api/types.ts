@@ -19,7 +19,11 @@ export interface TrendRequest extends DateRange {
 }
 
 export interface FunnelStepResult { step: number; event: string; count: number; conversion_from_first: number; conversion_from_previous: number }
-export interface FunnelResponse { window_seconds: number; sampling: number; results: { breakdown_value: string | null; steps: FunnelStepResult[] }[]; took_ms: number }
+export interface FunnelTimes { steps: { step: number; persons: number; avg_seconds: number | null; median_seconds: number | null }[]; avg_seconds: number | null; median_seconds: number | null }
+export interface FunnelResponse {
+  window_seconds: number; sampling: number; results: { breakdown_value: string | null; steps: FunnelStepResult[] }[]; took_ms: number; times: FunnelTimes | null
+}
+export interface FunnelPersonsResponse { step: number; kind: 'dropped' | 'converted'; total: number; persons: CohortPerson[]; took_ms: number }
 export interface FunnelRequest extends DateRange { steps: { event: string }[]; window_seconds: number; filters: Filter[]; breakdown?: Breakdown; sampling: number }
 
 export interface RetentionResponse {
