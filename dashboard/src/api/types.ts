@@ -145,3 +145,7 @@ export interface AlertEvent {
   response_status: number | null; delivery_error: string | null; created_at: string
 }
 export interface AlertInput { name: string; insight_id: number; condition: AlertCondition; threshold: number; window: AlertWindow; webhook_url: string; enabled: boolean }
+
+export type ProjectDetail = {
+  id: number; name: string; organization_id: number; organization_name: string; timezone: string; public_key: string; created_at: string
+}

@@ -27,6 +27,7 @@ public static class ApiRoutes
         api.MapDashboards();
         api.MapMembers();
         api.MapApiKeys();
+        api.MapProjects();
         api.MapDeletionRequests();
         api.MapCohorts();
         api.MapCatalog();

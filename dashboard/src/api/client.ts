@@ -1,7 +1,7 @@
 import type {
   Alert, AlertEvent, AlertInput,
   ApiKey, CatalogItem, CatalogItemDetail, CatalogItemInput, Cohort, CohortDefinition, CohortKind, CohortPerson, Dashboard, DashboardSummary, DateRange, DeletionRequest, EventRow, FunnelPersonsResponse, FunnelRequest, FunnelResponse, Insight, InsightKind,
-  HitRate, KeyScope, Me, Member, Metadata, ModelRun, LifecycleResponse, PathsResponse, Person, RetentionResponse, RfmMigrationResponse, RfmPerson, RfmResponse, Role, TrendRequest, TrendResponse,
+  HitRate, KeyScope, Me, Member, Metadata, ModelRun, LifecycleResponse, PathsResponse, Person, RetentionResponse, RfmMigrationResponse, RfmPerson, RfmResponse, Role, TrendRequest, TrendResponse, ProjectDetail,
 } from './types'
 
 const PROJECT_STORAGE = 'reapdeep.projectId'
@@ -98,6 +98,8 @@ export const api = {
   apiKeys: (signal?: AbortSignal) => request<{ api_keys: ApiKey[] }>('GET', '/api/v1/api-keys', undefined, signal),
   createApiKey: (name: string, scope: KeyScope) => request<{ api_key: ApiKey; key: string }>('POST', '/api/v1/api-keys', { name, scope }),
   revokeApiKey: (id: number) => request<void>('DELETE', `/api/v1/api-keys/${id}`),
+  project: (signal?: AbortSignal) => request<ProjectDetail>('GET', '/api/v1/project', undefined, signal),
+  createProject: (name: string, timezone: string) => request<ProjectDetail>('POST', '/api/v1/projects', { name, timezone }),
 
   insights: (signal?: AbortSignal) => request<{ insights: Insight[] }>('GET', '/api/v1/insights', undefined, signal),
   createInsight: (body: { name: string; kind: InsightKind; query: object }) => request<Insight>('POST', '/api/v1/insights', body),

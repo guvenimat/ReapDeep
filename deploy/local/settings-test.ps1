@@ -96,8 +96,31 @@ Check "owner removes the member -> 204" ((Send $owner DELETE "/members/$memberId
 Check "removed member loses access to the project immediately -> 403" ((Send $member GET "/metadata").Status -eq 403)
 Check "removed member has no projects" (@((Send $member GET "/auth/me").Json.projects).Count -eq 0)
 
+Write-Host "`n7) Projects"
+$r = Send $owner GET "/project"
+Check "current project shows its public key" ($r.Status -eq 200 -and $r.Json.id -eq 1 -and $r.Json.public_key -eq "pk_dev_local" -and $r.Json.timezone -eq "Europe/Istanbul")
+Check "read API key can read the project" ((Send $keyClient GET "/project" -headers @{ Authorization = "Bearer $readKey" }).Json.public_key -eq "pk_dev_local")
+Check "read API key cannot create projects -> 403" ((Send $keyClient POST "/projects" '{"name":"x"}' -headers @{ Authorization = "Bearer $readKey" }).Status -eq 403)
+Check "blank project name -> 400" ((Send $owner POST "/projects" '{"name":" "}').Status -eq 400)
+Check "unknown timezone -> 400" ((Send $owner POST "/projects" ('{"name":"Project ' + $tag + '","timezone":"Mars/Olympus"}')).Status -eq 400)
+$r = Send $owner POST "/projects" ('{"name":"Project ' + $tag + '"}')
+$newProject = $r.Json
+Check "owner creates a project -> 201 with a pk_ key" ($r.Status -eq 201 -and $newProject.public_key -cmatch '^pk_[0-9a-f]{32}$' -and $newProject.organization_id -eq 1)
+Check "same name again -> 409" ((Send $owner POST "/projects" ('{"name":"project ' + $tag + '"}')).Status -eq 409)
+Check "new project appears in /auth/me" (@((Send $owner GET "/auth/me").Json.projects | Where-Object { $_.id -eq $newProject.id }).Count -eq 1)
+Check "new project is reachable with X-Project-Id" ((Send $owner GET "/project" -headers @{ "X-Project-Id" = "$($newProject.id)" }).Json.public_key -eq $newProject.public_key)
+$capture = '{"api_key":"' + $newProject.public_key + '","batch":[{"event":"settings_test","distinct_id":"settings-' + $tag + '"}]}'
+$ingest = New-Object System.Net.Http.HttpClient
+$accepted = $false
+$deadline = (Get-Date).AddSeconds(45)
+while (-not $accepted -and (Get-Date) -lt $deadline) {
+    $resp = $ingest.PostAsync("http://localhost:8000/capture", (New-Object System.Net.Http.StringContent($capture, [Text.Encoding]::UTF8, "application/json"))).Result
+    if ([int]$resp.StatusCode -eq 202) { $accepted = $true } else { Start-Sleep -Seconds 3 }
+}
+Check "ingestion accepts the new public key within 45 s" $accepted
+
 $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
-& docker compose exec -T postgres psql -U reapdeep -d reapdeep -tAc "DELETE FROM api_keys WHERE name = 'key $tag'; DELETE FROM users WHERE email = '$memberEmail';" 2>&1 | Out-Null
+& docker compose exec -T postgres psql -U reapdeep -d reapdeep -tAc "DELETE FROM api_keys WHERE name = 'key $tag'; DELETE FROM users WHERE email = '$memberEmail'; DELETE FROM projects WHERE name = 'Project $tag';" 2>&1 | Out-Null
 $ErrorActionPreference = $prev
 
 if ($script:failed -eq 0) { Write-Host "`nPASSED: all settings checks" -ForegroundColor Green }

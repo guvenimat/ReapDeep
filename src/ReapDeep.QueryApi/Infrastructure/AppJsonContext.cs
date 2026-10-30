@@ -54,6 +54,8 @@ namespace ReapDeep.QueryApi.Infrastructure;
 [JsonSerializable(typeof(CreateApiKeyRequest))]
 [JsonSerializable(typeof(ApiKeysResponse))]
 [JsonSerializable(typeof(CreatedApiKey))]
+[JsonSerializable(typeof(CreateProjectRequest))]
+[JsonSerializable(typeof(ProjectDetail))]
 [JsonSerializable(typeof(InsightBody))]
 [JsonSerializable(typeof(InsightRow))]
 [JsonSerializable(typeof(InsightsResponse))]
