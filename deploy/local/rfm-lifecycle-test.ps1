@@ -146,6 +146,20 @@ Check "the member is c4's person with both distinct_ids" (@($members).Count -eq 
 $inCohort = (Rfm @{ filters = @(@{ scope = "cohort"; property = "$($cohort.id)"; op = "in" }) }).Json
 Check "cohort filter on the RFM report -> 1 customer, scored only against itself -> $($inCohort.customers)" ($inCohort.customers -eq 1)
 
+Write-Host "`n3b) Segment movement and a person's RFM"
+$mig = (S POST "/query/rfm/migration" @{ purchase_event = $buy; period_days = 30 }).Json
+$fromNone = ($mig.rows | Where-Object { $_.from -eq "none" } | Measure-Object persons -Sum).Sum
+$fromSeg = ($mig.rows | Where-Object { $_.from -ne "none" } | Measure-Object persons -Sum).Sum
+$toNone = ($mig.rows | Where-Object { $_.to -eq "none" } | Measure-Object persons -Sum).Sum
+Check "30 days ago 7 of the 10 were customers; c8, c9 and c10 are new -> $fromSeg / $fromNone" ($fromSeg -eq 7 -and $fromNone -eq 3 -and -not $toNone)
+Check "period_days 14 -> 400" ((S POST "/query/rfm/migration" @{ purchase_event = $buy; period_days = 14 }).Status -eq 400)
+$pr = (S GET "/persons/$($c[9])/rfm?purchase_event=$buy").Json
+Check "person RFM: c10 is a Champion with 6 orders and 70 spent -> $($pr.segment) $($pr.orders) $($pr.monetary)" ($pr.segment -eq "champions" -and $pr.orders -eq 6 -and $pr.monetary -eq 70 -and $pr.r -eq 5)
+$c4Person = @((S GET "/cohorts/$($cohort.id)/persons").Json.persons)[0].id
+$pr4 = (S GET "/persons/$c4Person/rfm?purchase_event=$buy").Json
+Check "person RFM by person id merges anonymous orders: c4 at_risk with 3 orders -> $($pr4.segment) $($pr4.orders)" ($pr4.segment -eq "at_risk" -and $pr4.orders -eq 3)
+Check "a person without purchases has no segment" ($null -eq (S GET "/persons/p1_$tag/rfm?purchase_event=$buy").Json.segment)
+
 Write-Host "`n4) Lifecycle"
 $tz = [TimeZoneInfo]::FindSystemTimeZoneById("Turkey Standard Time")
 $today = [TimeZoneInfo]::ConvertTimeFromUtc($now, $tz).Date

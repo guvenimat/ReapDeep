@@ -173,6 +173,8 @@ $ids = Section $html "person-distinct-ids"
 Check "person detail: anonymous + identified distinct_ids" ($ids -match $anonA -and $ids -match $user)
 Check "person detail: properties (plan: pro)" ($ids -match '<pre class="json">[^<]*"plan": "pro"')
 Check "person detail: owner sees 'Delete person data'" ((Section $html "request-deletion") -match 'Delete person data')
+$rfmHtml = Dom "#/persons/$personId" "document.querySelector('[data-testid=person-rfm]') && !/Loading/.test(document.querySelector('[data-testid=person-rfm]').textContent)"
+Check "person detail: customer value card (no purchase event -> no segment)" ((Section $rfmHtml "person-rfm") -match 'No purchases in this window')
 $evTable = Section $html "events-table"
 $rows = ([regex]::Matches($evTable, '<tr class="clickable')).Count
 Check "person event history: anonymous + after identify = 7 events -> $rows" ($rows -eq 7)

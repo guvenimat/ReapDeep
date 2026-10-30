@@ -113,7 +113,7 @@ curl http://localhost:8001/api/v1/query/trends \
   -d '{ "series": [{ "event": "$pageview", "metric": "unique_users" }], "interval": "day" }'
 ```
 
-Other endpoints: `POST /api/v1/query/funnels`, `POST /api/v1/query/funnels/persons`, `/api/v1/cohorts` (CRUD, `preview`, `persons`, `recalculate`), `POST /api/v1/query/retention`, `POST /api/v1/query/paths`, `POST /api/v1/query/lifecycle`, `POST /api/v1/query/rfm`, `GET /api/v1/events`, `GET /api/v1/persons[/{id}]`, `GET /api/v1/metadata`, `GET /healthz`.
+Other endpoints: `POST /api/v1/query/funnels`, `POST /api/v1/query/funnels/persons`, `/api/v1/cohorts` (CRUD, `preview`, `persons`, `recalculate`), `POST /api/v1/query/retention`, `POST /api/v1/query/paths`, `POST /api/v1/query/lifecycle`, `POST /api/v1/query/rfm`, `POST /api/v1/query/rfm/migration`, `GET /api/v1/persons/{id}/rfm`, `GET /api/v1/events`, `GET /api/v1/persons[/{id}]`, `GET /api/v1/metadata`, `GET /healthz`.
 
 ### Demo data
 
@@ -151,6 +151,7 @@ A trend series counts events, counts unique persons, or aggregates a numeric eve
 
 - **Lifecycle:** for each day, week or month, active persons are *new* (first activity after N days without any; 90 by default, up to 365), *returning* (also active in the previous period) or *resurrecting* (back after at least one inactive period); *dormant* persons were active in the previous period but not in this one and are drawn below the axis. Activity is any event, or one event such as `purchase`.
 - **RFM:** every person who bought in the last 90, 180 or 365 days gets 1-5 scores for recency, frequency (distinct `order_id`s) and monetary value (sum of `amount`). Scores are rank percentiles, so customers with the same number of orders share a score. The recency and frequency scores map to the 11 standard segments, from Champions to Lost, and each segment shows its customers, average recency, orders, value and share of revenue.
+- **Segment movement:** pick a segment to see where today's members were N days ago (7, 30 or 90) and where that segment's members of N days ago are now, including "not a customer then" and "no purchase in the window now". The person profile shows each customer's segment, scores, days since the last purchase, orders and spend.
 - **Segments as cohorts:** one click saves a segment as a dynamic cohort with an `rfm_segment` condition. The cohort job recalculates it like any other cohort, so a segment can filter or break down every analysis, for example a funnel of "Customers at risk". Both analyses merge anonymous and identified IDs before counting.
 
 ### Cohorts

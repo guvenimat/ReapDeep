@@ -454,3 +454,10 @@ button.small { height: 26px; padding: 0 10px; font-size: 12px; }
 tr.muted-row td { color: var(--muted); }
 td.actions { text-align: right; white-space: nowrap; }
 button.link.active { text-decoration: underline; }
+.person-rfm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 16px; }
+.movement { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; }
+.movement-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.movement-list li { display: grid; grid-template-columns: minmax(120px, 1.2fr) minmax(60px, 1fr) 52px 52px; align-items: center; gap: 10px; font-size: 13px; }
+.movement-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.movement-bar { height: 8px; border-radius: 4px; background: var(--surface-3); overflow: hidden; }
+.movement-bar > span { display: block; height: 100%; border-radius: 4px; background: var(--series-1); }

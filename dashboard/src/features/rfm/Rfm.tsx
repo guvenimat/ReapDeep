@@ -187,6 +187,7 @@ export function Rfm({ params, onChange, onInsight, onCohortCreated }: {
                   </div>
                 </Card>
               </div>
+              <SegmentMovement state={state} />
             </>
           )}
         </Status>
@@ -198,3 +199,58 @@ export function Rfm({ params, onChange, onInsight, onCohortCreated }: {
 const range = (r: { min: number | null; max: number | null }) =>
   r.min === null ? '—' : r.min === r.max ? num(r.min) : `${num(r.min!)}–${num(r.max!)}`
 
+
+const PERIODS = [7, 30, 90]
+const segmentLabel = (k: RfmSegmentKey | 'none', side: 'from' | 'to') =>
+  k === 'none' ? (side === 'from' ? 'Not a customer then' : 'No purchase in the window now') : RFM_SEGMENT_NAMES[k]
+
+function SegmentMovement({ state }: { state: RfmState }) {
+  const [period, setPeriod] = useState(30)
+  const [segment, setSegment] = useState<RfmSegmentKey>('champions')
+  const body = JSON.stringify({ window_days: state.window_days, purchase_event: state.purchase_event.trim() || undefined, period_days: period })
+  const q = useQuery((signal) => api.rfmMigration(JSON.parse(body), signal), [body])
+  const rows = q.data?.rows ?? []
+  const cameFrom = rows.filter((r) => r.to === segment).sort((a, b) => b.persons - a.persons)
+  const wentTo = rows.filter((r) => r.from === segment).sort((a, b) => b.persons - a.persons)
+
+  const List = ({ items, side, total }: { items: typeof rows; side: 'from' | 'to'; total: number }) => (
+    <ul className="movement-list">
+      {items.length === 0 && <li className="muted small">Nobody</li>}
+      {items.map((r) => {
+        const key = side === 'from' ? r.from : r.to
+        return (
+          <li key={key}>
+            <span className="movement-label">{segmentLabel(key, side)}</span>
+            <span className="movement-bar"><span style={{ width: `${total ? (r.persons / total) * 100 : 0}%` }} /></span>
+            <span className="num">{num(r.persons)}</span>
+            <span className="num muted">{pct(total ? r.persons / total : 0)}</span>
+          </li>
+        )
+      })}
+    </ul>
+  )
+
+  return (
+    <Card testId="rfm-movement" title="Segment movement" meta={q.data ? `scores now vs ${period} days ago · ${ms(q.data.took_ms)}` : undefined}
+      actions={<>
+        <select value={segment} onChange={(e) => setSegment(e.target.value as RfmSegmentKey)} aria-label="Segment">
+          {(Object.keys(RFM_SEGMENT_NAMES) as RfmSegmentKey[]).map((k) => <option key={k} value={k}>{RFM_SEGMENT_NAMES[k]}</option>)}
+        </select>
+        <Segmented<number> size="sm" label="Compare with" value={period} options={PERIODS.map((p) => ({ id: p, label: `${p}d ago` }))} onChange={setPeriod} />
+      </>}>
+      <Status state={q} empty={rows.length === 0}>
+        <div className="movement">
+          <div>
+            <div className="editor-title">Today's {RFM_SEGMENT_NAMES[segment]} {period} days ago</div>
+            <List items={cameFrom} side="from" total={cameFrom.reduce((n, r) => n + r.persons, 0)} />
+          </div>
+          <div>
+            <div className="editor-title">{RFM_SEGMENT_NAMES[segment]} of {period} days ago, today</div>
+            <List items={wentTo} side="to" total={wentTo.reduce((n, r) => n + r.persons, 0)} />
+          </div>
+        </div>
+        <p className="footnote">Both sides score all customers of the project with the same window, ending today and {period} days ago. Filters on this page do not apply here.</p>
+      </Status>
+    </Card>
+  )
+}

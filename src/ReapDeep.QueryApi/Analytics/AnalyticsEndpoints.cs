@@ -14,6 +14,8 @@ public static class AnalyticsEndpoints
         api.MapPost("/query/retention", Retention);
         api.MapPost("/query/paths", Paths);
         api.MapPost("/query/rfm", Rfm);
+        api.MapPost("/query/rfm/migration", RfmMigration);
+        api.MapGet("/persons/{personId}/rfm", PersonRfm);
         api.MapPost("/query/lifecycle", Lifecycle);
         api.MapGet("/events", Events);
     }
@@ -40,6 +42,13 @@ public static class AnalyticsEndpoints
     static async Task<IResult> Rfm(RfmRequest req, ProjectContext project, RfmService rfm, CancellationToken ct) => req.Explain
         ? ApiResults.Ok(await rfm.ExplainAsync(project, req, ct), AppJsonContext.Default.ExplainResponse)
         : ApiResults.Ok(await rfm.RunAsync(project, req, ct), AppJsonContext.Default.RfmResponse);
+
+    static async Task<IResult> RfmMigration(RfmMigrationRequest req, ProjectContext project, RfmService rfm, CancellationToken ct) =>
+        ApiResults.Ok(await rfm.MigrationAsync(project, req, ct), AppJsonContext.Default.RfmMigrationResponse);
+
+    static async Task<IResult> PersonRfm(string personId, ProjectContext project, RfmService rfm,
+        [FromQuery(Name = "window_days")] int? windowDays, [FromQuery(Name = "purchase_event")] string? purchaseEvent, CancellationToken ct) =>
+        ApiResults.Ok(await rfm.PersonAsync(project, personId, windowDays, purchaseEvent, ct), AppJsonContext.Default.RfmPersonResponse);
 
     static async Task<IResult> Lifecycle(LifecycleRequest req, ProjectContext project, LifecycleService lifecycle, CancellationToken ct) => req.Explain
         ? ApiResults.Ok(await lifecycle.ExplainAsync(project, req, ct), AppJsonContext.Default.ExplainResponse)
