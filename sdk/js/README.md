@@ -36,6 +36,14 @@ const similar = await rd.recommend({ model: 'co_viewed', itemId: 'linen-shirt', 
 const popularShoes = await rd.recommend({ model: 'popular', category: 'shoes' })
 ```
 
+Search events follow the same convention, so funnels such as search → result click → product view → purchase work on `item_id`:
+
+```js
+rd.capture('search_performed', { query: 'linen dress', results: 85, category: 'women', sort: 'relevance', page: 1 })
+rd.capture('search_result_clicked', { query: 'linen dress', item_id: 'linen-shirt', position: 3 })
+rd.capture('search_suggestion_clicked', { query: 'lin', type: 'product', value: 'linen-shirt' })
+```
+
 Models: `popular`, `trending`, `co_viewed` and `bought_together` (the last two need `itemId`). Only items that are in the catalog and in stock are returned; each item has a `source`, which is `popular` when a short item-based list was filled with popular items.
 
 | Option | Default | |
