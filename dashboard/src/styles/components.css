@@ -463,3 +463,10 @@ button.link.active { text-decoration: underline; }
 .movement-bar > span { display: block; height: 100%; border-radius: 4px; background: var(--series-1); }
 .alert-rule { margin: 12px 0; flex-wrap: wrap; }
 .alert-rule select:not(.op) { width: auto; }
+
+.project-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 14px 24px; margin: 0; }
+.project-facts div { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.project-facts dt { color: var(--text-muted); font-size: 12px; }
+.project-facts dd { margin: 0; }
+.project-facts dd.row { display: flex; align-items: center; gap: 8px; }
+.project-facts code { padding: 4px 8px; background: var(--page); border-radius: var(--radius-sm); word-break: break-all; }

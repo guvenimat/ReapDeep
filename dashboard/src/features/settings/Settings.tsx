@@ -12,10 +12,64 @@ export function Settings({ me, project, onAccessChanged }: { me: Me; project: Pr
   const canManage = project.role === 'owner' || project.role === 'admin'
   return (
     <div className="settings">
+      <ProjectInfo project={project} onAccessChanged={onAccessChanged} />
       <Members me={me} project={project} canManage={canManage} onAccessChanged={onAccessChanged} />
       {canManage && <ApiKeys />}
       <Account />
     </div>
+  )
+}
+
+function ProjectInfo({ project, onAccessChanged }: { project: Project; onAccessChanged: () => void }) {
+  const detail = useQuery((signal) => api.project(signal), [project.id])
+  const action = useAction()
+  const [name, setName] = useState('')
+  const [timezone, setTimezone] = useState('Europe/Istanbul')
+  const [created, setCreated] = useState<string>()
+  const [copied, setCopied] = useState(false)
+  const isOwner = project.role === 'owner'
+
+  const create = async (e: FormEvent) => {
+    e.preventDefault()
+    await action.run(async () => {
+      const res = await api.createProject(name, timezone)
+      setCreated(res.name)
+      setName('')
+      onAccessChanged()
+    })
+  }
+  const copy = (key: string) => navigator.clipboard?.writeText(key).then(() => setCopied(true))
+
+  return (
+    <Card title={<><Icon name="settings" />Project</>} meta="The public key goes into the JS SDK and the ingestion API; it is safe to ship in web pages">
+      <Status state={detail}>
+        {detail.data && (
+          <dl className="project-facts" data-testid="project-info">
+            <div><dt>Name</dt><dd className="strong">{detail.data.name}</dd></div>
+            <div><dt>Project ID</dt><dd className="mono">{detail.data.id}</dd></div>
+            <div><dt>Timezone</dt><dd>{detail.data.timezone}</dd></div>
+            <div>
+              <dt>Public key</dt>
+              <dd className="row">
+                <code className="mono">{detail.data.public_key}</code>
+                <button type="button" onClick={() => copy(detail.data!.public_key)}><Icon name="copy" />{copied ? 'Copied' : 'Copy'}</button>
+              </dd>
+            </div>
+          </dl>
+        )}
+      </Status>
+      {isOwner && (
+        <form className="inline-form" onSubmit={create} data-testid="create-project">
+          <div className="editor-title">New project in {project.organization_name}</div>
+          <div className="row">
+            <input required maxLength={100} placeholder="Project name, e.g. Mobile app" value={name} onChange={(e) => setName(e.target.value)} aria-label="Project name" />
+            <input required maxLength={64} placeholder="Timezone" value={timezone} onChange={(e) => setTimezone(e.target.value)} aria-label="Timezone" />
+            <button type="submit" className="primary" disabled={action.busy}><Icon name="plus" />Create project</button>
+          </div>
+          <FormMessage error={action.error} success={created ? `Project "${created}" created. Switch to it from the project menu.` : undefined} />
+        </form>
+      )}
+    </Card>
   )
 }
 

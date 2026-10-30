@@ -17,7 +17,7 @@ export const TABS: TabInfo[] = [
   { id: 'persons', label: 'Persons', icon: 'persons', description: 'Identified people and their history', group: 'data' },
   { id: 'cohorts', label: 'Cohorts', icon: 'users', description: 'Segments of people by what they did and who they are', group: 'data' },
   { id: 'catalog', label: 'Catalog', icon: 'catalog', description: 'Products and the recommendations served to your site', group: 'data' },
-  { id: 'settings', label: 'Settings', icon: 'settings', description: 'Account, members and API keys', group: 'admin' },
+  { id: 'settings', label: 'Settings', icon: 'settings', description: 'Project, members, API keys and account', group: 'admin' },
 ]
 
 export interface Route { tab: Tab; id?: string; params: URLSearchParams }

@@ -78,6 +78,7 @@ public static class HostingExtensions
         services.AddSingleton<DashboardRepository>();
         services.AddSingleton<MemberRepository>();
         services.AddSingleton<ApiKeyRepository>();
+        services.AddSingleton<ProjectRepository>();
         services.AddSingleton<DeletionRequestRepository>();
         services.AddSingleton<CohortRepository>();
         services.AddSingleton<CohortService>();

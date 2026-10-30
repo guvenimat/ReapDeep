@@ -71,6 +71,11 @@ public static class ProjectAccessConventions
             ? next(ic)
             : ValueTask.FromResult<object?>(ApiResults.Forbidden("This action requires the owner or admin role, or a catalog_write API key")));
 
+    public static RouteHandlerBuilder RequireOwner(this RouteHandlerBuilder route) =>
+        route.AddEndpointFilter((ic, next) => ProjectContext.Get(ic.HttpContext) is { UserId: not null, IsOwner: true }
+            ? next(ic)
+            : ValueTask.FromResult<object?>(ApiResults.Forbidden("This action requires the owner role")));
+
     public static RouteHandlerBuilder RequireManager(this RouteHandlerBuilder route) =>
         route.AddEndpointFilter((ic, next) => ProjectContext.Get(ic.HttpContext) is { UserId: not null, CanManage: true }
             ? next(ic)

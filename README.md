@@ -223,6 +223,7 @@ Any trend or funnel can be saved by name from its tab (`/api/v1/insights`). A da
 - Passwords are hashed with PBKDF2-SHA256 (600K iterations), and sign-in is rate limited to 10 attempts per minute per client IP.
 - On first start, the Query API creates the `ADMIN_EMAIL` user as owner of every organization when the `users` table is empty.
 - **Settings** (dashboard tab and `/api/v1/members`, `/api/v1/api-keys`, `/api/v1/auth/password`): owners and admins add members with a temporary password, change roles and remove members; anyone can change their own password, which signs out their other sessions. Admins cannot create or change owners, and the last owner cannot be demoted or leave. API keys are shown once at creation and stored only as a SHA-256 hash; revoking one takes effect immediately.
+- **Projects** (`/api/v1/project`, `/api/v1/projects`): the settings tab shows the current project's public key for the JS SDK and the ingestion API. Owners can create more projects in their organization; ingestion and the recommender pick up a new key within 30 seconds.
 
 ### Add the SDK to a page
 
@@ -309,7 +310,7 @@ cd deploy/local
 .\identity-test.ps1     # identity resolution, 10 end-to-end scenarios
 .\auth-test.ps1         # sign-in, sessions, project access, CORS, X-Forwarded-For, StarRocks grants
 .\deletion-test.ps1     # deletion requests and the batch job, end to end
-.\settings-test.ps1     # members, roles, password change, API keys
+.\settings-test.ps1     # members, roles, password change, API keys, projects
 .\insights-test.ps1     # saved insights and dashboards, API and browser
 .\cohort-test.ps1       # cohorts: rules, identity merge, static lists, filters and breakdowns, recalculation, deletion
 .\rfm-lifecycle-test.ps1  # RFM scores and segments with known answers, rfm_segment cohorts, lifecycle states and look-back
