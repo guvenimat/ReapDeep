@@ -96,6 +96,7 @@ function PersonDetail({ id, onClose, canManage, onDeletionRequested }: {
   const deletionState = deletion?.id === id ? deletion.state : undefined
   const from = new Date(Date.now() - 365 * 86400_000).toISOString()
   const events = useQuery((signal) => api.events({ person_id: id, limit: 200, date_from: from }, signal), [id])
+  const rfm = useQuery((signal) => api.personRfm(id, signal), [id])
 
   const requestDeletion = async () => {
     if (!window.confirm('Delete this person, all of their distinct_ids and all of their events? This cannot be undone.')) return
@@ -130,6 +131,19 @@ function PersonDetail({ id, onClose, canManage, onDeletionRequested }: {
             </dl>
             <div className="editor-title">Properties</div>
             <JsonView value={p.properties} />
+            <div className="editor-title">Customer value · last {rfm.data?.window_days ?? 365} days</div>
+            <div className="person-rfm" data-testid="person-rfm">
+              {rfm.error ? <span className="muted small">{rfm.error}</span>
+                : !rfm.data ? <span className="muted small">Loading…</span>
+                : rfm.data.segment === null ? <span className="muted small">No purchases in this window.</span>
+                : (
+                  <>
+                    <Badge tone="accent">{rfm.data.segment_name}</Badge>
+                    <span className="small">R{rfm.data.r} · F{rfm.data.f}</span>
+                    <span className="small muted">last purchase {num(rfm.data.recency_days ?? 0)} days ago · {num(rfm.data.orders ?? 0)} order{rfm.data.orders === 1 ? '' : 's'} · {num(rfm.data.monetary ?? 0)} spent</span>
+                  </>
+                )}
+            </div>
             {canManage && (
               <div className="danger-zone" data-testid="person-deletion">
                 {deletionState === 'done' ? (

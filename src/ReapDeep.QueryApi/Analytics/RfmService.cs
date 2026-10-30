@@ -38,11 +38,53 @@ public sealed class RfmService(StarRocksClient starRocks, CohortService cohorts)
             Grid(cells), Segments(cells, customers, revenue), Thresholds(cells), sw.Elapsed.TotalMilliseconds);
     }
 
+    public static readonly int[] MigrationPeriods = [7, 30, 90];
+    public const string Outside = "none";
+
+    public async Task<RfmMigrationResponse> MigrationAsync(ProjectContext project, RfmMigrationRequest req, CancellationToken ct)
+    {
+        var sw = Stopwatch.StartNew();
+        var window = Window(req.WindowDays);
+        var period = req.PeriodDays ?? 30;
+        Ensure.That(MigrationPeriods.Contains(period), $"period_days: {string.Join(" | ", MigrationPeriods)}");
+        var now = DateTime.UtcNow;
+        var past = now.AddDays(-period);
+        var rows = await starRocks.QueryAsync(RfmSql.Migration(project.ProjectId, Event(req.PurchaseEvent), window, now, past), r => new RfmMigrationRow(
+            Segment(r, 0), Segment(r, 2), Convert.ToInt64(r.GetValue(4))), ct);
+        var merged = rows.GroupBy(x => (x.From, x.To)).Select(g => new RfmMigrationRow(g.Key.From, g.Key.To, g.Sum(x => x.Persons)))
+            .OrderByDescending(x => x.Persons).ToList();
+        return new RfmMigrationResponse(window, period, past, now, merged, sw.Elapsed.TotalMilliseconds);
+    }
+
+    public async Task<RfmPersonResponse> PersonAsync(ProjectContext project, string person, int? windowDays, string? purchaseEvent, CancellationToken ct)
+    {
+        var window = Window(windowDays);
+        var query = RfmSql.Person(project.ProjectId, Event(purchaseEvent), RfmSql.DefaultAmountProperty, window, DateTime.UtcNow, Ensure.NotBlank(person, "person_id"));
+        var rows = await starRocks.QueryAsync(query, r => (R: Convert.ToInt32(r.GetValue(0)), F: Convert.ToInt32(r.GetValue(1)),
+            Recency: Convert.ToInt64(r.GetValue(2)), Orders: Convert.ToInt64(r.GetValue(3)), Monetary: Math.Round(Convert.ToDouble(r.GetValue(4)), 2)), ct);
+        if (rows.Count == 0) return new RfmPersonResponse(window, null, null, null, null, null, null, null);
+        var x = rows[0];
+        var segment = RfmSegments.Of(x.R, x.F);
+        return new RfmPersonResponse(window, segment, RfmSegments.All.First(s => s.Key == segment).Name, x.R, x.F, x.Recency, x.Orders, x.Monetary);
+    }
+
+    static string Segment(MySqlConnector.MySqlDataReader r, int i) =>
+        r.IsDBNull(i) ? Outside : RfmSegments.Of(Convert.ToInt32(r.GetValue(i)), Convert.ToInt32(r.GetValue(i + 1)));
+
+    static int Window(int? requested)
+    {
+        var window = requested ?? RfmSql.WindowDays[^1];
+        Ensure.That(RfmSql.WindowDays.Contains(window), $"window_days: {string.Join(" | ", RfmSql.WindowDays)}");
+        return window;
+    }
+
+    static string Event(string? requested) =>
+        string.IsNullOrWhiteSpace(requested) ? RfmSql.DefaultEvent : Ensure.NotBlank(requested, "purchase_event");
+
     async Task<Plan> BuildPlanAsync(ProjectContext project, RfmRequest req, CancellationToken ct)
     {
-        var window = req.WindowDays ?? RfmSql.WindowDays[^1];
-        Ensure.That(RfmSql.WindowDays.Contains(window), $"window_days: {string.Join(" | ", RfmSql.WindowDays)}");
-        var purchaseEvent = string.IsNullOrWhiteSpace(req.PurchaseEvent) ? RfmSql.DefaultEvent : Ensure.NotBlank(req.PurchaseEvent, "purchase_event");
+        var window = Window(req.WindowDays);
+        var purchaseEvent = Event(req.PurchaseEvent);
         var amount = ColumnMapper.Validate(string.IsNullOrWhiteSpace(req.AmountProperty) ? RfmSql.DefaultAmountProperty : req.AmountProperty.Trim());
         var now = DateTime.UtcNow;
         var refs = await cohorts.ResolveAsync(project, req.Filters, null, ct);

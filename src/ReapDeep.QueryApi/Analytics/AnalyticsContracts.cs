@@ -55,6 +55,11 @@ public sealed record RfmResponse(
     int WindowDays, string PurchaseEvent, string AmountProperty, DateTime CalculatedAt, long Customers, double Revenue,
     List<string> Currencies, List<RfmCell> Grid, List<RfmSegmentResult> Segments, RfmThresholds Thresholds, double TookMs);
 
+public sealed record RfmMigrationRequest(int? WindowDays, string? PurchaseEvent, int? PeriodDays);
+public sealed record RfmMigrationRow(string From, string To, long Persons);
+public sealed record RfmMigrationResponse(int WindowDays, int PeriodDays, DateTime FromDate, DateTime ToDate, List<RfmMigrationRow> Rows, double TookMs);
+public sealed record RfmPersonResponse(int WindowDays, string? Segment, string? SegmentName, int? R, int? F, long? RecencyDays, long? Orders, double? Monetary);
+
 public sealed record LifecycleRequest(
     string? Event, string? Period, int? LookbackDays, string? DateFrom, string? DateTo, List<Filter>? Filters, bool Explain);
 public sealed record LifecyclePeriod(string Start, long New, long Returning, long Resurrecting, long Dormant);

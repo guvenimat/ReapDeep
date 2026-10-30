@@ -118,6 +118,27 @@ public class RfmLifecycleTests
         Assert.Contains(") g LEFT SEMI JOIN (SELECT s.person", q.Sql);
     }
 
+    [Fact]
+    public void Migration_scores_both_dates_with_the_same_window_and_keeps_customers_on_either_side()
+    {
+        var q = RfmSql.Migration(Project, "purchase", 365, Now, Now.AddDays(-30));
+
+        Assert.Contains(") p FULL OUTER JOIN (", q.Sql);
+        Assert.Contains("c ON p.person = c.person GROUP BY 1, 2, 3, 4", q.Sql);
+        Assert.Contains(q.Parameters, p => p.Value is DateTime t && t == Now.AddDays(-30 - 365));
+        Assert.Contains(q.Parameters, p => p.Value is DateTime t && t == Now.AddDays(-365));
+    }
+
+    [Fact]
+    public void Person_rfm_filters_the_scored_population_by_the_person_key()
+    {
+        var q = RfmSql.Person(Project, "purchase", "amount", 365, Now, "user-1");
+
+        Assert.Contains("s WHERE s.person = @p", q.Sql);
+        Assert.Contains("COUNT(*) OVER ()", q.Sql);
+        Assert.Contains(q.Parameters, p => p.Value is string v && v == "user-1");
+    }
+
     [Theory]
     [InlineData("day", "2026-10-30", "2026-10-30")]
     [InlineData("week", "2026-10-29", "2026-10-26")]

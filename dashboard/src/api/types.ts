@@ -44,6 +44,14 @@ export interface RfmResponse {
   currencies: string[]; grid: { r: number; f: number; persons: number; segment: RfmSegmentKey }[]; segments: RfmSegmentResult[]
   thresholds: { recency: RfmScoreRange[]; frequency: RfmScoreRange[] }; took_ms: number
 }
+export interface RfmMigrationResponse {
+  window_days: number; period_days: number; from_date: string; to_date: string
+  rows: { from: RfmSegmentKey | 'none'; to: RfmSegmentKey | 'none'; persons: number }[]; took_ms: number
+}
+export interface RfmPerson {
+  window_days: number; segment: RfmSegmentKey | null; segment_name: string | null; r: number | null; f: number | null
+  recency_days: number | null; orders: number | null; monetary: number | null
+}
 export type LifecycleStatus = 'new' | 'returning' | 'resurrecting' | 'dormant'
 export interface LifecycleResponse {
   event: string | null; period: 'day' | 'week' | 'month'; lookback_days: number; timezone: string

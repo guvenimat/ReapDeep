@@ -313,6 +313,11 @@ active in the previous one and not in this one. Scores are relative to the popul
 cohort filter re-ranks only the matching customers, while an `rfm_segment` cohort always scores all
 customers of the project.
 
+Segment movement scores all customers twice with the same window, ending now and N days ago, and joins
+the two sets with a `FULL OUTER JOIN` on the person key, so people who became or stopped being customers
+appear as "none" on one side. A person's own RFM uses the same project-wide scoring filtered to one
+person key, which keeps the profile, the cohorts and the movement view consistent.
+
 ## 7. Authentication and tenancy
 
 - **API keys** are project-scoped and read-only. Only a SHA-256 hash is stored; the key is shown once.

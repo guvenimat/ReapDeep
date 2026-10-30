@@ -32,11 +32,32 @@ public static class RfmSql
     {
         var cells = segments.SelectMany(RfmSegments.Cells).Distinct().Order().ToList();
         Ensure.That(cells.Count > 0, "An RFM condition needs at least one segment");
-        var orders = $"SELECT {OrderColumns(b, null)} FROM analytics.events e WHERE e.project_id = {project} " +
-                     $"AND e.timestamp >= {b.P(nowUtc.AddDays(-windowDays))} AND e.timestamp < {b.P(nowUtc)} " +
+        return $"SELECT s.person FROM ({AllCustomers(b, project, purchaseEvent, null, windowDays, nowUtc)}) s WHERE s.r * 10 + s.fs IN ({string.Join(", ", cells)})";
+    }
+
+    public static SqlQuery Person(long projectId, string purchaseEvent, string amountProperty, int windowDays, DateTime nowUtc, string person)
+    {
+        var b = new SqlBuilder(projectId, nowUtc.AddDays(-windowDays), nowUtc);
+        var all = AllCustomers(b, b.P(projectId), purchaseEvent, amountProperty, windowDays, nowUtc);
+        return b.Build($"SELECT s.r, s.fs, s.rd, s.f, s.m FROM ({all}) s WHERE s.person = {b.P(person)}");
+    }
+
+    public static SqlQuery Migration(long projectId, string purchaseEvent, int windowDays, DateTime nowUtc, DateTime pastUtc)
+    {
+        var b = new SqlBuilder(projectId, pastUtc.AddDays(-windowDays), nowUtc);
+        var project = b.P(projectId);
+        var past = AllCustomers(b, project, purchaseEvent, null, windowDays, pastUtc);
+        var now = AllCustomers(b, project, purchaseEvent, null, windowDays, nowUtc);
+        return b.Build($"SELECT p.r, p.fs, c.r, c.fs, COUNT(*) FROM ({past}) p FULL OUTER JOIN ({now}) c ON p.person = c.person GROUP BY 1, 2, 3, 4");
+    }
+
+    static string AllCustomers(SqlBuilder b, string project, string purchaseEvent, string? amountProperty, int windowDays, DateTime asOfUtc)
+    {
+        var orders = $"SELECT {OrderColumns(b, amountProperty)} FROM analytics.events e WHERE e.project_id = {project} " +
+                     $"AND e.timestamp >= {b.P(asOfUtc.AddDays(-windowDays))} AND e.timestamp < {b.P(asOfUtc)} " +
                      $"AND e.event = {b.P(purchaseEvent)} GROUP BY 1, 2, 3";
         var from = $"({orders}) o LEFT JOIN {Pdi} pdi ON o.project_id = pdi.project_id AND o.distinct_id = pdi.distinct_id AND pdi.is_deleted = 0";
-        return $"SELECT s.person FROM ({Scored(b, from, nowUtc)}) s WHERE s.r * 10 + s.fs IN ({string.Join(", ", cells)})";
+        return Scored(b, from, asOfUtc);
     }
 
     static string OrderColumns(SqlBuilder b, string? amountProperty)
