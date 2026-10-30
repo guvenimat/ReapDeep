@@ -4,6 +4,7 @@ export type IconName =
   | 'dashboards' | 'trends' | 'funnels' | 'retention' | 'paths' | 'events' | 'persons' | 'settings'
   | 'plus' | 'close' | 'chevron-left' | 'chevron-right' | 'chevron-down' | 'search' | 'refresh' | 'logout'
   | 'sun' | 'moon' | 'trash' | 'edit' | 'copy' | 'key' | 'users' | 'lock' | 'calendar' | 'bookmark' | 'external' | 'menu'
+  | 'catalog' | 'upload' | 'sparkles'
 
 const PATHS: Record<IconName, ReactNode> = {
   dashboards: <><rect x="3.5" y="3.5" width="7" height="9" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="5" rx="1.5" /><rect x="13.5" y="11.5" width="7" height="9" rx="1.5" /><rect x="3.5" y="15.5" width="7" height="5" rx="1.5" /></>,
@@ -34,6 +35,9 @@ const PATHS: Record<IconName, ReactNode> = {
   bookmark: <path d="M6.5 3.5h11v17l-5.5-4-5.5 4z" />,
   external: <><path d="M13.5 4.5h6v6M19.5 4.5l-8 8" /><path d="M17.5 13.5v5a2 2 0 0 1-2 2h-10a2 2 0 0 1-2-2v-10a2 2 0 0 1 2-2h5" /></>,
   menu: <path d="M4 7h16M4 12h16M4 17h16" />,
+  catalog: <><path d="M5.5 8h13l-1 12.5h-11z" /><path d="M9 10.5V7a3 3 0 0 1 6 0v3.5" /></>,
+  upload: <><path d="M12 15.5V4.5M7.5 9l4.5-4.5L16.5 9" /><path d="M4.5 15.5v3a2 2 0 0 0 2 2h11a2 2 0 0 0 2-2v-3" /></>,
+  sparkles: <><path d="M10 3.5l1.6 4.4 4.4 1.6-4.4 1.6L10 15.5l-1.6-4.4-4.4-1.6 4.4-1.6z" /><path d="M17.5 14l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" /></>,
 }
 
 export function Icon({ name, size = 16, ...rest }: { name: IconName; size?: number } & SVGProps<SVGSVGElement>) {

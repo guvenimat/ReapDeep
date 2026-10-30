@@ -47,7 +47,8 @@ export interface Project { id: number; name: string; organization_id: number; or
 export interface Me { user: User; projects: Project[] }
 export type Role = Project['role']
 export interface Member { user_id: number; email: string; name: string; role: Role; created_at: string }
-export interface ApiKey { id: number; name: string; prefix: string; created_by: string | null; created_at: string; revoked_at: string | null }
+export type KeyScope = 'read' | 'catalog_write'
+export interface ApiKey { id: number; name: string; prefix: string; scope: KeyScope; created_by: string | null; created_at: string; revoked_at: string | null }
 
 export type InsightKind = 'trends' | 'funnels' | 'retention' | 'paths'
 export interface Insight {
@@ -77,3 +78,19 @@ export interface Cohort {
   created_by: string | null; created_at: string; updated_at: string
 }
 export interface CohortPerson { id: string; is_identified: boolean; distinct_ids: string[]; properties: Record<string, unknown> }
+
+export interface CatalogItem {
+  item_id: string; title: string; category: string; price: number | null; currency: string; in_stock: boolean
+  url: string; image_url: string; attributes: Record<string, unknown>; updated_at: string
+}
+export interface CatalogItemInput {
+  item_id: string; title: string; category?: string; price?: number | null; currency?: string; in_stock?: boolean; url?: string; image_url?: string
+}
+export interface RecommendedCatalogItem { item_id: string; title: string; category: string; in_stock: boolean; score: number }
+export interface CatalogItemDetail { item: CatalogItem; co_viewed: RecommendedCatalogItem[]; bought_together: RecommendedCatalogItem[] }
+export type RecommendationModel = 'popular' | 'trending' | 'co_viewed' | 'bought_together'
+export interface ModelRun { model: RecommendationModel; calculated_at: string; calculation_ms: number; source_items: number }
+export interface HitRate {
+  k: number; cases: number; covered: number; co_viewed_hits: number; co_viewed_hit_rate: number; popular_hits: number; popular_hit_rate: number
+  train_from: string; test_from: string; test_to: string; took_ms: number
+}

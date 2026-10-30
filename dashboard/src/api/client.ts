@@ -1,6 +1,6 @@
 import type {
-  ApiKey, Cohort, CohortDefinition, CohortKind, CohortPerson, Dashboard, DashboardSummary, DateRange, DeletionRequest, EventRow, FunnelRequest, FunnelResponse, Insight, InsightKind,
-  Me, Member, Metadata, PathsResponse, Person, RetentionResponse, Role, TrendRequest, TrendResponse,
+  ApiKey, CatalogItem, CatalogItemDetail, CatalogItemInput, Cohort, CohortDefinition, CohortKind, CohortPerson, Dashboard, DashboardSummary, DateRange, DeletionRequest, EventRow, FunnelRequest, FunnelResponse, Insight, InsightKind,
+  HitRate, KeyScope, Me, Member, Metadata, ModelRun, PathsResponse, Person, RetentionResponse, Role, TrendRequest, TrendResponse,
 } from './types'
 
 const PROJECT_STORAGE = 'reapdeep.projectId'
@@ -90,7 +90,7 @@ export const api = {
   changeRole: (userId: number, role: Role) => request<Member>('PATCH', `/api/v1/members/${userId}`, { role }),
   removeMember: (userId: number) => request<void>('DELETE', `/api/v1/members/${userId}`),
   apiKeys: (signal?: AbortSignal) => request<{ api_keys: ApiKey[] }>('GET', '/api/v1/api-keys', undefined, signal),
-  createApiKey: (name: string) => request<{ api_key: ApiKey; key: string }>('POST', '/api/v1/api-keys', { name }),
+  createApiKey: (name: string, scope: KeyScope) => request<{ api_key: ApiKey; key: string }>('POST', '/api/v1/api-keys', { name, scope }),
   revokeApiKey: (id: number) => request<void>('DELETE', `/api/v1/api-keys/${id}`),
 
   insights: (signal?: AbortSignal) => request<{ insights: Insight[] }>('GET', '/api/v1/insights', undefined, signal),
@@ -119,6 +119,14 @@ export const api = {
     request<{ persons: CohortPerson[]; next_cursor: string | null }>('GET', `/api/v1/cohorts/${id}/persons?${qs({ cursor, limit: 50 })}`, undefined, signal),
   previewCohort: (definition: CohortDefinition, signal?: AbortSignal) =>
     request<{ persons: number; took_ms: number }>('POST', '/api/v1/cohorts/preview', { definition }, signal),
+
+  items: (params: { search?: string; category?: string; cursor?: string; limit?: number }, signal?: AbortSignal) =>
+    request<{ items: CatalogItem[]; next_cursor: string | null; total: number; in_stock: number; categories: string[] }>(
+      'GET', `/api/v1/items?${qs(params)}`, undefined, signal),
+  item: (itemId: string, signal?: AbortSignal) => request<CatalogItemDetail>('GET', `/api/v1/items/${encodeURIComponent(itemId)}`, undefined, signal),
+  upsertItems: (items: CatalogItemInput[]) => request<{ upserted: number }>('PUT', '/api/v1/items', { items }),
+  recommendationModels: (signal?: AbortSignal) => request<{ models: ModelRun[] }>('GET', '/api/v1/recommendations/models', undefined, signal),
+  evaluateRecommendations: (k = 10) => request<HitRate>('POST', `/api/v1/recommendations/evaluate?k=${k}`),
 
   deletionRequests: (signal?: AbortSignal) => request<{ deletion_requests: DeletionRequest[] }>('GET', '/api/v1/deletion-requests', undefined, signal),
   requestDeletion: (target_type: DeletionRequest['target_type'], target_id: string) =>

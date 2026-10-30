@@ -3,6 +3,7 @@ import { api, setProject, storedProjectId } from '../api/client'
 import type { Me } from '../api/types'
 import { CohortsContext, MetaContext, MetaDatalists } from '../components/editors'
 import { EmptyState } from '../components/ui'
+import { Catalog } from '../features/catalog/Catalog'
 import { Cohorts } from '../features/cohorts/Cohorts'
 import { Events } from '../features/events/Events'
 import { Funnels } from '../features/funnels/Funnels'
@@ -59,7 +60,7 @@ export function Workspace({ me, onLogout, onAccessChanged }: { me: Me; onLogout:
   const onQuery = (q: string) => setParams({ q })
   const onInsight = (id?: string) => setParams({ insight: id })
   const openPerson = (id?: string) => navigate('persons', id)
-  const showRange = route.tab !== 'persons' && route.tab !== 'settings' && route.tab !== 'cohorts'
+  const showRange = route.tab !== 'persons' && route.tab !== 'settings' && route.tab !== 'cohorts' && route.tab !== 'catalog'
 
   return (
     <MetaContext.Provider value={meta.data}>
@@ -86,6 +87,7 @@ export function Workspace({ me, onLogout, onAccessChanged }: { me: Me; onLogout:
               {route.tab === 'persons' && <Persons id={route.id} openPerson={openPerson} canManage={canManage} />}
               {route.tab === 'cohorts' && <Cohorts id={route.id} navigate={(id) => navigate('cohorts', id)} openPerson={openPerson}
                 onChanged={() => setCohortsVersion((v) => v + 1)} />}
+              {route.tab === 'catalog' && <Catalog id={route.id} canManage={canManage} navigate={(id) => navigate('catalog', id)} />}
               {route.tab === 'settings' && <Settings me={me} project={project} onAccessChanged={onAccessChanged} />}
             </main>
           </div>

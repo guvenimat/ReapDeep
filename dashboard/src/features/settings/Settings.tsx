@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { api } from '../../api/client'
-import type { Me, Project, Role } from '../../api/types'
+import type { KeyScope, Me, Project, Role } from '../../api/types'
 import { Icon } from '../../components/icons'
 import { Badge, Card, FormMessage, Status } from '../../components/ui'
 import { dateTime, initials } from '../../lib/format'
@@ -156,13 +156,14 @@ function ApiKeys() {
   const list = useQuery((signal) => api.apiKeys(signal), [version])
   const action = useAction()
   const [name, setName] = useState('')
+  const [scope, setScope] = useState<KeyScope>('read')
   const [created, setCreated] = useState<{ name: string; key: string }>()
   const [copied, setCopied] = useState(false)
 
   const create = async (e: FormEvent) => {
     e.preventDefault()
     await action.run(async () => {
-      const res = await api.createApiKey(name)
+      const res = await api.createApiKey(name, scope)
       setCreated({ name: res.api_key.name, key: res.key })
       setCopied(false)
       setName('')
@@ -176,7 +177,7 @@ function ApiKeys() {
   const copy = (key: string) => navigator.clipboard?.writeText(key).then(() => setCopied(true))
 
   return (
-    <Card title={<><Icon name="key" />API keys</>} meta={<>Read-only keys for this project · <span className="mono">Authorization: Bearer …</span></>}>
+    <Card title={<><Icon name="key" />API keys</>} meta={<>Read keys query analytics; catalog keys only sync products · <span className="mono">Authorization: Bearer …</span></>}>
       {created && (
         <div className="new-key" role="status" data-testid="new-api-key">
           <div className="small">New key <span className="strong">{created.name}</span>. Copy it now; it is not shown again.</div>
@@ -190,12 +191,13 @@ function ApiKeys() {
       <Status state={list} empty={list.data?.api_keys.length === 0} emptyTitle="No API keys yet" emptyText="Create a read-only key for scripts and reporting tools.">
         <div className="table-wrap">
           <table data-testid="api-keys-table">
-            <thead><tr><th>Name</th><th>Key</th><th>Created</th><th>By</th><th>Status</th><th /></tr></thead>
+            <thead><tr><th>Name</th><th>Key</th><th>Scope</th><th>Created</th><th>By</th><th>Status</th><th /></tr></thead>
             <tbody>
               {list.data?.api_keys.map((k) => (
                 <tr key={k.id} className={k.revoked_at ? 'revoked' : undefined}>
                   <td className="strong">{k.name}</td>
                   <td className="mono">{k.prefix}…</td>
+                  <td>{k.scope === 'catalog_write' ? <Badge tone="accent">Catalog write</Badge> : <Badge>Read</Badge>}</td>
                   <td className="nowrap tabular muted">{dateTime(k.created_at)}</td>
                   <td className="muted">{k.created_by ?? '-'}</td>
                   <td className="nowrap">{k.revoked_at ? <Badge tone="muted">Revoked {dateTime(k.revoked_at)}</Badge> : <Badge tone="good">Active</Badge>}</td>
@@ -212,6 +214,10 @@ function ApiKeys() {
       <form className="inline-form" onSubmit={create} data-testid="create-api-key">
         <div className="row">
           <input required maxLength={100} placeholder="Key name, e.g. reporting script" value={name} onChange={(e) => setName(e.target.value)} aria-label="Key name" />
+          <select value={scope} onChange={(e) => setScope(e.target.value as KeyScope)} aria-label="Key scope">
+            <option value="read">Read analytics</option>
+            <option value="catalog_write">Write catalog</option>
+          </select>
           <button type="submit" className="primary" disabled={action.busy}><Icon name="plus" />Create key</button>
         </div>
       </form>
