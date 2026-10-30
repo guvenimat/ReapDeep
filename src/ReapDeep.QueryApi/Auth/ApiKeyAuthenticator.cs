@@ -27,7 +27,7 @@ public sealed class ApiKeyAuthenticator(ApiKeyRepository keys, ILogger<ApiKeyAut
         if (_cache.TryGetValue(hash, out var hit) && hit.Expires > now) return hit.Project;
 
         var found = await keys.FindActiveAsync(hash, ctx.RequestAborted);
-        var project = found is null ? null : ProjectContext.Create(found.ProjectId, found.Timezone, role: null, userId: null, log);
+        var project = found is null ? null : ProjectContext.Create(found.ProjectId, found.Timezone, role: null, userId: null, log, found.Scope);
         if (_cache.Count >= MaxCacheEntries) _cache.Clear();
         _cache[hash] = (project, now + (project is null ? InvalidTtl : ValidTtl));
         return project;

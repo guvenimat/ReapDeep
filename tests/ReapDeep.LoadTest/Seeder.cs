@@ -49,7 +49,7 @@ static class Seeder
         var size = await TableSize(conn);
         var bytes = ParseSize(size);
 
-        Report.Heading("100M seed (StarRocks)");
+        Report.Heading($"{Stats.F(projectRows / 1e6, "0")}M-event seed (StarRocks)");
         Report.Table(
             ["Project 2 events", "Days (partitions)", "Identified persons", "Distinct ids mapped", "Event seed time", "Person seed time", "events rows (all projects)", "events size on disk (ZSTD)", "Bytes per row", "Per daily partition"],
             [[
@@ -63,7 +63,7 @@ static class Seeder
     static string EventsSql(int d, DateTime day, long count) => $"""
         INSERT INTO analytics.events (project_id, event, timestamp, distinct_id, event_id, session_id, ip,
             current_url, host, pathname, referrer, referring_domain, utm_source, utm_medium, utm_campaign,
-            browser, browser_version, os, os_version, device_type, screen_width, screen_height, lib, lib_version, properties, inserted_at)
+            browser, browser_version, os, os_version, device_type, screen_width, screen_height, lib, lib_version, item_id, properties, inserted_at)
         SELECT 2,
             CASE WHEN r < 50 THEN '$pageview' WHEN r < 75 THEN '$autocapture_click' WHEN r < 90 THEN 'product_viewed' WHEN r < 95 THEN 'signup' ELSE 'purchase' END,
             ts, did, concat('b{d}-', i), concat(did, '-{d}-', h4 % 3), concat('10.', h5 % 256, '.', h4 % 256, '.', h6 % 256),
@@ -81,8 +81,8 @@ static class Seeder
             CASE WHEN dev = 0 THEN '10' ELSE '14' END,
             CASE WHEN dev = 0 THEN 'Desktop' WHEN dev = 1 THEN 'Mobile' ELSE 'Tablet' END,
             CASE WHEN dev = 0 THEN 1920 ELSE 390 END, CASE WHEN dev = 0 THEN 1080 ELSE 844 END,
-            'web', '0.1.0',
-            json_object('plan', element_at(['free', 'pro', 'enterprise'], h4 % 3 + 1), 'ab_test', CASE WHEN h5 % 2 = 0 THEN 'control' ELSE 'variant_b' END, 'cart_value', (h6 % 50000) / 100),
+            'web', '0.1.0', IF(r >= 75 AND r < 90 OR r >= 95, concat('i', h6 % 2000), NULL),
+            json_object('item_id', IF(r >= 75 AND r < 90 OR r >= 95, concat('i', h6 % 2000), NULL), 'plan', element_at(['free', 'pro', 'enterprise'], h4 % 3 + 1), 'ab_test', CASE WHEN h5 % 2 = 0 THEN 'control' ELSE 'variant_b' END, 'cart_value', (h6 % 50000) / 100),
             ts
         FROM (
             SELECT i, r, h4, h5, h6, h7,

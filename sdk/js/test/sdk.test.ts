@@ -189,3 +189,36 @@ describe('page unload', () => {
     expect(fetchMock).not.toHaveBeenCalled()
   })
 })
+
+describe('commerce', () => {
+  it('trackPurchase sends one purchase event per item with a shared order_id', async () => {
+    const rd = client()
+    rd.trackPurchase([{ item_id: 'sku-1', price: 10, quantity: 2 }, { item_id: 'sku-2', price: 5 }], 'order-9', { currency: 'EUR' })
+    await vi.advanceTimersByTimeAsync(3000)
+
+    const purchases = sentEvents().filter((e) => e.event === 'purchase')
+    expect(purchases.map((e) => e.properties.item_id)).toEqual(['sku-1', 'sku-2'])
+    expect(purchases.every((e) => e.properties.order_id === 'order-9' && e.properties.currency === 'EUR')).toBe(true)
+    expect(purchases[0].properties.quantity).toBe(2)
+  })
+
+  it('recommend calls the recommender with the public key and returns its items', async () => {
+    const rd = client({ recommendHost: 'http://reco.local/' })
+    fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ items: [{ item_id: 'sku-2', score: 0.4 }] }) })
+
+    const items = await rd.recommend({ model: 'co_viewed', itemId: 'sku 1', limit: 4 })
+
+    const url = new URL(fetchMock.mock.calls[0][0])
+    expect(url.origin + url.pathname).toBe('http://reco.local/recommend')
+    expect(Object.fromEntries(url.searchParams)).toEqual({ api_key: 'pk_test', model: 'co_viewed', item_id: 'sku 1', limit: '4' })
+    expect(fetchMock.mock.calls[0][1]).toBeUndefined()
+    expect(items.map((i) => i.item_id)).toEqual(['sku-2'])
+  })
+
+  it('recommend fails clearly without recommendHost or on an error response', async () => {
+    await expect(client().recommend()).rejects.toThrow('recommendHost')
+    const rd = client({ recommendHost: 'http://reco.local' })
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 401, json: async () => ({}) })
+    await expect(rd.recommend()).rejects.toThrow('HTTP 401')
+  })
+})

@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS events (
     screen_height     SMALLINT       NULL,
     lib               VARCHAR(32)    NULL,
     lib_version       VARCHAR(32)    NULL,
+    item_id           VARCHAR(200)   NULL,
     properties        JSON           NULL,
     inserted_at       DATETIME       NULL
 )
@@ -80,10 +81,10 @@ COLUMNS (project_id, event, timestamp, distinct_id, event_id, session_id, ip,
          current_url, host, pathname, referrer, referring_domain,
          utm_source, utm_medium, utm_campaign, utm_term, utm_content,
          browser, browser_version, os, os_version, device_type, screen_width, screen_height,
-         lib, lib_version, properties, inserted_at)
+         lib, lib_version, item_id, properties, inserted_at)
 PROPERTIES (
     "format" = "json",
-    "jsonpaths" = "[\"$.project_id\",\"$.event\",\"$.timestamp\",\"$.distinct_id\",\"$.event_id\",\"$.session_id\",\"$.ip\",\"$.current_url\",\"$.host\",\"$.pathname\",\"$.referrer\",\"$.referring_domain\",\"$.utm_source\",\"$.utm_medium\",\"$.utm_campaign\",\"$.utm_term\",\"$.utm_content\",\"$.browser\",\"$.browser_version\",\"$.os\",\"$.os_version\",\"$.device_type\",\"$.screen_width\",\"$.screen_height\",\"$.lib\",\"$.lib_version\",\"$.properties\",\"$.inserted_at\"]",
+    "jsonpaths" = "[\"$.project_id\",\"$.event\",\"$.timestamp\",\"$.distinct_id\",\"$.event_id\",\"$.session_id\",\"$.ip\",\"$.current_url\",\"$.host\",\"$.pathname\",\"$.referrer\",\"$.referring_domain\",\"$.utm_source\",\"$.utm_medium\",\"$.utm_campaign\",\"$.utm_term\",\"$.utm_content\",\"$.browser\",\"$.browser_version\",\"$.os\",\"$.os_version\",\"$.device_type\",\"$.screen_width\",\"$.screen_height\",\"$.lib\",\"$.lib_version\",\"$.item_id\",\"$.properties\",\"$.inserted_at\"]",
     "desired_concurrent_number" = "3",
     "max_batch_interval" = "5",
     "max_error_number" = "1000"

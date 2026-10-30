@@ -1,9 +1,9 @@
 using MySqlConnector;
 using ReapDeep.Analytics.Sql;
 
-namespace ReapDeep.PersonWorker.Cohorts;
+namespace ReapDeep.PersonWorker.Infrastructure;
 
-public sealed class CohortStore(MySqlDataSource db)
+public sealed class StarRocksStore(MySqlDataSource db)
 {
     const int CommandTimeoutSeconds = 600;
 
@@ -19,6 +19,16 @@ public sealed class CohortStore(MySqlDataSource db)
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var cmd = Command(query, conn);
         return Convert.ToInt64(await cmd.ExecuteScalarAsync(ct));
+    }
+
+    public async Task<List<T>> QueryAsync<T>(SqlQuery query, Func<MySqlDataReader, T> map, CancellationToken ct)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        await using var cmd = Command(query, conn);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        var rows = new List<T>();
+        while (await reader.ReadAsync(ct)) rows.Add(map(reader));
+        return rows;
     }
 
     static MySqlCommand Command(SqlQuery query, MySqlConnection conn)

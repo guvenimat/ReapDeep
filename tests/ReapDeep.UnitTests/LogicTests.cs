@@ -156,7 +156,8 @@ public class DapperConventionTests
     [Fact]
     public void Dapper_row_records_are_not_private()
     {
-        var rows = new[] { typeof(PasswordHasher).Assembly, typeof(PropertyTypes).Assembly, typeof(ReapDeep.PersonWorker.Identity.IdentityEvent).Assembly }
+        var rows = new[] { typeof(PasswordHasher).Assembly, typeof(PropertyTypes).Assembly, typeof(ReapDeep.PersonWorker.Identity.IdentityEvent).Assembly,
+            typeof(ReapDeep.Recommender.Recommendations.RecommendationCache).Assembly }
             .SelectMany(a => a.GetTypes())
             .Where(t => t.IsNested && t.Name.EndsWith("Record", StringComparison.Ordinal))
             .ToList();

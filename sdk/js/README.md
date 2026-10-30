@@ -1,6 +1,6 @@
 # @reapdeep/js
 
-ReapDeep web SDK. ~2.4 KB gzip, no dependencies.
+ReapDeep web SDK. ~2.6 KB gzip, no dependencies.
 
 ## Usage
 
@@ -21,9 +21,27 @@ rd.register({ plan: 'pro' })
 rd.reset()
 ```
 
+### Commerce and recommendations
+
+Events about products carry `item_id` (the catalog key). Send one `purchase` event per item; `trackPurchase` does that and links them with `order_id`.
+
+```js
+const rd = init('pk_...', { apiHost: 'https://ingest.example.com', recommendHost: 'https://reco.example.com' })
+
+rd.capture('product_viewed', { item_id: 'linen-shirt', price: 49 })
+rd.capture('add_to_cart', { item_id: 'linen-shirt' })
+rd.trackPurchase([{ item_id: 'linen-shirt', price: 49, quantity: 1 }, { item_id: 'wool-scarf', price: 29 }], 'order-1001', { currency: 'EUR' })
+
+const similar = await rd.recommend({ model: 'co_viewed', itemId: 'linen-shirt', limit: 8 })
+const popularShoes = await rd.recommend({ model: 'popular', category: 'shoes' })
+```
+
+Models: `popular`, `trending`, `co_viewed` and `bought_together` (the last two need `itemId`). Only items that are in the catalog and in stock are returned; each item has a `source`, which is `popular` when a short item-based list was filled with popular items.
+
 | Option | Default | |
 |---|---|---|
 | `apiHost` | | Ingestion API URL |
+| `recommendHost` | | Recommender URL, needed for `recommend()` |
 | `autoPageview` | `true` | `$pageview` on load and on SPA navigation (`pushState`, `popstate`) |
 | `flushInterval` | `3000` | Queue flush interval (ms) |
 | `batchSize` | `50` | Flush immediately when the queue reaches this size |

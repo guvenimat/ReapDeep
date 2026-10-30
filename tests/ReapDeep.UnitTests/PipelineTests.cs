@@ -1,4 +1,5 @@
 using System.Text;
+using System.Text.Json;
 using ReapDeep.Ingestion.Capture;
 using ReapDeep.PersonWorker.Identity;
 
@@ -86,5 +87,32 @@ public class IdentityEventTests
     public void Malformed_messages_are_rejected(string json)
     {
         Assert.Null(IdentityEvent.Parse(Message(json)));
+    }
+}
+
+public class EventMessageTests
+{
+    static JsonElement Build(string properties)
+    {
+        var props = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(properties)!;
+        var bytes = EventMessage.Build(1, "purchase", "d1", "e1", DateTime.UtcNow, DateTime.UtcNow, null, default, props);
+        return JsonDocument.Parse(bytes).RootElement.Clone();
+    }
+
+    [Fact]
+    public void Item_id_moves_from_properties_to_its_own_column()
+    {
+        var msg = Build("""{"item_id":"sku-42","order_id":"o-1"}""");
+
+        Assert.Equal("sku-42", msg.GetProperty("item_id").GetString());
+        Assert.False(msg.GetProperty("properties").TryGetProperty("item_id", out _));
+        Assert.Equal("o-1", msg.GetProperty("properties").GetProperty("order_id").GetString());
+    }
+
+    [Fact]
+    public void Numeric_ids_are_stored_as_text_and_missing_ids_as_null()
+    {
+        Assert.Equal("42", Build("""{"item_id":42}""").GetProperty("item_id").GetString());
+        Assert.Equal(JsonValueKind.Null, Build("""{"order_id":"o-1"}""").GetProperty("item_id").ValueKind);
     }
 }

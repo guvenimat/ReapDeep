@@ -13,7 +13,6 @@ static class Demo
 
     sealed record Device(string UserAgent, string Type, int Width, int Height);
     sealed record Source(string? UtmSource, string? UtmMedium, string? Referrer, string Landing, double Weight);
-    sealed record Product(string Id, string Name, string Category, double Price);
     sealed record Ev(string Event, string DistinctId, DateTime Ts, Dictionary<string, object?> Props);
 
     static readonly (Device Device, double Weight)[] Devices =
@@ -34,23 +33,14 @@ static class Demo
         new("producthunt", "referral", "https://www.producthunt.com/", "/pricing", 0.12),
     ];
 
-    static readonly Product[] Products =
-    [
-        new("linen-shirt", "Linen shirt", "apparel", 49),
-        new("canvas-sneakers", "Canvas sneakers", "shoes", 79),
-        new("wool-scarf", "Wool scarf", "accessories", 29),
-        new("denim-jacket", "Denim jacket", "apparel", 119),
-        new("leather-bag", "Leather bag", "accessories", 159),
-        new("running-shoes", "Running shoes", "shoes", 99),
-    ];
-
     static readonly string[] BlogPosts = ["/blog/spring-collection", "/blog/care-guide", "/blog/sizing"];
 
     static int _signups;
 
-    public static async Task Run(string captureUrl, string pg, int visitors, int days, int seed)
+    public static async Task Run(string captureUrl, string pg, int visitors, int days, int seed, string? resetStarRocks)
     {
         await using var db = NpgsqlDataSource.Create(pg);
+        if (resetStarRocks is not null) await Reset(db, resetStarRocks);
         await using (var cmd = db.CreateCommand("""
             INSERT INTO projects (id, organization_id, name, public_key) VALUES (@id, 1, 'Demo Shop', @key) ON CONFLICT (id) DO NOTHING;
             SELECT setval('projects_id_seq', GREATEST((SELECT max(id) FROM projects), 1));
@@ -60,12 +50,13 @@ static class Demo
             cmd.Parameters.AddWithValue("key", PublicKey);
             await cmd.ExecuteNonQueryAsync();
         }
+        await DemoCatalog.WriteAsync(db, ProjectId);
         await using (var cmd = db.CreateCommand("SELECT count(*) FROM event_definitions WHERE project_id = @id"))
         {
             cmd.Parameters.AddWithValue("id", ProjectId);
             if ((long)(await cmd.ExecuteScalarAsync())! > 0)
             {
-                Console.WriteLine("Demo project already has data; nothing to do. Delete project 4 and its events to reseed.");
+                Console.WriteLine("Demo project already has events; catalog updated. Run with -Reset to regenerate the events.");
                 return;
             }
         }
@@ -200,9 +191,9 @@ static class Demo
         {
             if (page.StartsWith("/products/", StringComparison.Ordinal))
             {
-                var product = Products.First(p => page.EndsWith(p.Id, StringComparison.Ordinal));
+                var product = DemoCatalog.Get(page["/products/".Length..]);
                 Add("$pageview", page);
-                var item = new Dictionary<string, object?> { ["product_id"] = product.Id, ["product_name"] = product.Name, ["category"] = product.Category, ["price"] = product.Price };
+                var item = new Dictionary<string, object?> { ["item_id"] = product.Id, ["product_name"] = product.Name, ["category"] = product.Category, ["price"] = product.Price };
                 Add("product_viewed", page, item);
                 if (rng.NextDouble() < 0.32 * intent)
                 {
@@ -214,12 +205,12 @@ static class Demo
                         Add("checkout_started", "/checkout", new() { ["cart_value"] = product.Price, ["items"] = 1 });
                         if (rng.NextDouble() < 0.71)
                         {
-                            Add("purchase", "/checkout", new() { ["amount"] = product.Price, ["currency"] = "EUR", ["product_id"] = product.Id, ["category"] = product.Category });
+                            Add("purchase", "/checkout", new() { ["amount"] = product.Price, ["currency"] = "EUR", ["item_id"] = product.Id, ["category"] = product.Category, ["order_id"] = $"o-{Guid.CreateVersion7():N}" });
                             break;
                         }
                     }
                 }
-                page = rng.NextDouble() < 0.45 ? "/products" : rng.NextDouble() < 0.5 ? RandomProduct(rng) : "exit";
+                page = rng.NextDouble() < 0.3 ? "/products" : rng.NextDouble() < 0.75 ? "/products/" + DemoCatalog.Next(rng, product).Id : "exit";
                 continue;
             }
 
@@ -238,7 +229,7 @@ static class Demo
         if (list.Count > 0) sessions.Add((v.Device, list));
     }
 
-    static string RandomProduct(Random rng) => "/products/" + Products[rng.Next(Products.Length)].Id;
+    static string RandomProduct(Random rng) => "/products/" + DemoCatalog.Popular(rng).Id;
 
     static string Next(Random rng, params (string Page, double Weight)[] options) => PickWeighted(rng, options);
 
@@ -286,6 +277,26 @@ static class Demo
         if (userAgent is not null) req.Headers.TryAddWithoutValidation("User-Agent", userAgent);
         using var res = await http.SendAsync(req);
         return (int)res.StatusCode;
+    }
+
+    static async Task Reset(NpgsqlDataSource db, string sr)
+    {
+        await using (var conn = new MySqlConnector.MySqlConnection(sr))
+        {
+            await conn.OpenAsync();
+            foreach (var table in new[] { "events", "persons", "person_distinct_ids", "cohort_members" })
+            {
+                await using var cmd = new MySqlConnector.MySqlCommand($"DELETE FROM analytics.{table} WHERE project_id = {ProjectId}", conn) { CommandTimeout = 600 };
+                await cmd.ExecuteNonQueryAsync();
+            }
+        }
+        foreach (var table in new[] { "dashboards", "insights", "cohorts", "item_recommendations", "recommendation_runs", "items",
+                     "person_distinct_ids", "persons", "event_definitions", "property_definitions" })
+        {
+            await using var cmd = db.CreateCommand($"DELETE FROM {table} WHERE project_id = {ProjectId}");
+            await cmd.ExecuteNonQueryAsync();
+        }
+        Console.WriteLine("Removed the previous demo data (project 4).");
     }
 
     static async Task CreateDashboard(NpgsqlDataSource db)

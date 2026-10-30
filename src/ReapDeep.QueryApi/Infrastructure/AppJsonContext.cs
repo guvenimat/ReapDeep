@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
 using ReapDeep.QueryApi.Analytics;
 using ReapDeep.QueryApi.Auth;
+using ReapDeep.QueryApi.Catalog;
 using ReapDeep.QueryApi.Cohorts;
 using ReapDeep.QueryApi.Deletion;
 using ReapDeep.QueryApi.Health;
@@ -46,6 +47,12 @@ namespace ReapDeep.QueryApi.Infrastructure;
 [JsonSerializable(typeof(DeletionRequestBody))]
 [JsonSerializable(typeof(DeletionRequestRow))]
 [JsonSerializable(typeof(DeletionRequestsResponse))]
+[JsonSerializable(typeof(ItemsUpsertRequest))]
+[JsonSerializable(typeof(ItemsUpsertResponse))]
+[JsonSerializable(typeof(ItemsResponse))]
+[JsonSerializable(typeof(ItemDetail))]
+[JsonSerializable(typeof(ModelRunsResponse))]
+[JsonSerializable(typeof(HitRateResponse))]
 [JsonSerializable(typeof(CohortBody))]
 [JsonSerializable(typeof(CohortMembersBody))]
 [JsonSerializable(typeof(CohortRow))]

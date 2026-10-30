@@ -5,6 +5,7 @@ using MySqlConnector;
 using Npgsql;
 using ReapDeep.QueryApi.Analytics;
 using ReapDeep.QueryApi.Auth;
+using ReapDeep.QueryApi.Catalog;
 using ReapDeep.QueryApi.Cohorts;
 using ReapDeep.QueryApi.Deletion;
 using ReapDeep.QueryApi.Insights;
@@ -77,6 +78,8 @@ public static class HostingExtensions
         services.AddSingleton<DeletionRequestRepository>();
         services.AddSingleton<CohortRepository>();
         services.AddSingleton<CohortService>();
+        services.AddSingleton<CatalogRepository>();
+        services.AddSingleton<CatalogService>();
         return builder;
     }
 

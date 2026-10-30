@@ -19,6 +19,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ReapDeep.UnitTests", "tests
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ReapDeep.Analytics", "src\ReapDeep.Analytics\ReapDeep.Analytics.csproj", "{143D57B7-5527-49E3-B5A3-949FFD8A778C}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ReapDeep.Recommender", "src\ReapDeep.Recommender\ReapDeep.Recommender.csproj", "{A9367D50-0699-464E-80CE-45BDEFA7737A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -101,6 +103,18 @@ Global
 		{143D57B7-5527-49E3-B5A3-949FFD8A778C}.Release|x64.Build.0 = Release|Any CPU
 		{143D57B7-5527-49E3-B5A3-949FFD8A778C}.Release|x86.ActiveCfg = Release|Any CPU
 		{143D57B7-5527-49E3-B5A3-949FFD8A778C}.Release|x86.Build.0 = Release|Any CPU
+		{A9367D50-0699-464E-80CE-45BDEFA7737A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A9367D50-0699-464E-80CE-45BDEFA7737A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A9367D50-0699-464E-80CE-45BDEFA7737A}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{A9367D50-0699-464E-80CE-45BDEFA7737A}.Debug|x64.Build.0 = Debug|Any CPU
+		{A9367D50-0699-464E-80CE-45BDEFA7737A}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{A9367D50-0699-464E-80CE-45BDEFA7737A}.Debug|x86.Build.0 = Debug|Any CPU
+		{A9367D50-0699-464E-80CE-45BDEFA7737A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A9367D50-0699-464E-80CE-45BDEFA7737A}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A9367D50-0699-464E-80CE-45BDEFA7737A}.Release|x64.ActiveCfg = Release|Any CPU
+		{A9367D50-0699-464E-80CE-45BDEFA7737A}.Release|x64.Build.0 = Release|Any CPU
+		{A9367D50-0699-464E-80CE-45BDEFA7737A}.Release|x86.ActiveCfg = Release|Any CPU
+		{A9367D50-0699-464E-80CE-45BDEFA7737A}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -112,5 +126,6 @@ Global
 		{C7FD7318-77C1-4B0C-B2FD-79C807213F86} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{B830AE4B-E66A-4B27-9BC3-3D24D96066F9} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{143D57B7-5527-49E3-B5A3-949FFD8A778C} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{A9367D50-0699-464E-80CE-45BDEFA7737A} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

@@ -46,7 +46,8 @@ CREATE TABLE api_keys (
     created_by    BIGINT      REFERENCES users(id),
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     last_used_at  TIMESTAMPTZ,
-    revoked_at    TIMESTAMPTZ
+    revoked_at    TIMESTAMPTZ,
+    scope         TEXT        NOT NULL DEFAULT 'read' CHECK (scope IN ('read', 'catalog_write'))
 );
 
 CREATE TABLE event_definitions (
@@ -173,6 +174,41 @@ CREATE TABLE cohort_retired_versions (
     version     BIGINT      NOT NULL,
     retired_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
     PRIMARY KEY (cohort_id, version)
+);
+
+CREATE TABLE items (
+    project_id  BIGINT        NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    item_id     VARCHAR(200)  NOT NULL,
+    title       TEXT          NOT NULL CHECK (length(title) BETWEEN 1 AND 500),
+    category    TEXT          NOT NULL DEFAULT '',
+    price       NUMERIC(12, 2),
+    currency    VARCHAR(10)   NOT NULL DEFAULT 'TRY',
+    in_stock    BOOLEAN       NOT NULL DEFAULT true,
+    url         TEXT          NOT NULL DEFAULT '',
+    image_url   TEXT          NOT NULL DEFAULT '',
+    attributes  JSONB         NOT NULL DEFAULT '{}',
+    updated_at  TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    PRIMARY KEY (project_id, item_id)
+);
+CREATE INDEX items_stock_category ON items (project_id, in_stock, category);
+CREATE INDEX items_updated ON items (project_id, updated_at DESC);
+
+CREATE TABLE item_recommendations (
+    project_id         BIGINT        NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    model              TEXT          NOT NULL CHECK (model IN ('popular', 'trending', 'co_viewed', 'bought_together')),
+    source_item_id     VARCHAR(200)  NOT NULL DEFAULT '',
+    recommended_items  JSONB         NOT NULL DEFAULT '[]',
+    calculated_at      TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    PRIMARY KEY (project_id, model, source_item_id)
+);
+
+CREATE TABLE recommendation_runs (
+    project_id      BIGINT       NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    model           TEXT         NOT NULL,
+    calculated_at   TIMESTAMPTZ  NOT NULL DEFAULT now(),
+    calculation_ms  INT          NOT NULL,
+    source_items    INT          NOT NULL,
+    PRIMARY KEY (project_id, model)
 );
 
 INSERT INTO organizations (name) VALUES ('Local Org');
