@@ -12,6 +12,8 @@ public static class AnalyticsEndpoints
         api.MapPost("/query/funnels", Funnels);
         api.MapPost("/query/retention", Retention);
         api.MapPost("/query/paths", Paths);
+        api.MapPost("/query/rfm", Rfm);
+        api.MapPost("/query/lifecycle", Lifecycle);
         api.MapGet("/events", Events);
     }
 
@@ -30,6 +32,14 @@ public static class AnalyticsEndpoints
     static async Task<IResult> Paths(PathsRequest req, ProjectContext project, PathService paths, CancellationToken ct) => req.Explain
         ? ApiResults.Ok(await paths.ExplainAsync(project, req, ct), AppJsonContext.Default.ExplainResponse)
         : ApiResults.Ok(await paths.RunAsync(project, req, ct), AppJsonContext.Default.PathsResponse);
+
+    static async Task<IResult> Rfm(RfmRequest req, ProjectContext project, RfmService rfm, CancellationToken ct) => req.Explain
+        ? ApiResults.Ok(await rfm.ExplainAsync(project, req, ct), AppJsonContext.Default.ExplainResponse)
+        : ApiResults.Ok(await rfm.RunAsync(project, req, ct), AppJsonContext.Default.RfmResponse);
+
+    static async Task<IResult> Lifecycle(LifecycleRequest req, ProjectContext project, LifecycleService lifecycle, CancellationToken ct) => req.Explain
+        ? ApiResults.Ok(await lifecycle.ExplainAsync(project, req, ct), AppJsonContext.Default.ExplainResponse)
+        : ApiResults.Ok(await lifecycle.RunAsync(project, req, ct), AppJsonContext.Default.LifecycleResponse);
 
     static async Task<IResult> Events(ProjectContext project, EventService events,
         [FromQuery(Name = "event")] string? eventName, [FromQuery(Name = "distinct_id")] string? distinctId,

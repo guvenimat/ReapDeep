@@ -16,15 +16,17 @@ public sealed record CohortCondition(
     List<Filter>? Filters = null,
     string? Property = null,
     string? Op = null,
-    JsonElement? Value = null);
+    JsonElement? Value = null,
+    List<string>? Segments = null);
 
 public static class ConditionTypes
 {
     public const string Performed = "performed_event";
     public const string NotPerformed = "not_performed_event";
     public const string PersonProperty = "person_property";
+    public const string RfmSegment = "rfm_segment";
 
-    public static readonly string[] All = [Performed, NotPerformed, PersonProperty];
+    public static readonly string[] All = [Performed, NotPerformed, PersonProperty, RfmSegment];
 }
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

@@ -1,6 +1,6 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react'
 import { api, errorMessage } from '../../api/client'
-import type { Cohort, CohortCondition, CohortDefinition, CohortKind, CountOp, Filter } from '../../api/types'
+import type { Cohort, CohortCondition, CohortDefinition, CohortKind, CountOp, Filter, RfmSegmentKey } from '../../api/types'
 import { AddButton, needsValue, OpSelect, propList } from '../../components/editors'
 import { Icon } from '../../components/icons'
 import { Card, FormMessage, IconButton, Segmented } from '../../components/ui'
@@ -9,11 +9,13 @@ import { useDebounced, useQuery } from '../../lib/hooks'
 import {
   cleanDefinition, COUNT_OPS, definitionProblem, emptyDefinition, MAX_CONDITIONS, MAX_GROUPS, MAX_WITHIN_DAYS, newCondition, parseIds,
 } from './cohortRules'
+import { RFM_SEGMENT_KEYS, RFM_SEGMENT_NAMES, RFM_WINDOWS } from '../rfm/segments'
 
 const CONDITION_TYPES: { id: CohortCondition['type']; label: string }[] = [
   { id: 'performed_event', label: 'Did event' },
   { id: 'not_performed_event', label: 'Did not do event' },
   { id: 'person_property', label: 'Person property' },
+  { id: 'rfm_segment', label: 'RFM segment' },
 ]
 
 export function CohortEditor({ cohort, onSaved, onCancel }: { cohort?: Cohort; onSaved: (c: Cohort) => void; onCancel: () => void }) {
@@ -149,7 +151,9 @@ function ConditionRow({ condition: c, onChange, onRemove }: {
 }) {
   const changeType = (type: CohortCondition['type']) => {
     const next = newCondition(type)
-    if (next.type !== 'person_property' && c.type !== 'person_property') onChange({ ...next, event: c.event, within_days: c.within_days } as CohortCondition)
+    const withEvent = (t: CohortCondition['type']) => t === 'performed_event' || t === 'not_performed_event'
+    if (withEvent(next.type) && (c.type === 'performed_event' || c.type === 'not_performed_event'))
+      onChange({ ...next, event: c.event, within_days: c.within_days } as CohortCondition)
     else onChange(next)
   }
   return (
@@ -160,7 +164,9 @@ function ConditionRow({ condition: c, onChange, onRemove }: {
         </select>
         {c.type === 'person_property'
           ? <input list={propList('person')} placeholder="property" value={c.property} onChange={(e) => onChange({ ...c, property: e.target.value })} aria-label="Person property" />
-          : <input list="dl-events" placeholder="event" value={c.event} onChange={(e) => onChange({ ...c, event: e.target.value })} aria-label="Event" />}
+          : c.type === 'rfm_segment'
+            ? <span className="editor-hint">customers scored on their purchases</span>
+            : <input list="dl-events" placeholder="event" value={c.event} onChange={(e) => onChange({ ...c, event: e.target.value })} aria-label="Event" />}
         {onRemove && <IconButton icon="close" label="Remove condition" onClick={onRemove} />}
       </div>
       {c.type === 'person_property' && (
@@ -186,10 +192,39 @@ function ConditionRow({ condition: c, onChange, onRemove }: {
           <DaysInput value={c.within_days} onChange={(within_days) => onChange({ ...c, within_days })} />
         </div>
       )}
+      {c.type === 'rfm_segment' && <RfmConditionEditor condition={c} onChange={onChange} />}
       {c.type === 'performed_event' && (
         <EventFilters filters={c.filters ?? []} onChange={(filters) => onChange({ ...c, filters })} />
       )}
     </div>
+  )
+}
+
+function RfmConditionEditor({ condition: c, onChange }: {
+  condition: Extract<CohortCondition, { type: 'rfm_segment' }>; onChange: (c: CohortCondition) => void
+}) {
+  const toggle = (key: RfmSegmentKey) =>
+    onChange({ ...c, segments: c.segments.includes(key) ? c.segments.filter((k) => k !== key) : [...c.segments, key] })
+  return (
+    <>
+      <div className="segment-choices" role="group" aria-label="RFM segments">
+        {RFM_SEGMENT_KEYS.map((k) => (
+          <label key={k} className={`chip-check${c.segments.includes(k) ? ' on' : ''}`}>
+            <input type="checkbox" checked={c.segments.includes(k)} onChange={() => toggle(k)} />
+            {RFM_SEGMENT_NAMES[k]}
+          </label>
+        ))}
+      </div>
+      <div className="row sentence">
+        <span>scored on</span>
+        <input list="dl-events" placeholder="purchase" value={c.event ?? ''} className="narrow-event" aria-label="Purchase event"
+          onChange={(e) => onChange({ ...c, event: e.target.value })} />
+        <span>in the last</span>
+        <select value={c.within_days} onChange={(e) => onChange({ ...c, within_days: Number(e.target.value) })} aria-label="RFM window" className="op">
+          {RFM_WINDOWS.map((d) => <option key={d} value={d}>{d} days</option>)}
+        </select>
+      </div>
+    </>
   )
 }
 

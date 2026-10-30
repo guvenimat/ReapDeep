@@ -10,7 +10,7 @@ retention, path and person questions over hundreds of millions of events.
 
 ![Demo Shop dashboard](docs/images/dashboard.png)
 
-- **Analyses:** trends (totals, unique users, breakdowns), funnels with conversion windows, weekly or daily retention cohorts, user paths, a live event stream and person profiles; any of them can be saved and arranged on dashboards.
+- **Analyses:** trends (totals, unique users, breakdowns), funnels with conversion windows, weekly or daily retention cohorts, user paths, lifecycle (new, returning, resurrecting, dormant), RFM customer segments, a live event stream and person profiles; any of them can be saved and arranged on dashboards.
 - **Recommendations:** a product catalog plus popular, trending, viewed-together and bought-together suggestions, served to your site by a public endpoint from memory and measured with a hit-rate check.
 - **Cohorts:** segments defined by behavior ("viewed a product 3+ times in 30 days but did not buy") or person properties, or uploaded as a list; every analysis can filter or break down by them.
 - **Fast ingestion:** 50K events/s on a single machine with p99 under 10 ms; a `202` response means the event is durably in Kafka.
@@ -113,16 +113,16 @@ curl http://localhost:8001/api/v1/query/trends \
   -d '{ "series": [{ "event": "$pageview", "metric": "unique_users" }], "interval": "day" }'
 ```
 
-Other endpoints: `POST /api/v1/query/funnels`, `/api/v1/cohorts` (CRUD, `preview`, `persons`, `recalculate`), `POST /api/v1/query/retention`, `POST /api/v1/query/paths`, `GET /api/v1/events`, `GET /api/v1/persons[/{id}]`, `GET /api/v1/metadata`, `GET /healthz`.
+Other endpoints: `POST /api/v1/query/funnels`, `/api/v1/cohorts` (CRUD, `preview`, `persons`, `recalculate`), `POST /api/v1/query/retention`, `POST /api/v1/query/paths`, `POST /api/v1/query/lifecycle`, `POST /api/v1/query/rfm`, `GET /api/v1/events`, `GET /api/v1/persons[/{id}]`, `GET /api/v1/metadata`, `GET /healthz`.
 
 ### Demo data
 
 ```powershell
 cd deploy/local
-.\demo-data.ps1     # ~22K events from 3,000 visitors over 8 weeks, sent through the ingestion API
+.\demo-data.ps1     # ~50K events from 3,000 visitors over 8 weeks plus a year of purchase history, sent through the ingestion API
 ```
 
-The seed creates a **Demo Shop** project with a deterministic store scenario: traffic sources, desktop and mobile browsers, product pages, a cart and checkout funnel, sign-ups that merge anonymous history, and returning visitors over the following weeks. It also creates a "Demo Shop overview" dashboard. Pick the project in the top bar and choose "Last 30 days".
+The seed creates a **Demo Shop** project with a deterministic store scenario: traffic sources, desktop and mobile browsers, product pages, a cart and checkout funnel, sign-ups that merge anonymous history, and returning visitors over the following weeks. Repeat buyers and a group of past customers who bought up to 11 months ago give the RFM segments a realistic spread. It also creates a "Demo Shop overview" dashboard and sample cohorts (Champions, Customers at risk, Window shoppers, Pro plan). `-Reset` regenerates the project from scratch. Pick the project in the top bar and choose "Last 30 days".
 
 | Funnel with breakdown | Weekly retention |
 |---|---|
@@ -139,11 +139,21 @@ The dashboard opens in a dark theme; the light theme is one click away in the si
 - **Retention:** cohorts are formed from the first time a person did the start event in the selected range, daily or weekly. Each cell is the share of the cohort that did the return event in that period; periods that have not happened yet are empty, and the average row is weighted by cohort size.
 - **Paths:** each person's first start event in the range, followed by their next events within a window (30 min to 1 day), with repeats in a row collapsed and `$pageview` split by page. The result has the top events per step and the most common full paths.
 
+### Lifecycle and RFM
+
+| RFM segments | Weekly lifecycle |
+|---|---|
+| ![RFM](docs/images/rfm.png) | ![Lifecycle](docs/images/lifecycle.png) |
+
+- **Lifecycle:** for each day, week or month, active persons are *new* (first activity after N days without any; 90 by default, up to 365), *returning* (also active in the previous period) or *resurrecting* (back after at least one inactive period); *dormant* persons were active in the previous period but not in this one and are drawn below the axis. Activity is any event, or one event such as `purchase`.
+- **RFM:** every person who bought in the last 90, 180 or 365 days gets 1-5 scores for recency, frequency (distinct `order_id`s) and monetary value (sum of `amount`). Scores are rank percentiles, so customers with the same number of orders share a score. The recency and frequency scores map to the 11 standard segments, from Champions to Lost, and each segment shows its customers, average recency, orders, value and share of revenue.
+- **Segments as cohorts:** one click saves a segment as a dynamic cohort with an `rfm_segment` condition. The cohort job recalculates it like any other cohort, so a segment can filter or break down every analysis, for example a funnel of "Customers at risk". Both analyses merge anonymous and identified IDs before counting.
+
 ### Cohorts
 
 ![Cohort](docs/images/cohort.png)
 
-A dynamic cohort is a set of OR'ed groups of AND'ed conditions: *did event X at least / at most / exactly N times in the last D days* (optionally where an event property matches), *did not do event Y in the last D days*, or *person property matches*. Windows are 1-90 days. A static cohort is a list of person ids or distinct_ids, pasted or loaded from a CSV.
+A dynamic cohort is a set of OR'ed groups of AND'ed conditions: *did event X at least / at most / exactly N times in the last D days* (optionally where an event property matches), *did not do event Y in the last D days*, or *person property matches*. Windows are 1-90 days. *RFM segment is one of ...* turns RFM segments into a condition (see above). A static cohort is a list of person ids or distinct_ids, pasted or loaded from a CSV.
 
 - **Materialized membership:** the person worker evaluates the rules in StarRocks and writes the members to `cohort_members` (every distinct_id of each person, so anonymous history counts for the merged person). Cohorts refresh hourly by default; the editor shows a live count computed on the fly.
 - **Cheap to use in analyses:** `cohort_members` is keyed by `(project_id, distinct_id)` in the same colocate group as `events`, so a cohort filter (`{"scope":"cohort","property":"<id>","op":"in" | "not_in"}`) is a bucket-local semi or anti join on the events table. Trends and funnels can also break down by up to 5 cohorts.
@@ -257,10 +267,25 @@ Measured on a 30M-event seed (the 100M run was stopped by host memory pressure o
 
 The cohort filter is a colocated semi join. For unique users it is applied after the `(distinct_id, bucket)` pre-aggregation, which halved its cost (1,200 ms before). On raw-event queries (totals, funnels) a large cohort still costs a hash probe per event: well inside the targets, but more than the 20% overhead we aimed for.
 
+### RFM and lifecycle over 30M events
+
+Same 30M-event seed (1.5M purchase events, 525K customers in the 365-day window). The full benchmark run was stopped by host memory pressure before these scenarios, so they were measured afterwards one by one on the same data: 1 cold and 5 warm runs, highest warm time shown.
+
+| Query | Slowest warm run | Target |
+|---|---|---|
+| RFM, 365-day window, all 525K customers | **609 ms** | < 1.5 s, met |
+| RFM with a person property filter | 1,107 ms (others ~600 ms) | < 1.5 s, met |
+| Lifecycle, weekly, any event, 90-day look-back | **800 ms** | < 2 s, met |
+| Lifecycle, daily, `purchase`, 365-day look-back | **461 ms** | < 2 s, met |
+| Lifecycle, weekly, any event, with a cohort filter | **673 ms** | < 2 s, met |
+| First calculation of an `rfm_segment` cohort (Champions + Loyal, 103K persons) | **697 ms** | < 2 s, met |
+
+The 1.1 s runs of the filtered RFM query overlapped with the person worker's 30 s local cohort refresh, which the benchmark normally pauses.
+
 ## Tests
 
 ```powershell
-dotnet test tests/ReapDeep.UnitTests   # SQL builder tenancy and parameters, cohort and recommendation SQL, recommender selection, time ranges, passwords, user agents
+dotnet test tests/ReapDeep.UnitTests   # SQL builder tenancy and parameters, cohort, RFM, lifecycle and recommendation SQL, recommender selection, time ranges, passwords, user agents
 
 cd deploy/local
 .\identity-test.ps1     # identity resolution, 10 end-to-end scenarios
@@ -269,10 +294,12 @@ cd deploy/local
 .\settings-test.ps1     # members, roles, password change, API keys
 .\insights-test.ps1     # saved insights and dashboards, API and browser
 .\cohort-test.ps1       # cohorts: rules, identity merge, static lists, filters and breakdowns, recalculation, deletion
+.
+fm-lifecycle-test.ps1  # RFM scores and segments with known answers, rfm_segment cohorts, lifecycle states and look-back
 .\recommender-test.ps1  # catalog, key scopes, models from real events, the public Recommender, stock changes
 .\query-test.ps1        # Query API: trends, funnels, retention, paths, events, persons, EXPLAIN, latency
 .\dashboard-test.ps1    # headless Chrome against the dashboard (Chrome DevTools Protocol)
-.\load-test.ps1         # ingestion load, 100M seed, cohort calculation, query benchmark, cleanup
+.\load-test.ps1         # ingestion load, 100M seed, cohort calculation, query benchmark (incl. RFM and lifecycle), cleanup
 
 cd ../../sdk/js
 npm test                # SDK unit tests (vitest + jsdom)
@@ -296,7 +323,7 @@ src/ReapDeep.Ingestion      Ingestion API
 src/ReapDeep.PersonWorker   identity resolution, cohort and recommendation calculation, deletion jobs
 src/ReapDeep.QueryApi       Query API: feature folders (Analytics, Catalog, Cohorts, Persons, Insights, Organization, ...)
 src/ReapDeep.Recommender    public recommendation endpoint, served from memory
-src/ReapDeep.Analytics      shared library: every StarRocks analytics query is built here (SqlBuilder, CohortSql, RecommendationSql)
+src/ReapDeep.Analytics      shared library: every StarRocks analytics query is built here (SqlBuilder, CohortSql, RfmSql, LifecycleSql, RecommendationSql)
 sdk/js                      browser SDK
 dashboard                   React dashboard, served by nginx
 tests/ReapDeep.LoadTest     load generator, 100M seeder, demo data and query benchmark
@@ -312,6 +339,7 @@ ReapDeep is an early v1. It runs end to end locally but has not been operated in
 - Members are added with a temporary password; there are no invitation emails or password reset by email.
 - A person's `created_at` is the time the person worker processed their first `$identify` or `$set`, not the event's own timestamp; it only differs for backfilled data such as the demo seed.
 - Retention and paths read raw events and join persons on every query; they are fast on the demo and test data but were not part of the 100M-event benchmark.
+- RFM scores are relative to the customers in the report: a filter re-ranks only the matching customers. Amounts are summed without currency conversion (the report warns when it sees several currencies), and there is no refund event yet.
 - Cohort membership is the current membership: a 90-day trend filtered by a cohort uses who is in the cohort now, not who was in it on each day. Behavioral windows are limited to 90 days.
 - Not in v1: session replay, mobile SDKs, autocapture, feature flags.
 - Behind a load balancer, set `ForwardedHeaders__TrustedNetworks` (CIDR list) on the ingestion and Query APIs; `X-Forwarded-For` is ignored otherwise. The Query API sends no CORS headers unless `QueryApi__CorsOrigins` is set.

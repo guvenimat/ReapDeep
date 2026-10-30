@@ -112,7 +112,7 @@ CREATE TABLE insights (
     id          BIGSERIAL   PRIMARY KEY,
     project_id  BIGINT      NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     name        TEXT        NOT NULL,
-    kind        TEXT        NOT NULL CHECK (kind IN ('trends', 'funnels', 'retention', 'paths')),
+    kind        TEXT        NOT NULL CHECK (kind IN ('trends', 'funnels', 'retention', 'paths', 'rfm', 'lifecycle')),
     query       JSONB       NOT NULL,
     created_by  BIGINT      REFERENCES users(id) ON DELETE SET NULL,
     created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),

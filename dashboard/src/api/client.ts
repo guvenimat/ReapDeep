@@ -1,6 +1,6 @@
 import type {
   ApiKey, CatalogItem, CatalogItemDetail, CatalogItemInput, Cohort, CohortDefinition, CohortKind, CohortPerson, Dashboard, DashboardSummary, DateRange, DeletionRequest, EventRow, FunnelRequest, FunnelResponse, Insight, InsightKind,
-  HitRate, KeyScope, Me, Member, Metadata, ModelRun, PathsResponse, Person, RetentionResponse, Role, TrendRequest, TrendResponse,
+  HitRate, KeyScope, Me, Member, Metadata, ModelRun, LifecycleResponse, PathsResponse, Person, RetentionResponse, RfmResponse, Role, TrendRequest, TrendResponse,
 } from './types'
 
 const PROJECT_STORAGE = 'reapdeep.projectId'
@@ -78,6 +78,8 @@ export const api = {
   funnels: (body: FunnelRequest, signal?: AbortSignal) => request<FunnelResponse>('POST', '/api/v1/query/funnels', body, signal),
   retention: (body: object, signal?: AbortSignal) => request<RetentionResponse>('POST', '/api/v1/query/retention', body, signal),
   paths: (body: object, signal?: AbortSignal) => request<PathsResponse>('POST', '/api/v1/query/paths', body, signal),
+  rfm: (body: object, signal?: AbortSignal) => request<RfmResponse>('POST', '/api/v1/query/rfm', body, signal),
+  lifecycle: (body: object, signal?: AbortSignal) => request<LifecycleResponse>('POST', '/api/v1/query/lifecycle', body, signal),
 
   events: (params: { event?: string; distinct_id?: string; person_id?: string; limit?: number } & DateRange, signal?: AbortSignal) =>
     request<{ events: EventRow[]; took_ms: number }>('GET', `/api/v1/events?${qs(params)}`, undefined, signal),

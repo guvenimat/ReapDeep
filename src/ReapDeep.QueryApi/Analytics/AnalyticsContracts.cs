@@ -36,3 +36,19 @@ public sealed record EventRow(
     string EventId, string Event, DateTime Timestamp, string DistinctId, string ResolvedPersonId,
     Dictionary<string, string> Columns, JsonElement? Properties);
 public sealed record EventsResponse(List<EventRow> Events, double TookMs);
+
+public sealed record RfmRequest(int? WindowDays, string? PurchaseEvent, string? AmountProperty, List<Filter>? Filters, bool Explain);
+public sealed record RfmCell(int R, int F, long Persons, string Segment);
+public sealed record RfmSegmentResult(
+    string Key, string Name, string Description, long Persons, double Share,
+    double? AvgRecencyDays, double? AvgFrequency, double? AvgMonetary, double Revenue, double RevenueShare);
+public sealed record RfmScoreRange(int Score, long? Min, long? Max);
+public sealed record RfmThresholds(List<RfmScoreRange> Recency, List<RfmScoreRange> Frequency);
+public sealed record RfmResponse(
+    int WindowDays, string PurchaseEvent, string AmountProperty, DateTime CalculatedAt, long Customers, double Revenue,
+    List<string> Currencies, List<RfmCell> Grid, List<RfmSegmentResult> Segments, RfmThresholds Thresholds, double TookMs);
+
+public sealed record LifecycleRequest(
+    string? Event, string? Period, int? LookbackDays, string? DateFrom, string? DateTo, List<Filter>? Filters, bool Explain);
+public sealed record LifecyclePeriod(string Start, long New, long Returning, long Resurrecting, long Dormant);
+public sealed record LifecycleResponse(string? Event, string Period, int LookbackDays, string Timezone, List<LifecyclePeriod> Periods, double TookMs);

@@ -21,6 +21,24 @@ export interface RetentionResponse {
   cohorts: { cohort_start: string; size: number; counts: (number | null)[] }[]
   average: (number | null)[]; took_ms: number
 }
+export type RfmSegmentKey =
+  | 'champions' | 'loyal' | 'potential_loyalist' | 'new_customers' | 'promising' | 'need_attention'
+  | 'about_to_sleep' | 'at_risk' | 'cant_lose' | 'hibernating' | 'lost'
+export interface RfmSegmentResult {
+  key: RfmSegmentKey; name: string; description: string; persons: number; share: number
+  avg_recency_days: number | null; avg_frequency: number | null; avg_monetary: number | null; revenue: number; revenue_share: number
+}
+export interface RfmScoreRange { score: number; min: number | null; max: number | null }
+export interface RfmResponse {
+  window_days: number; purchase_event: string; amount_property: string; calculated_at: string; customers: number; revenue: number
+  currencies: string[]; grid: { r: number; f: number; persons: number; segment: RfmSegmentKey }[]; segments: RfmSegmentResult[]
+  thresholds: { recency: RfmScoreRange[]; frequency: RfmScoreRange[] }; took_ms: number
+}
+export type LifecycleStatus = 'new' | 'returning' | 'resurrecting' | 'dormant'
+export interface LifecycleResponse {
+  event: string | null; period: 'day' | 'week' | 'month'; lookback_days: number; timezone: string
+  periods: ({ start: string } & Record<LifecycleStatus, number>)[]; took_ms: number
+}
 export interface PathsResponse {
   start_event: string; depth: number; persons: number
   steps: { step: number; persons: number; nodes: { name: string; persons: number }[] }[]
@@ -50,7 +68,7 @@ export interface Member { user_id: number; email: string; name: string; role: Ro
 export type KeyScope = 'read' | 'catalog_write'
 export interface ApiKey { id: number; name: string; prefix: string; scope: KeyScope; created_by: string | null; created_at: string; revoked_at: string | null }
 
-export type InsightKind = 'trends' | 'funnels' | 'retention' | 'paths'
+export type InsightKind = 'trends' | 'funnels' | 'retention' | 'paths' | 'rfm' | 'lifecycle'
 export interface Insight {
   id: number; name: string; kind: InsightKind; query: Record<string, unknown>
   created_by: string | null; created_at: string; updated_at: string
@@ -70,6 +88,7 @@ export type CohortCondition =
   | { type: 'performed_event'; event: string; count_op: CountOp; count: number; within_days: number; filters?: Filter[] }
   | { type: 'not_performed_event'; event: string; within_days: number }
   | { type: 'person_property'; property: string; op: Op; value?: string }
+  | { type: 'rfm_segment'; segments: RfmSegmentKey[]; within_days: number; event?: string }
 export interface CohortDefinition { groups: { conditions: CohortCondition[] }[] }
 export interface Cohort {
   id: number; name: string; description: string; kind: CohortKind; definition: CohortDefinition | null
