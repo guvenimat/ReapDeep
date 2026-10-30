@@ -17,7 +17,12 @@ public sealed record FunnelRequest(
     List<Filter>? Filters, Breakdown? Breakdown, double? Sampling, bool Explain);
 public sealed record FunnelStepResult(int Step, string Event, long Count, double ConversionFromFirst, double ConversionFromPrevious);
 public sealed record FunnelResult(string? BreakdownValue, List<FunnelStepResult> Steps);
-public sealed record FunnelResponse(long WindowSeconds, double Sampling, List<FunnelResult> Results, double TookMs);
+public sealed record FunnelStepTime(int Step, long Persons, double? AvgSeconds, double? MedianSeconds);
+public sealed record FunnelTimes(List<FunnelStepTime> Steps, double? AvgSeconds, double? MedianSeconds);
+public sealed record FunnelResponse(long WindowSeconds, double Sampling, List<FunnelResult> Results, double TookMs, FunnelTimes? Times = null);
+public sealed record FunnelPersonsRequest(
+    List<FunnelStep>? Steps, string? DateFrom, string? DateTo, long? WindowSeconds, List<Filter>? Filters, int? Step, string? Kind, int? Limit);
+public sealed record FunnelPersonsResponse(int Step, string Kind, long Total, List<ReapDeep.QueryApi.Cohorts.CohortPerson> Persons, double TookMs);
 
 public sealed record RetentionRequest(
     string? StartEvent, string? ReturnEvent, string? Period, int? Periods, string? DateFrom, string? DateTo,

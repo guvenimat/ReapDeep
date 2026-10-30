@@ -20,6 +20,8 @@ namespace ReapDeep.QueryApi.Infrastructure;
 [JsonSerializable(typeof(TrendResponse))]
 [JsonSerializable(typeof(FunnelRequest))]
 [JsonSerializable(typeof(FunnelResponse))]
+[JsonSerializable(typeof(FunnelPersonsRequest))]
+[JsonSerializable(typeof(FunnelPersonsResponse))]
 [JsonSerializable(typeof(RetentionRequest))]
 [JsonSerializable(typeof(RetentionResponse))]
 [JsonSerializable(typeof(PathsRequest))]

@@ -55,3 +55,10 @@ export function ago(iso: string | null): string {
   if (s < 86400) return `${Math.round(s / 3600)} h ago`
   return `${Math.round(s / 86400)} d ago`
 }
+
+export function duration(seconds: number): string {
+  if (seconds < 60) return `${Math.round(seconds)} s`
+  if (seconds < 3600) return `${(seconds / 60).toLocaleString('en-US', { maximumFractionDigits: seconds < 600 ? 1 : 0 })} min`
+  if (seconds < 86400) return `${(seconds / 3600).toLocaleString('en-US', { maximumFractionDigits: 1 })} h`
+  return `${(seconds / 86400).toLocaleString('en-US', { maximumFractionDigits: 1 })} d`
+}

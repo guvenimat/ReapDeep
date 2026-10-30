@@ -221,6 +221,16 @@ faster), second-level deduplication before `window_funnel` (no fewer rows).
 sampling rate in the response, and the UI labels sampled results. Exact is the default; the choice
 between accuracy and speed belongs to the user.
 
+**Funnel times and drop-offs.** Time to convert is a second query next to `window_funnel`, which only
+returns the level reached: per person it takes the first step-1 timestamp and, for each later step, the
+earliest matching timestamp inside the window (`array_agg` per step, then `array_min(array_filter(...))`
+layer by layer); it reports the median and average per step. Each layer ends with a no-op
+`WHERE t1 IS NOT NULL ... LIMIT 9223372036854775807`: without it the StarRocks 4.0 optimizer merges the
+lambda projections into the aggregation and rejects its own plan ("Input dependency cols check failed").
+The drop-off list runs `window_funnel` on the raw person key (no hash, no sampling) and returns the persons
+at exactly level k (dropped) or at least k (converted); the dashboard can save up to 10,000 of them as a
+static cohort.
+
 **Retention** forms cohorts from each person's first start event in the range (daily or weekly, in the
 project time zone), then counts distinct persons who did the return event in each later period. Periods
 that have not happened yet are returned as `null`, so "nobody came back" and "not yet" are different.

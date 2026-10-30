@@ -141,6 +141,14 @@ Check "60s window: purchase (10 min later) is outside the window -> 2/0 -> $(($f
 $fr = (Call POST "/api/v1/query/funnels" ('{"steps":[{"event":"view_product"},{"event":"add_to_cart"},{"event":"purchase"}],"filters":[' + $qtFilter + '],"sampling":1}')).Json
 Check "sampling=1 equals the exact funnel (2/1/1) and is reported -> $(($fr.results[0].steps | ForEach-Object { $_.count }) -join '/'), sampling $($fr.sampling)" (((($fr.results[0].steps | ForEach-Object { $_.count }) -join '/') -eq "2/1/1") -and $fr.sampling -eq 1)
 Check "invalid sampling -> 400" ((Call POST "/api/v1/query/funnels" '{"steps":[{"event":"a"},{"event":"b"}],"sampling":1.5}').Status -eq 400)
+$t = $fr.times.steps[0]
+Check "time to convert: step 2 reached 10 min after step 1 by 1 person -> $($t.persons) person, median $($t.median_seconds) s" ($t.persons -eq 1 -and $t.median_seconds -ge 590 -and $t.median_seconds -le 660)
+$funnel3 = '"steps":[{"event":"view_product"},{"event":"add_to_cart"},{"event":"purchase"}],"filters":[' + $qtFilter + ']'
+$dp = (Call POST "/api/v1/query/funnels/persons" ('{' + $funnel3 + ',"step":1,"kind":"dropped"}')).Json
+Check "dropped after step 1: only anonB -> $($dp.total): $($dp.persons.distinct_ids -join ',')" ($dp.total -eq 1 -and @($dp.persons[0].distinct_ids) -contains $anonB)
+$cp = (Call POST "/api/v1/query/funnels/persons" ('{' + $funnel3 + ',"step":3,"kind":"converted"}')).Json
+Check "converted to step 3: the merged person with both distinct_ids" ($cp.total -eq 1 -and @($cp.persons[0].distinct_ids).Count -eq 2 -and $cp.persons[0].is_identified)
+Check "dropped after the last step -> 400" ((Call POST "/api/v1/query/funnels/persons" ('{' + $funnel3 + ',"step":3,"kind":"dropped"}')).Status -eq 400)
 
 Write-Host "`n5) Events / Persons / Metadata"
 $ev = (Call GET "/api/v1/events?person_id=$personId&limit=50").Json.events

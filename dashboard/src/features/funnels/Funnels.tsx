@@ -1,11 +1,12 @@
-import { api } from '../../api/client'
+import { useState } from 'react'
+import { api, errorMessage } from '../../api/client'
 import type { Breakdown, Filter, FunnelResponse } from '../../api/types'
 import { readState, toDateRange, type Range } from '../../app/route'
 import { Legend, MAX_SERIES, seriesColor } from '../../components/charts/common'
 import { FunnelChart, type FunnelGroup } from '../../components/charts/FunnelChart'
 import { AddButton, BreakdownEditor, completeBreakdown, completeFilters, EditorSection, FilterEditor } from '../../components/editors'
-import { Card, IconButton, Segmented, StatTile, Status } from '../../components/ui'
-import { ms, num, pct } from '../../lib/format'
+import { Card, FormMessage, IconButton, Segmented, StatTile, Status } from '../../components/ui'
+import { duration, ms, num, pct, shortId } from '../../lib/format'
 import { useDebounced, useQuery } from '../../lib/hooks'
 import { SaveInsight } from '../insights/SaveInsight'
 
@@ -54,6 +55,10 @@ export function Funnels({ params, range, onChange, onInsight }: {
   const overall = q.data?.results.length === 1 ? q.data.results[0].steps : undefined
   const last = overall?.[overall.length - 1]
   const worst = overall?.slice(1).reduce((w, s) => (s.conversion_from_previous < w.conversion_from_previous ? s : w), overall[1])
+  const times = q.data?.times
+  const timeOf = (step: number) => times?.steps.find((t) => t.step === step)
+  const [dropped, setDropped] = useState<number>()
+  const body = JSON.parse(request)
 
   return (
     <div className="layout">
@@ -89,6 +94,10 @@ export function Funnels({ params, range, onChange, onInsight }: {
               <StatTile label="Entered" value={num(overall[0].count)} hint={overall[0].event} />
               <StatTile label="Converted" value={pct(last.conversion_from_first)} hint={`${num(last.count)} reached ${last.event}`} />
               {worst && <StatTile label="Biggest drop-off" value={pct(1 - worst.conversion_from_previous)} hint={`Before ${worst.event}`} />}
+              {times?.median_seconds != null && (
+                <StatTile label="Median time to convert" value={duration(times.median_seconds)} testId="funnel-median-time"
+                  hint={`average ${duration(times.avg_seconds ?? 0)}, first to last step`} />
+              )}
             </div>
           )}
 
@@ -109,6 +118,7 @@ export function Funnels({ params, range, onChange, onInsight }: {
                     <th className="num">Of first step</th>
                     <th className="num">Of previous step</th>
                     <th className="num">Drop-off</th>
+                    <th className="num" title="Median time from the previous step, for persons who converted">Median time</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -122,16 +132,90 @@ export function Funnels({ params, range, onChange, onInsight }: {
                         <td className="num strong">{num(s.count)}</td>
                         <td className="num">{pct(s.conversion_from_first)}</td>
                         <td className="num">{s.step === 1 ? '—' : pct(s.conversion_from_previous)}</td>
-                        <td className="num">{s.step === 1 ? '—' : pct(1 - s.conversion_from_previous)}</td>
+                        <td className="num">
+                          {s.step === 1 ? '—' : groups.length === 1 && r.steps[s.step - 2].count > s.count ? (
+                            <button type="button" className={`link dropoff${dropped === s.step - 1 ? ' active' : ''}`} data-step={s.step - 1}
+                              title={`${num(r.steps[s.step - 2].count - s.count)} persons dropped before ${s.event}; show them`}
+                              onClick={() => setDropped(dropped === s.step - 1 ? undefined : s.step - 1)}>
+                              {pct(1 - s.conversion_from_previous)}
+                            </button>
+                          ) : pct(1 - s.conversion_from_previous)}
+                        </td>
+                        <td className="num muted">{s.step === 1 || timeOf(s.step)?.median_seconds == null ? '—' : duration(timeOf(s.step)!.median_seconds!)}</td>
                       </tr>
                     )),
                   )}
                 </tbody>
               </table>
             </div>
+            {times && <p className="footnote">Click a drop-off to list the persons who left at that step. Times follow each person from their first {stepNames[0]} to the earliest next step inside the window, so they can cover slightly fewer persons than the counts.</p>}
           </Card>
+
+          {dropped !== undefined && overall && groups.length === 1 && (
+            <DroppedPersons key={`${request}|${dropped}`} body={body} step={dropped} from={overall[dropped - 1].event} to={overall[dropped].event}
+              onClose={() => setDropped(undefined)} />
+          )}
         </Status>
       </section>
     </div>
+  )
+}
+
+function DroppedPersons({ body, step, from, to, onClose }: {
+  body: ReturnType<typeof funnelBody>; step: number; from: string; to: string; onClose: () => void
+}) {
+  const request = { steps: body.steps, window_seconds: body.window_seconds, filters: body.filters, date_from: body.date_from, date_to: body.date_to, step, kind: 'dropped' }
+  const q = useQuery((signal) => api.funnelPersons({ ...request, limit: 100 }, signal), [JSON.stringify(request)])
+  const [busy, setBusy] = useState(false)
+  const [message, setMessage] = useState<{ text: string; id?: number; error?: boolean }>()
+
+  const saveCohort = async () => {
+    setBusy(true)
+    setMessage(undefined)
+    try {
+      const all = await api.funnelPersons({ ...request, limit: 10000 })
+      const cohort = await api.createCohort({
+        name: `Dropped after ${from} (${new Date().toISOString().slice(0, 10)})`,
+        description: `Reached ${from} but not ${to} in the funnel ${body.steps.map((s) => s.event).join(' > ')}`,
+        kind: 'static',
+        members: all.persons.map((p) => p.id),
+      })
+      setMessage({ text: `Saved ${num(all.persons.length)} persons as "${cohort.name}"`, id: cohort.id })
+    } catch (err) {
+      setMessage({ text: errorMessage(err), error: true })
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Card testId="funnel-dropped" title={`Dropped after ${from}`}
+      meta={q.data ? `${num(q.data.total)} persons reached step ${step} but not ${to}` : undefined}
+      actions={<>
+        <button type="button" className="small" onClick={saveCohort} disabled={busy || !q.data?.total} data-testid="save-dropped-cohort">
+          {busy ? 'Saving…' : 'Save as cohort'}
+        </button>
+        <IconButton icon="close" label="Close" onClick={onClose} />
+      </>}>
+      <FormMessage error={message?.error ? message.text : undefined} />
+      {message && !message.error && <div className="form-message good" role="status">{message.text} · <a href={`#/cohorts/${message.id}`}>open</a></div>}
+      <Status state={q} empty={q.data?.total === 0} emptyTitle="Nobody dropped here">
+        <div className="table-wrap">
+          <table>
+            <thead><tr><th>Person</th><th>Distinct ids</th></tr></thead>
+            <tbody>
+              {q.data?.persons.map((p) => (
+                <tr key={p.id}>
+                  <td><a href={`#/persons/${encodeURIComponent(p.id)}`}>{String(p.properties.email ?? p.properties.name ?? shortId(p.id))}</a>
+                    {!p.is_identified && <span className="cell-sub">anonymous</span>}</td>
+                  <td className="muted">{p.distinct_ids.length}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {q.data && q.data.total > q.data.persons.length && <p className="footnote">Showing the first {q.data.persons.length}; the cohort takes up to 10,000. A saved cohort is a fixed list.</p>}
+      </Status>
+    </Card>
   )
 }

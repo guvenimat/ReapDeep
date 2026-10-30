@@ -29,13 +29,16 @@ public sealed class CohortService(CohortRepository cohorts, PersonRepository per
         if (cohort.ActiveVersion is not { } version) throw new CohortNotReadyException(id, cohort.Row.Name, cohort.Row.Status);
 
         var keys = await starRocks.QueryAsync(CohortSql.PersonsPage(project.ProjectId, id, version, after, limit), r => r.GetString(0), ct);
+        return new CohortPersonsResponse(await DescribeAsync(project, keys, ct), keys.Count == limit ? keys[^1] : null);
+    }
+
+    public async Task<List<CohortPerson>> DescribeAsync(ProjectContext project, IReadOnlyList<string> keys, CancellationToken ct)
+    {
         var identified = keys.Select(k => Guid.TryParse(k, out var g) ? g : (Guid?)null).OfType<Guid>().ToArray();
         var known = (await persons.GetManyAsync(project.ProjectId, identified, ct)).ToDictionary(p => p.Id);
-
-        var page = keys.Select(k => known.TryGetValue(k, out var p)
+        return keys.Select(k => known.TryGetValue(k, out var p)
             ? new CohortPerson(p.Id, p.IsIdentified, p.DistinctIds, p.Properties)
             : new CohortPerson(k, false, [k], EmptyObject)).ToList();
-        return new CohortPersonsResponse(page, keys.Count == limit ? keys[^1] : null);
     }
 
     public async Task<IReadOnlyDictionary<long, CohortRef>> ResolveAsync(ProjectContext project, IEnumerable<Filter>? filters, Breakdown? breakdown,
