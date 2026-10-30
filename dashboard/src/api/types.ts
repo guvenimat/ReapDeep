@@ -1,16 +1,22 @@
 export type Scope = 'event' | 'person' | 'cohort'
 export type Op = 'eq' | 'neq' | 'contains' | 'not_contains' | 'in' | 'not_in' | 'is_set' | 'is_not_set'
-export type Metric = 'total' | 'unique_users'
+export type PropertyMetric = 'sum' | 'avg' | 'min' | 'max' | 'median' | 'p90'
+export type Metric = 'total' | 'unique_users' | PropertyMetric
 export type Interval = 'hour' | 'day' | 'week' | 'month'
 
 export interface Filter { scope: Scope; property: string; op: Op; value?: string }
 export interface Breakdown { scope: Scope; property: string; limit?: number; cohort_ids?: number[] }
-export interface Series { event: string; metric: Metric }
+export interface Series { event: string; metric: Metric; property?: string }
 export interface DateRange { date_from?: string; date_to?: string }
 
-export interface TrendResult { event: string; metric: Metric; breakdown_value: string | null; total: number; data: { bucket: string; count: number }[] }
+export interface TrendResult {
+  event: string; metric: Metric | 'formula'; breakdown_value: string | null; total: number; data: { bucket: string; count: number }[]
+  property: string | null; compare: 'previous' | null; series: string | null
+}
 export interface TrendResponse { interval: Interval; timezone: string; results: TrendResult[]; took_ms: number }
-export interface TrendRequest extends DateRange { series: Series[]; interval: Interval; filters: Filter[]; breakdown?: Breakdown; deduplicate: boolean }
+export interface TrendRequest extends DateRange {
+  series: Series[]; interval: Interval; filters: Filter[]; breakdown?: Breakdown; deduplicate: boolean; formula?: string; compare?: boolean
+}
 
 export interface FunnelStepResult { step: number; event: string; count: number; conversion_from_first: number; conversion_from_previous: number }
 export interface FunnelResponse { window_seconds: number; sampling: number; results: { breakdown_value: string | null; steps: FunnelStepResult[] }[]; took_ms: number }

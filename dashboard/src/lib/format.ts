@@ -1,6 +1,6 @@
 import type { Interval } from '../api/types'
 
-const nf = new Intl.NumberFormat('en-US')
+const nf = new Intl.NumberFormat('en-US', { maximumFractionDigits: 2 })
 const compactNf = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 })
 
 export const num = (n: number) => nf.format(n)

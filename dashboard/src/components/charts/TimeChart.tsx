@@ -4,7 +4,7 @@ import { bucketLabel, compact, niceTicks, num } from '../../lib/format'
 import { useWidth } from '../../lib/hooks'
 import { columnPath, monotonePath, seriesColor, Tooltip, TooltipRow } from './common'
 
-export interface ChartSeries { key: string; label: string; colorIndex: number; values: number[] }
+export interface ChartSeries { key: string; label: string; colorIndex: number; values: number[]; dashed?: boolean }
 
 export function TimeChart({ buckets, interval, series, mode, height = 280 }: {
   buckets: string[]; interval: Interval; series: ChartSeries[]; mode: 'line' | 'bar'; height?: number
@@ -13,7 +13,7 @@ export function TimeChart({ buckets, interval, series, mode, height = 280 }: {
   const [hover, setHover] = useState<{ i: number; x: number; y: number } | null>(null)
   const gradientId = useId().replace(/:/g, '')
 
-  const directLabels = mode === 'line' && series.length <= 4
+  const directLabels = mode === 'line' && series.length <= 4 && !series.some((s) => s.dashed)
   const m = { top: 14, right: directLabels ? 52 : 12, bottom: 30, left: 44 }
   const innerW = Math.max(0, width - m.left - m.right)
   const innerH = height - m.top - m.bottom
@@ -24,7 +24,7 @@ export function TimeChart({ buckets, interval, series, mode, height = 280 }: {
   const x = (i: number) => m.left + (i + 0.5) * band
   const y = (v: number) => m.top + innerH * (1 - v / yMax)
   const labelEvery = Math.max(1, Math.ceil(n / Math.max(1, Math.floor(innerW / 72))))
-  const showArea = mode === 'line' && series.length <= 2 && n > 1
+  const showArea = mode === 'line' && series.length <= 2 && n > 1 && !series.some((s) => s.dashed)
 
   let endLabels: { s: ChartSeries; y: number }[] = []
   if (directLabels && n > 0) {
@@ -72,7 +72,7 @@ export function TimeChart({ buckets, interval, series, mode, height = 280 }: {
                 return (
                   <g key={s.key}>
                     {showArea && <path className="area" fill={`url(#${gradientId}-${s.key})`} d={`${d}L${x(n - 1)},${y(0)}L${x(0)},${y(0)}Z`} />}
-                    {n > 1 && <path className="line" stroke={seriesColor(s.colorIndex)} d={d} />}
+                    {n > 1 && <path className={s.dashed ? 'line dashed' : 'line'} stroke={seriesColor(s.colorIndex)} d={d} />}
                     {n === 1 && <circle className="dot" cx={x(0)} cy={y(s.values[0])} r={4} fill={seriesColor(s.colorIndex)} />}
                   </g>
                 )
@@ -82,7 +82,7 @@ export function TimeChart({ buckets, interval, series, mode, height = 280 }: {
                   v > 0 ? (
                     <path key={`${s.key}-${i}`} fill={seriesColor(s.colorIndex)}
                       d={columnPath(x(i) - groupW / 2 + k * (colW + 2), y(v), colW, y(0) - y(v))}
-                      opacity={hover && hover.i !== i ? 0.55 : 1} />
+                      opacity={(hover && hover.i !== i ? 0.55 : 1) * (s.dashed ? 0.45 : 1)} />
                   ) : null,
                 ),
               )}

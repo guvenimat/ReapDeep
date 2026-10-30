@@ -127,6 +127,11 @@ Check "table: unique users = 1 (anonymous + identified merged)" ($table -match '
 $q = Q '{"series":[{"event":"page___TAG__","metric":"total"}],"filters":[],"deduplicate":false,"chart":"bar"}'
 $chart = Section (Dom "#/trends?range=24h&q=$q" "document.querySelector('[data-testid=trends-chart] path[fill]')") "trends-chart"
 Check "bar chart mode (rounded column path)" ($chart -match '<path fill="var\(--series-1\)" d="M[\d.]+,[\d.]+V[\d.]+Q')
+$q = Q '{"series":[{"event":"page___TAG__","metric":"total"},{"event":"page___TAG__","metric":"unique_users"}],"filters":[],"deduplicate":false,"chart":"line","formula":"A / B","compare":true}'
+$html = Dom "#/trends?range=24h&q=$q" "document.querySelector('[data-testid=trends-table] tbody tr') && document.querySelector('[data-testid=trend-total-0]')"
+Check "formula A / B: one tile with events per user = 3" ((Section $html "trend-total-0") -match '>3</div>' -and -not ($html -match 'data-testid="trend-total-1"'))
+Check "compare: formula line plus a dashed previous-period line" (([regex]::Matches((Section $html "trends-chart"), 'class="line dashed"')).Count -eq 1 -and ([regex]::Matches((Section $html "trends-chart"), 'class="line"')).Count -eq 1)
+Check "table keeps the series and the formula rows" ((Section $html "trends-table") -match 'Formula: A / B' -and (Section $html "trends-table") -match 'Unique users')
 
 Write-Host "`n4) Funnels tab"
 $q = Q '{"steps":["step1___TAG__","step2___TAG__","step3___TAG__"],"window_seconds":604800,"filters":[]}'

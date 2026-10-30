@@ -3,13 +3,13 @@ import type { ReactNode } from 'react'
 export const MAX_SERIES = 8
 export const seriesColor = (i: number) => `var(--series-${(i % MAX_SERIES) + 1})`
 
-export function Legend({ items }: { items: { label: string; colorIndex: number }[] }) {
+export function Legend({ items }: { items: { label: string; colorIndex: number; dashed?: boolean }[] }) {
   if (items.length < 2) return null
   return (
     <ul className="legend">
       {items.map((it) => (
         <li key={it.label}>
-          <span className="swatch" style={{ background: seriesColor(it.colorIndex) }} />
+          <span className={it.dashed ? 'swatch dashed' : 'swatch'} style={it.dashed ? { borderColor: seriesColor(it.colorIndex) } : { background: seriesColor(it.colorIndex) }} />
           {it.label}
         </li>
       ))}
