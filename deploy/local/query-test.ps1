@@ -60,11 +60,14 @@ Start-Sleep -Milliseconds 500
 Capture $chrome @'
 [{"event":"$pageview","distinct_id":"__U__","properties":{"qt":"__TAG__","$current_url":"https://example.com/cart"}},
  {"event":"add_to_cart","distinct_id":"__U__","properties":{"qt":"__TAG__"}},
- {"event":"purchase","distinct_id":"__U__","properties":{"qt":"__TAG__","amount":499}}]
+ {"event":"purchase","distinct_id":"__U__","properties":{"qt":"__TAG__","amount":499}},
+ {"event":"order_qt","distinct_id":"__U__","properties":{"qt":"__TAG__","amount":499}}]
 '@
 Capture $firefox @'
 [{"event":"$pageview","distinct_id":"__B__","properties":{"qt":"__TAG__","$current_url":"https://example.com/"}},
- {"event":"view_product","distinct_id":"__B__","properties":{"qt":"__TAG__","product":"Pro plan"}}]
+ {"event":"view_product","distinct_id":"__B__","properties":{"qt":"__TAG__","product":"Pro plan"}},
+ {"event":"order_qt","distinct_id":"__B__","properties":{"qt":"__TAG__","amount":101}},
+ {"event":"order_qt","distinct_id":"__B__","properties":{"qt":"__TAG__","amount":"n/a"}}]
 '@
 
 Write-Host "  Waiting for StarRocks ingestion and identity sync..."
@@ -110,6 +113,20 @@ Check "date_from/date_to ($d2 -> $d0, inclusive): 3 buckets, total 5 -> $($r[0].
 $r = Trend ('{"series":[{"event":"$pageview"}],"filters":[' + $qtFilter + '],"date_from":"' + $d2 + '","date_to":"' + $d2 + '"}')
 Check "date range without data -> total 0 -> $($r[0].total)" ($r[0].total -eq 0)
 
+Write-Host "`n3b) Property metrics, formulas and comparison"
+$orders = '{"series":[{"event":"order_qt","metric":"sum","property":"amount"},{"event":"order_qt","metric":"avg","property":"amount"},{"event":"order_qt","metric":"min","property":"amount"},{"event":"order_qt","metric":"max","property":"amount"},{"event":"order_qt","metric":"unique_users"}],"filters":[' + $qtFilter + '],"formula":"A / E"}'
+$r = Trend $orders
+$byMetric = @{}; foreach ($x in $r) { $byMetric[$x.metric] = $x.total }
+Check "sum/avg/min/max of amount = 600/300/101/499 (non-numeric value ignored) -> $($byMetric.sum)/$($byMetric.avg)/$($byMetric.min)/$($byMetric.max)" ($byMetric.sum -eq 600 -and $byMetric.avg -eq 300 -and $byMetric.min -eq 101 -and $byMetric.max -eq 499)
+Check "formula A / E (sum / unique users) = 300 -> $($byMetric.formula)" ($byMetric.formula -eq 300)
+$formulaRow = @($r | Where-Object { $_.metric -eq "formula" })[0]
+Check "formula result is labeled with its text and the series letters are returned" ($formulaRow.event -eq "A / E" -and (@($r | Where-Object { $_.series -eq "E" }).Count -eq 1))
+$r = Trend ('{"series":[{"event":"order_qt","metric":"sum","property":"amount"}],"filters":[' + $qtFilter + '],"compare":true}')
+$prev = @($r | Where-Object { $_.compare -eq "previous" })[0]
+Check "compare: previous period returned with the same bucket count and total 0" ($null -ne $prev -and $prev.total -eq 0 -and $prev.data.Count -eq @($r | Where-Object { -not $_.compare })[0].data.Count)
+Check "formula with an unknown series -> 400" ((Call POST "/api/v1/query/trends" '{"series":[{"event":"x"}],"formula":"A / B"}').Status -eq 400)
+Check "property metric without a property -> 400" ((Call POST "/api/v1/query/trends" '{"series":[{"event":"x","metric":"avg"}]}').Status -eq 400)
+
 Write-Host "`n4) Funnels"
 $f = (Call POST "/api/v1/query/funnels" ('{"steps":[{"event":"view_product"},{"event":"add_to_cart"},{"event":"purchase"}],"filters":[' + $qtFilter + ']}')).Json.results[0].steps
 $counts = ($f | ForEach-Object { $_.count }) -join "/"
@@ -127,7 +144,7 @@ Check "invalid sampling -> 400" ((Call POST "/api/v1/query/funnels" '{"steps":[{
 
 Write-Host "`n5) Events / Persons / Metadata"
 $ev = (Call GET "/api/v1/events?person_id=$personId&limit=50").Json.events
-Check "events by person_id: anonA + user events together -> $($ev.Count)" ($ev.Count -eq 8 -and ($ev.distinct_id | Sort-Object -Unique).Count -eq 2)
+Check "events by person_id: anonA + user events together -> $($ev.Count)" ($ev.Count -eq 9 -and ($ev.distinct_id | Sort-Object -Unique).Count -eq 2)
 $p = (Call GET "/api/v1/persons/$personId").Json
 Check "person detail: distinct_ids [$($p.distinct_ids -join ', ')], email=$($p.properties.email)" (($p.distinct_ids -contains $anonA) -and ($p.distinct_ids -contains $user) -and $p.properties.email -eq "$user@example.com")
 Check "person search (email)" (@((Call GET "/api/v1/persons?search=$user").Json.persons | Where-Object { $_.id -eq $personId }).Count -eq 1)

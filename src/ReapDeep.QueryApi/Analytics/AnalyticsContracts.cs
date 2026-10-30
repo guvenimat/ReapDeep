@@ -5,9 +5,11 @@ namespace ReapDeep.QueryApi.Analytics;
 
 public sealed record TrendRequest(
     List<Series>? Series, string? DateFrom, string? DateTo, string? Interval,
-    List<Filter>? Filters, Breakdown? Breakdown, bool Deduplicate, bool Explain);
-public sealed record TrendPoint(string Bucket, long Count);
-public sealed record TrendResult(string Event, string Metric, string? BreakdownValue, long Total, List<TrendPoint> Data);
+    List<Filter>? Filters, Breakdown? Breakdown, bool Deduplicate, bool Explain, string? Formula = null, bool Compare = false);
+public sealed record TrendPoint(string Bucket, double Count);
+public sealed record TrendResult(
+    string Event, string Metric, string? BreakdownValue, double Total, List<TrendPoint> Data,
+    string? Property = null, string? Compare = null, string? Series = null);
 public sealed record TrendResponse(string Interval, string Timezone, List<TrendResult> Results, double TookMs);
 
 public sealed record FunnelRequest(

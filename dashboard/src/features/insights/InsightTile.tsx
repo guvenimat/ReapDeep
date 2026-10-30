@@ -13,7 +13,7 @@ import { RFM_DEFAULT, rfmBody, RfmGrid, type RfmState } from '../rfm/Rfm'
 import { FUNNEL_DEFAULT, funnelBody, funnelGroups, type FunnelState } from '../funnels/Funnels'
 import { PathList, PATHS_DEFAULT, pathsBody, type PathsState } from '../paths/Paths'
 import { RETENTION_DEFAULT, retentionBody, RetentionTable, type RetentionState } from '../retention/Retention'
-import { TREND_DEFAULT, trendBody, trendChartSeries, trendInterval, type TrendState } from '../trends/Trends'
+import { TREND_DEFAULT, trendBody, trendChartSeries, trendInterval, visibleResults, type TrendState } from '../trends/Trends'
 
 export function InsightTile({ insight, range }: { insight: Insight; range: Range }) {
   if (insight.kind === 'trends') return <TrendTile state={{ ...TREND_DEFAULT, ...(insight.query as Partial<TrendState>) }} range={range} />
@@ -28,8 +28,9 @@ function TrendTile({ state, range }: { state: TrendState; range: Range }) {
   const body = JSON.stringify(trendBody(state, range))
   const q = useQuery((signal) => api.trends(JSON.parse(body), signal), [body])
   const series = trendChartSeries(q.data)
-  const buckets = q.data?.results[0]?.data.map((d) => d.bucket) ?? []
-  const total = q.data?.results.length === 1 ? q.data.results[0].total : undefined
+  const current = visibleResults(q.data).filter((r) => !r.compare)
+  const buckets = current[0]?.data.map((d) => d.bucket) ?? []
+  const total = current.length === 1 ? current[0].total : undefined
   return (
     <Status state={q} empty={(q.data?.results ?? []).every((r) => r.total === 0)}>
       {total !== undefined && <div className="tile-total" data-testid="tile-total">{num(total)}</div>}
