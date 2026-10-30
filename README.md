@@ -267,6 +267,21 @@ Measured on a 30M-event seed (the 100M run was stopped by host memory pressure o
 
 The cohort filter is a colocated semi join. For unique users it is applied after the `(distinct_id, bucket)` pre-aggregation, which halved its cost (1,200 ms before). On raw-event queries (totals, funnels) a large cohort still costs a hash probe per event: well inside the targets, but more than the 20% overhead we aimed for.
 
+### RFM and lifecycle over 30M events
+
+Same 30M-event seed (1.5M purchase events, 525K customers in the 365-day window). The full benchmark run was stopped by host memory pressure before these scenarios, so they were measured afterwards one by one on the same data: 1 cold and 5 warm runs, highest warm time shown.
+
+| Query | Slowest warm run | Target |
+|---|---|---|
+| RFM, 365-day window, all 525K customers | **609 ms** | < 1.5 s, met |
+| RFM with a person property filter | 1,107 ms (others ~600 ms) | < 1.5 s, met |
+| Lifecycle, weekly, any event, 90-day look-back | **800 ms** | < 2 s, met |
+| Lifecycle, daily, `purchase`, 365-day look-back | **461 ms** | < 2 s, met |
+| Lifecycle, weekly, any event, with a cohort filter | **673 ms** | < 2 s, met |
+| First calculation of an `rfm_segment` cohort (Champions + Loyal, 103K persons) | **697 ms** | < 2 s, met |
+
+The 1.1 s runs of the filtered RFM query overlapped with the person worker's 30 s local cohort refresh, which the benchmark normally pauses.
+
 ## Tests
 
 ```powershell
@@ -279,11 +294,12 @@ cd deploy/local
 .\settings-test.ps1     # members, roles, password change, API keys
 .\insights-test.ps1     # saved insights and dashboards, API and browser
 .\cohort-test.ps1       # cohorts: rules, identity merge, static lists, filters and breakdowns, recalculation, deletion
-.fm-lifecycle-test.ps1  # RFM scores and segments with known answers, rfm_segment cohorts, lifecycle states and look-back
+.
+fm-lifecycle-test.ps1  # RFM scores and segments with known answers, rfm_segment cohorts, lifecycle states and look-back
 .\recommender-test.ps1  # catalog, key scopes, models from real events, the public Recommender, stock changes
 .\query-test.ps1        # Query API: trends, funnels, retention, paths, events, persons, EXPLAIN, latency
 .\dashboard-test.ps1    # headless Chrome against the dashboard (Chrome DevTools Protocol)
-.\load-test.ps1         # ingestion load, 100M seed, cohort calculation, query benchmark, cleanup
+.\load-test.ps1         # ingestion load, 100M seed, cohort calculation, query benchmark (incl. RFM and lifecycle), cleanup
 
 cd ../../sdk/js
 npm test                # SDK unit tests (vitest + jsdom)
@@ -323,6 +339,7 @@ ReapDeep is an early v1. It runs end to end locally but has not been operated in
 - Members are added with a temporary password; there are no invitation emails or password reset by email.
 - A person's `created_at` is the time the person worker processed their first `$identify` or `$set`, not the event's own timestamp; it only differs for backfilled data such as the demo seed.
 - Retention and paths read raw events and join persons on every query; they are fast on the demo and test data but were not part of the 100M-event benchmark.
+- RFM scores are relative to the customers in the report: a filter re-ranks only the matching customers. Amounts are summed without currency conversion (the report warns when it sees several currencies), and there is no refund event yet.
 - Cohort membership is the current membership: a 90-day trend filtered by a cohort uses who is in the cohort now, not who was in it on each day. Behavioral windows are limited to 90 days.
 - Not in v1: session replay, mobile SDKs, autocapture, feature flags.
 - Behind a load balancer, set `ForwardedHeaders__TrustedNetworks` (CIDR list) on the ingestion and Query APIs; `X-Forwarded-For` is ignored otherwise. The Query API sends no CORS headers unless `QueryApi__CorsOrigins` is set.

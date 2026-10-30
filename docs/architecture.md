@@ -380,6 +380,12 @@ compose network. The worker calculates co_viewed in 2.8 s and the other models i
 hit-rate query takes 2.0 s. Reading `item_id` from its column instead of `properties` saved only 7%
 (216 vs. 231 ms) because flat JSON already extracts frequent keys; the column stays for simpler SQL.
 
+RFM and lifecycle on the same 30M-event seed (1.5M purchases, 525K customers), measured one query at a
+time after the full run was stopped by host memory pressure: RFM over all customers 0.6 s (1.1 s with a
+person property filter while a cohort refresh was running), weekly lifecycle over every event with a
+90-day look-back 0.8 s, daily purchase lifecycle with a 365-day look-back 0.46 s, and the first
+calculation of an `rfm_segment` cohort with 103K persons 0.7 s.
+
 ## 10. Testing
 
 The system is verified end to end against the real stack rather than with mocks:
