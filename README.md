@@ -367,7 +367,7 @@ docker compose --profile app down -v    # reset everything, including data
 
 If StarRocks stops loading events, check `SHOW ROUTINE LOAD` first. A job that reports `PAUSED` after a backend outage is resumed with `RESUME ROUTINE LOAD FOR analytics.events_from_kafka`. A message that is not valid JSON (for example one written by hand with a byte order mark) stops the job at that offset; after checking it with `kafka-console-consumer.sh --partition P --offset O --max-messages 1`, skip exactly that message with `PAUSE ROUTINE LOAD`, `ALTER ROUTINE LOAD FOR analytics.events_from_kafka FROM KAFKA ("kafka_partitions" = "P", "kafka_offsets" = "O+1")` and `RESUME`. Never move an offset backwards: the rows in between would be loaded again.
 
-Init SQL runs only on empty volumes. After a schema change, run `docker compose down -v` and start again. To run a .NET service outside Docker, pass connection strings through the environment, for example `ConnectionStrings__Postgres="Host=localhost;Database=reapdeep;Username=reapdeep;Password=<from .env>"`.
+Schema changes are migrations. `ReapDeep.Migrations` runs once before the services start (the `migrate` container): it applies the SQL files embedded from `src/ReapDeep.Migrations/Postgres` and `src/ReapDeep.Migrations/StarRocks` in version order, records each in the `schema_migrations` table under a PostgreSQL advisory lock, then creates or updates the StarRocks users, grants and resource groups from `.env`. To change a schema, add the next numbered file (`0003_add_x.sql`) instead of editing an applied one; existing data is kept. A database created by the old init scripts is recognized and its baseline is marked as applied. To run a .NET service outside Docker, pass connection strings through the environment, for example `ConnectionStrings__Postgres="Host=localhost;Database=reapdeep;Username=reapdeep;Password=<from .env>"`.
 
 ## Repository layout
 
@@ -377,12 +377,14 @@ src/ReapDeep.PersonWorker   identity resolution, cohort and recommendation calcu
 src/ReapDeep.QueryApi       Query API: feature folders (Analytics, Catalog, Cohorts, Persons, Insights, Organization, ...)
 src/ReapDeep.Recommender    public recommendation endpoint, served from memory
 src/ReapDeep.Analytics      shared library: every StarRocks analytics query is built here (SqlBuilder, CohortSql, RfmSql, LifecycleSql, RecommendationSql)
+src/ReapDeep.ServiceDefaults  telemetry and health helpers shared by the services
+src/ReapDeep.Migrations     PostgreSQL and StarRocks migrations, StarRocks users and grants
 sdk/js                      browser SDK
 dashboard                   React dashboard, served by nginx
 tests/ReapDeep.LoadTest     load generator, 100M seeder, demo data and query benchmark
 tests/ReapDeep.UnitTests    unit tests for the pure logic
 docs/architecture.md        design decisions, alternatives and measurements
-deploy/local                Docker Compose stack, schemas and test scripts
+deploy/local                Docker Compose stack, Grafana dashboard and test scripts
 ```
 
 ## Status and limitations

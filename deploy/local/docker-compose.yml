@@ -83,60 +83,23 @@ services:
       retries: 30
       start_period: 60s
 
-  starrocks-init:
-    image: mysql:8.4
-    container_name: reapdeep-starrocks-init
+  migrate:
+    build:
+      context: ../../src
+      dockerfile: ReapDeep.Migrations/Dockerfile
+    image: reapdeep-migrate
+    container_name: reapdeep-migrate
     depends_on:
+      postgres:
+        condition: service_healthy
       starrocks:
         condition: service_healthy
       kafka-init:
         condition: service_completed_successfully
-    volumes:
-      - ./starrocks:/init:ro
-    entrypoint: ["/bin/bash", "-c"]
-    command:
-      - |
-        set -e
-        for f in /init/*.sql; do
-          echo "Running: $$f"
-          ok=0
-          for attempt in 1 2 3 4 5; do
-            out=$$(grep -v '^[[:space:]]*--' "$$f" | mysql -h starrocks -P9030 -uroot 2>&1) && ok=1
-            if [ "$$ok" -eq 1 ]; then break; fi
-            echo "$$out"
-            if echo "$$out" | grep -qi 'already used\|already exists'; then
-              echo "  already exists, skipping."
-              ok=1
-              break
-            fi
-            echo "  attempt $$attempt failed, retrying in 5s..."
-            sleep 5
-          done
-          if [ "$$ok" -ne 1 ]; then
-            echo "ERROR: failed to run $$f."
-            exit 1
-          fi
-        done
-        echo "Configuring StarRocks users"
-        mysql -h starrocks -P9030 -uroot -e "
-          CREATE USER IF NOT EXISTS 'reapdeep_query'@'%' IDENTIFIED BY '$$STARROCKS_QUERY_PASSWORD';
-          ALTER USER 'reapdeep_query'@'%' IDENTIFIED BY '$$STARROCKS_QUERY_PASSWORD';
-          GRANT SELECT ON ALL TABLES IN DATABASE analytics TO USER 'reapdeep_query'@'%';
-          CREATE USER IF NOT EXISTS 'reapdeep_jobs'@'%' IDENTIFIED BY '$$STARROCKS_JOBS_PASSWORD';
-          ALTER USER 'reapdeep_jobs'@'%' IDENTIFIED BY '$$STARROCKS_JOBS_PASSWORD';
-          GRANT SELECT, DELETE ON ALL TABLES IN DATABASE analytics TO USER 'reapdeep_jobs'@'%';
-          GRANT INSERT ON TABLE analytics.cohort_members TO USER 'reapdeep_jobs'@'%';
-          CREATE USER IF NOT EXISTS 'reapdeep_ops'@'%' IDENTIFIED BY '$$STARROCKS_OPS_PASSWORD';
-          ALTER USER 'reapdeep_ops'@'%' IDENTIFIED BY '$$STARROCKS_OPS_PASSWORD';
-          GRANT INSERT ON TABLE analytics.events TO USER 'reapdeep_ops'@'%';
-          GRANT INSERT ON TABLE analytics.persons TO USER 'reapdeep_ops'@'%';
-          GRANT INSERT ON TABLE analytics.person_distinct_ids TO USER 'reapdeep_ops'@'%';
-          CREATE USER IF NOT EXISTS 'reapdeep_alerts'@'%' IDENTIFIED BY '$$STARROCKS_ALERTS_PASSWORD';
-          ALTER USER 'reapdeep_alerts'@'%' IDENTIFIED BY '$$STARROCKS_ALERTS_PASSWORD';
-          GRANT SELECT ON ALL TABLES IN DATABASE analytics TO USER 'reapdeep_alerts'@'%';
-          CREATE RESOURCE GROUP IF NOT EXISTS rg_alerts TO (user='reapdeep_alerts') WITH ('cpu_weight'='1', 'mem_limit'='0.2', 'concurrency_limit'='2');
-          CREATE RESOURCE GROUP IF NOT EXISTS rg_jobs TO (user='reapdeep_jobs') WITH ('cpu_weight'='2', 'mem_limit'='0.3', 'concurrency_limit'='4');"
     environment:
+      ConnectionStrings__Postgres: *postgres-connection
+      ConnectionStrings__StarRocksAdmin: Server=starrocks;Port=9030;User ID=root;ConnectionReset=false
+      READ_API_KEY: ${READ_API_KEY:?Missing .env - run run-local.ps1 or copy .env.example to .env}
       STARROCKS_QUERY_PASSWORD: ${STARROCKS_QUERY_PASSWORD:?Missing STARROCKS_QUERY_PASSWORD in .env - run run-local.ps1 or smoke-test.sh}
       STARROCKS_JOBS_PASSWORD: ${STARROCKS_JOBS_PASSWORD:?Missing STARROCKS_JOBS_PASSWORD in .env - run run-local.ps1 or smoke-test.sh}
       STARROCKS_OPS_PASSWORD: ${STARROCKS_OPS_PASSWORD:?Missing STARROCKS_OPS_PASSWORD in .env - run run-local.ps1 or smoke-test.sh}
@@ -166,10 +129,8 @@ services:
       POSTGRES_DB: reapdeep
       POSTGRES_USER: reapdeep
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Missing .env - run run-local.ps1 or copy .env.example to .env}
-      READ_API_KEY: ${READ_API_KEY:?Missing .env - run run-local.ps1 or copy .env.example to .env}
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./postgres:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U reapdeep -d reapdeep"]
       interval: 5s
@@ -238,7 +199,7 @@ services:
         condition: service_completed_successfully
       postgres:
         condition: service_healthy
-      starrocks-init:
+      migrate:
         condition: service_completed_successfully
     restart: unless-stopped
 
@@ -286,7 +247,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      starrocks-init:
+      migrate:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
@@ -330,7 +291,7 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      starrocks-init:
+      migrate:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
