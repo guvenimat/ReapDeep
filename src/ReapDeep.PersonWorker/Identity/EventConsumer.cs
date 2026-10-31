@@ -4,7 +4,7 @@ using Npgsql;
 
 namespace ReapDeep.PersonWorker.Identity;
 
-public sealed class EventConsumer(IConfiguration cfg, IdentityResolver resolver, ILogger<EventConsumer> log) : BackgroundService
+public sealed class EventConsumer(IConfiguration cfg, IdentityResolver resolver, DeadLetterProducer deadLetters, ILogger<EventConsumer> log) : BackgroundService
 {
     const int MaxRetryDelaySeconds = 30;
 
@@ -30,7 +30,7 @@ public sealed class EventConsumer(IConfiguration cfg, IdentityResolver resolver,
             while (!ct.IsCancellationRequested)
             {
                 var result = consumer.Consume(ct);
-                Handle(result.Message.Value, ct);
+                Handle(result, ct);
                 consumer.StoreOffset(result);
             }
         }
@@ -43,12 +43,14 @@ public sealed class EventConsumer(IConfiguration cfg, IdentityResolver resolver,
         }
     }
 
-    void Handle(byte[] message, CancellationToken ct)
+    void Handle(ConsumeResult<Ignore, byte[]> result, CancellationToken ct)
     {
+        var message = result.Message.Value;
         if (!IdentityEvent.MayBeRelevant(message)) return;
         if (IdentityEvent.Parse(message) is not { } e)
         {
-            log.LogError("Skipped unparseable event: {Value}", Encoding.UTF8.GetString(message));
+            log.LogError("Unparseable event moved to the dead letter topic: {Value}", Encoding.UTF8.GetString(message));
+            deadLetters.Send(result, "unparseable", "The event could not be parsed", ct);
             return;
         }
         if (!e.HasWork) return;
@@ -69,7 +71,8 @@ public sealed class EventConsumer(IConfiguration cfg, IdentityResolver resolver,
             }
             catch (NpgsqlException ex)
             {
-                log.LogError(ex, "Failed to resolve identity, event skipped: {Event} {DistinctId} anon={AnonId}", e.Event, e.DistinctId, e.AnonId);
+                log.LogError(ex, "Failed to resolve identity, event moved to the dead letter topic: {Event} {DistinctId} anon={AnonId}", e.Event, e.DistinctId, e.AnonId);
+                deadLetters.Send(result, "identity", ex.Message, ct);
                 return;
             }
         }

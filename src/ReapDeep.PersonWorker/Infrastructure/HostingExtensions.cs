@@ -20,6 +20,7 @@ public static class HostingExtensions
         services.AddSingleton(pg.Build());
 
         services.AddSingleton<IdentityResolver>();
+        services.AddSingleton<DeadLetterProducer>();
         services.AddHostedService<EventConsumer>();
         services.AddHostedService<OutboxPublisher>();
 

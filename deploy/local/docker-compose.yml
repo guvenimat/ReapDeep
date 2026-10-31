@@ -47,6 +47,7 @@ services:
         $$T --bootstrap-server kafka:29092 --create --if-not-exists --topic events         --partitions 6 --replication-factor 1
         $$T --bootstrap-server kafka:29092 --create --if-not-exists --topic person_updates --partitions 6 --replication-factor 1
         $$T --bootstrap-server kafka:29092 --create --if-not-exists --topic person_distinct_id_updates --partitions 6 --replication-factor 1
+        $$T --bootstrap-server kafka:29092 --create --if-not-exists --topic events_dead_letter --partitions 1 --replication-factor 1 --config retention.ms=2592000000
         $$T --bootstrap-server kafka:29092 --list
     restart: "no"
 
@@ -116,6 +117,20 @@ services:
       STARROCKS_JOBS_PASSWORD: ${STARROCKS_JOBS_PASSWORD:?Missing STARROCKS_JOBS_PASSWORD in .env - run run-local.ps1 or smoke-test.sh}
     restart: "no"
 
+  redis:
+    image: redis:8.8.4-alpine
+    container_name: reapdeep-redis
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?Missing REDIS_PASSWORD in .env - run run-local.ps1}", "--save", "", "--appendonly", "no", "--maxmemory", "512mb", "--maxmemory-policy", "volatile-ttl"]
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?Missing REDIS_PASSWORD in .env - run run-local.ps1}
+
   postgres:
     image: postgres:17
     container_name: reapdeep-postgres
@@ -145,10 +160,13 @@ services:
     environment:
       Kafka__BootstrapServers: kafka:29092
       ConnectionStrings__Postgres: *postgres-connection
+      ConnectionStrings__Redis: redis:6379,password=${REDIS_PASSWORD:?Missing REDIS_PASSWORD in .env - run run-local.ps1},abortConnect=false
     depends_on:
       kafka-init:
         condition: service_completed_successfully
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   person-worker:

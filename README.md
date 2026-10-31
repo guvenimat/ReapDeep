@@ -57,6 +57,8 @@ flowchart LR
 ### How it works
 
 - **Ingestion.** The API validates the project key, parses the user agent, corrects client clock skew using `sent_at`, and promotes common properties (URL, UTM, browser, OS, device) to columns. It returns `202` only after Kafka acknowledges every event in the batch, and `503` otherwise. The SDK retries with the same `event_id`.
+- **Duplicates.** Retries are dropped at the door: each client `event_id` is claimed in Redis (`SET NX`, per project, 10 minutes by default, `Ingestion__DedupSeconds`) before it is written to Kafka, and the claims are released again when Kafka refuses the batch, so the retry after a `503` is not mistaken for a duplicate. The response counts them as `duplicates`. If Redis is down, ingestion keeps accepting and the query-time `deduplicate` option still applies; the event list never shows an `event_id` twice.
+- **Dead letters.** An identity event the person worker cannot parse, or that fails in PostgreSQL with a non-transient error, goes to the `events_dead_letter` topic (30-day retention) with its stage, error and source offset in the headers, instead of being skipped silently. Transient database errors are retried with backoff.
 - **Storage.** `events` is a Duplicate Key table partitioned by day. `persons` and `person_distinct_ids` are Primary Key tables. `events` and `person_distinct_ids` share a colocate group distributed by `HASH(project_id, distinct_id)`, so the person join runs locally on each node.
 - **Identity.** PostgreSQL is the source of truth for persons. The worker applies merge rules (two identified persons are never merged) and writes changes to an outbox in the same transaction. A publisher forwards them to Kafka, and StarRocks applies them in version order.
 - **Definitions.** The ingestion API keeps an in-memory set of the event names, event properties and `$set` person properties it has seen per project, with an inferred type (string, number, boolean, datetime). New names are written to PostgreSQL (`event_definitions`, `property_definitions`) in batches every 10 s, and known names are refreshed at most once an hour, so the hot path never waits on the database. The dashboard's autocomplete reads them from `GET /api/v1/metadata`. Each project is capped at 10K names per scope.
@@ -332,6 +334,7 @@ cd deploy/local
 .\alerts-test.ps1       # alerts: validation, firing and resolving, signed webhooks to a local receiver, change and formula conditions, errors
 .\recommender-test.ps1  # catalog, key scopes, models from real events, the public Recommender, stock changes, signed for_you requests
 .\query-test.ps1        # Query API: trends, funnels, retention, paths, events, persons, EXPLAIN, latency
+.\durability-test.ps1   # duplicate retries, Redis and Kafka outages without loss, dead letters, de-duplicated event list
 .\dashboard-test.ps1    # headless Chrome against the dashboard (Chrome DevTools Protocol)
 .\load-test.ps1         # ingestion load, 100M seed, cohort calculation, query benchmark (incl. RFM and lifecycle), cleanup
 
@@ -347,6 +350,8 @@ docker compose exec starrocks mysql -h127.0.0.1 -P9030 -uroot
 docker compose exec starrocks mysql -h127.0.0.1 -P9030 -uroot -e "SHOW ROUTINE LOAD FROM analytics\G"
 docker compose --profile app down -v    # reset everything, including data
 ```
+
+If StarRocks stops loading events, check `SHOW ROUTINE LOAD` first. A job that reports `PAUSED` after a backend outage is resumed with `RESUME ROUTINE LOAD FOR analytics.events_from_kafka`. A message that is not valid JSON (for example one written by hand with a byte order mark) stops the job at that offset; after checking it with `kafka-console-consumer.sh --partition P --offset O --max-messages 1`, skip exactly that message with `PAUSE ROUTINE LOAD`, `ALTER ROUTINE LOAD FOR analytics.events_from_kafka FROM KAFKA ("kafka_partitions" = "P", "kafka_offsets" = "O+1")` and `RESUME`. Never move an offset backwards: the rows in between would be loaded again.
 
 Init SQL runs only on empty volumes. After a schema change, run `docker compose down -v` and start again. To run a .NET service outside Docker, pass connection strings through the environment, for example `ConnectionStrings__Postgres="Host=localhost;Database=reapdeep;Username=reapdeep;Password=<from .env>"`.
 

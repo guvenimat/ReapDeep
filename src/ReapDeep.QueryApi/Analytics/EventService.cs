@@ -18,7 +18,8 @@ public sealed class EventService(StarRocksClient starRocks, PersonRepository per
         var (distinctIds, personScan) = await ResolvePerson(project.ProjectId, query.PersonId, ct);
 
         var b = new SqlBuilder(project.ProjectId, range.FromUtc, range.ToUtc);
-        var sql = EventSql.Build(b, query.Event, query.DistinctId, distinctIds, personScan, Math.Clamp(query.Limit ?? 50, 1, 200));
+        var limit = Math.Clamp(query.Limit ?? 50, 1, 200);
+        var sql = EventSql.Build(b, query.Event, query.DistinctId, distinctIds, personScan, limit * 2);
         var events = await starRocks.QueryAsync(sql, r =>
         {
             var columns = new Dictionary<string, string>();
@@ -29,7 +30,7 @@ public sealed class EventService(StarRocksClient starRocks, PersonRepository per
                 columns, r.IsDBNull(5) ? null : JsonText.Parse(r.GetString(5)));
         }, ct);
 
-        return new EventsResponse(events, sw.Elapsed.TotalMilliseconds);
+        return new EventsResponse(events.DistinctBy(e => e.EventId).Take(limit).ToList(), sw.Elapsed.TotalMilliseconds);
     }
 
     async Task<(IReadOnlyList<string>? DistinctIds, string? PersonScan)> ResolvePerson(long projectId, string? personId, CancellationToken ct)
