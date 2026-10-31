@@ -40,16 +40,28 @@ public class RfmLifecycleTests
     public void Scores_map_to_the_standard_segments(int r, int f, string segment) => Assert.Equal(segment, RfmSegments.Of(r, f));
 
     [Fact]
+    public void Refunds_lower_the_monetary_value_but_never_count_as_orders_or_recency()
+    {
+        var b = new SqlBuilder(Project, Now.AddDays(-365), Now);
+        var q = RfmSql.Report(b, "purchase", "amount", Now);
+
+        Assert.Contains(q.Parameters, p => p.Value is string s && s == RfmSql.RefundEvent);
+        Assert.Matches(@"SUM\(IF\(.+ > 0, IF\(e\.event = @p\d+, .+, -.+\), 0\)\) AS m", q.Sql);
+        Assert.Matches(@"MAX\(IF\(e\.event = @p\d+, e\.timestamp, NULL\)\) AS ts", q.Sql);
+        Assert.Contains("HAVING MAX(o.ts) IS NOT NULL", q.Sql);
+    }
+
+    [Fact]
     public void Report_counts_orders_per_person_after_the_distinct_id_aggregation()
     {
         var b = new SqlBuilder(Project, Now.AddDays(-365), Now);
         var q = RfmSql.Report(b, "purchase", "amount", Now);
 
-        Assert.Matches(@"e\.project_id = @p\d+ AND e\.timestamp >= @p\d+ AND e\.timestamp < @p\d+ AND e\.event = @p\d+ GROUP BY 1, 2, 3", q.Sql);
+        Assert.Matches(@"e\.project_id = @p\d+ AND e\.timestamp >= @p\d+ AND e\.timestamp < @p\d+ AND e\.event IN \(@p\d+, @p\d+\) GROUP BY 1, 2, 3", q.Sql);
         Assert.Contains("COALESCE(NULLIF(get_json_string(e.properties, @p", q.Sql);
         Assert.Contains("e.event_id) AS ok", q.Sql);
         Assert.Contains("LEFT JOIN analytics.person_distinct_ids pdi ON o.project_id = pdi.project_id AND o.distinct_id = pdi.distinct_id", q.Sql);
-        Assert.Contains("COUNT(DISTINCT o.ok) AS f", q.Sql);
+        Assert.Contains("COUNT(DISTINCT IF(o.ts IS NULL, NULL, o.ok)) AS f", q.Sql);
         Assert.DoesNotContain("INNER JOIN", q.Sql);
         Assert.DoesNotContain("NTILE", q.Sql);
         Assert.Contains(q.Parameters, p => p.Value is string s && s == "$.\"order_id\"");

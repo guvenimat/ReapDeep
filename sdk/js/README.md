@@ -23,7 +23,7 @@ rd.reset()
 
 ### Commerce and recommendations
 
-Events about products carry `item_id` (the catalog key). Send one `purchase` event per item; `trackPurchase` does that and links them with `order_id`.
+Events about products carry `item_id` (the catalog key). Send one `purchase` event per item; `trackPurchase` does that and links them with `order_id`. Refunds are usually sent from the store's server as `refund` events with the same `order_id`, `item_id` and a positive `amount`.
 
 ```js
 const rd = init('pk_...', { apiHost: 'https://ingest.example.com', recommendHost: 'https://reco.example.com' })

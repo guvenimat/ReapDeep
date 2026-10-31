@@ -6,6 +6,7 @@ public static class RfmSql
 {
     public const string DefaultEvent = "purchase";
     public const string DefaultAmountProperty = "amount";
+    public const string RefundEvent = "refund";
     public const string OrderProperty = "order_id";
     public const string CurrencyProperty = "currency";
     public static readonly int[] WindowDays = [90, 180, 365];
@@ -13,8 +14,8 @@ public static class RfmSql
 
     public static SqlQuery Report(SqlBuilder b, string purchaseEvent, string amountProperty, DateTime nowUtc)
     {
-        b.Where($"e.event = {b.P(purchaseEvent)}");
-        var orders = b.EventsOnly(OrderColumns(b, amountProperty), "1, 2, 3");
+        b.Where($"e.event IN ({b.P(purchaseEvent)}, {b.P(RefundEvent)})");
+        var orders = b.EventsOnly(OrderColumns(b, purchaseEvent, amountProperty), "1, 2, 3");
         var scored = Scored(b, $"({orders}) o{b.PersonJoins("o")}{b.PersonWhere()}", nowUtc);
         return b.Build(
             $"WITH s AS ({scored}) SELECT s.r, s.fs, COUNT(*) AS n, SUM(s.rd), MIN(s.rd), MAX(s.rd), SUM(s.f), MIN(s.f), MAX(s.f), SUM(s.m) " +
@@ -53,25 +54,26 @@ public static class RfmSql
 
     static string AllCustomers(SqlBuilder b, string project, string purchaseEvent, string? amountProperty, int windowDays, DateTime asOfUtc)
     {
-        var orders = $"SELECT {OrderColumns(b, amountProperty)} FROM analytics.events e WHERE e.project_id = {project} " +
+        var orders = $"SELECT {OrderColumns(b, purchaseEvent, amountProperty)} FROM analytics.events e WHERE e.project_id = {project} " +
                      $"AND e.timestamp >= {b.P(asOfUtc.AddDays(-windowDays))} AND e.timestamp < {b.P(asOfUtc)} " +
-                     $"AND e.event = {b.P(purchaseEvent)} GROUP BY 1, 2, 3";
+                     $"AND e.event IN ({b.P(purchaseEvent)}, {b.P(RefundEvent)}) GROUP BY 1, 2, 3";
         var from = $"({orders}) o LEFT JOIN {Pdi} pdi ON o.project_id = pdi.project_id AND o.distinct_id = pdi.distinct_id AND pdi.is_deleted = 0";
         return Scored(b, from, asOfUtc);
     }
 
-    static string OrderColumns(SqlBuilder b, string? amountProperty)
+    static string OrderColumns(SqlBuilder b, string purchaseEvent, string? amountProperty)
     {
         var order = ColumnMapper.Expression(b, "event", OrderProperty);
+        var isPurchase = $"e.event = {b.P(purchaseEvent)}";
         var amount = amountProperty is null ? "0" : $"CAST({ColumnMapper.Expression(b, "event", amountProperty)} AS DOUBLE)";
-        var money = amountProperty is null ? "0" : $"SUM(IF({amount} > 0, {amount}, 0))";
-        return $"e.project_id, e.distinct_id, COALESCE(NULLIF({order}, ''), e.event_id) AS ok, MAX(e.timestamp) AS ts, {money} AS m";
+        var money = amountProperty is null ? "0" : $"SUM(IF({amount} > 0, IF({isPurchase}, {amount}, -{amount}), 0))";
+        return $"e.project_id, e.distinct_id, COALESCE(NULLIF({order}, ''), e.event_id) AS ok, MAX(IF({isPurchase}, e.timestamp, NULL)) AS ts, {money} AS m";
     }
 
     static string Scored(SqlBuilder b, string ordersFrom, DateTime nowUtc) =>
         $"SELECT pp.person, pp.f, pp.m, timestampdiff(DAY, pp.last_ts, {b.P(nowUtc)}) AS rd, {Score("pp.last_ts")} AS r, {Score("pp.f")} AS fs " +
-        $"FROM (SELECT COALESCE(pdi.person_id, o.distinct_id) AS person, MAX(o.ts) AS last_ts, COUNT(DISTINCT o.ok) AS f, SUM(o.m) AS m " +
-        $"FROM {ordersFrom} GROUP BY 1) pp";
+        $"FROM (SELECT COALESCE(pdi.person_id, o.distinct_id) AS person, MAX(o.ts) AS last_ts, COUNT(DISTINCT IF(o.ts IS NULL, NULL, o.ok)) AS f, SUM(o.m) AS m " +
+        $"FROM {ordersFrom} GROUP BY 1 HAVING MAX(o.ts) IS NOT NULL) pp";
 
     static string Score(string column) => $"LEAST(5, 1 + FLOOR(5 * (RANK() OVER (ORDER BY {column}) - 1) / COUNT(*) OVER ()))";
 }

@@ -299,7 +299,7 @@ Personalized recommendations (`for_you`) are the exception, and they are built a
 ### RFM and lifecycle
 
 RFM scores every person who bought in a 90, 180 or 365-day window on recency (time since the last
-purchase), frequency (distinct orders) and monetary value (sum of `amount`), and maps the recency and
+purchase), frequency (distinct orders) and monetary value (sum of `amount`, minus `refund` events of the same orders), and maps the recency and
 frequency scores to the 11 standard segments (Champions ... Lost). Lifecycle labels each person in each
 period as new, returning, resurrecting or dormant.
 
