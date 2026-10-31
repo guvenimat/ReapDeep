@@ -62,6 +62,7 @@ public static class HostingExtensions
         services.AddSingleton<StarRocksClient>();
 
         services.AddSingleton<AccountRepository>();
+        services.AddSingleton<AuthCache>();
         services.AddSingleton<SessionService>();
         services.AddSingleton<ApiKeyAuthenticator>();
         services.AddHostedService<BootstrapOwner>();

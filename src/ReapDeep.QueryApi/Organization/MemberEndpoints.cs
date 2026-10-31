@@ -33,7 +33,7 @@ public static class MemberEndpoints
             case AddMemberResult.PasswordRequired: return ApiResults.BadRequest(PasswordHasher.LengthRule);
             case AddMemberResult.AlreadyMember: return ApiResults.Conflict("This user is already a member");
         }
-        sessions.InvalidateUser(userId);
+        await sessions.InvalidateUserAsync(userId);
         return ApiResults.Created((await members.GetAsync(project.ProjectId, userId, ct))!, AppJsonContext.Default.MemberRow);
     }
 
@@ -55,7 +55,7 @@ public static class MemberEndpoints
         CancellationToken ct)
     {
         var error = await members.ChangeAsync(project.ProjectId, project.Role!, userId, role, ct);
-        if (error == MembershipError.None) sessions.InvalidateUser(userId);
+        if (error == MembershipError.None) await sessions.InvalidateUserAsync(userId);
         return error switch
         {
             MembershipError.None => null,

@@ -2,6 +2,19 @@ name: reapdeep
 
 x-otel-endpoint: &otel-endpoint http://lgtm:4317
 x-postgres-connection: &postgres-connection Host=postgres;Database=reapdeep;Username=reapdeep;Password=${POSTGRES_PASSWORD:?Missing .env - run run-local.ps1 or copy .env.example to .env}
+x-query-api-environment: &query-api-environment
+  ConnectionStrings__Postgres: *postgres-connection
+  ConnectionStrings__StarRocks: Server=starrocks;Port=9030;User ID=reapdeep_query;Password=${STARROCKS_QUERY_PASSWORD:?Missing STARROCKS_QUERY_PASSWORD in .env};Database=analytics;ConnectionReset=false;Pooling=true;MaximumPoolSize=50
+  QueryApi__AllowExplain: "true"
+  Alerts__PollSeconds: "5"
+  Alerts__AllowPrivateWebhooks: "true"
+  Auth__BootstrapEmail: ${ADMIN_EMAIL:-admin@reapdeep.local}
+  Auth__BootstrapPassword: ${ADMIN_PASSWORD:?Missing ADMIN_PASSWORD in .env - run run-local.ps1 or smoke-test.sh}
+  Auth__SecureCookie: "false"
+  ForwardedHeaders__TrustedNetworks: 172.16.0.0/12
+  OTEL_EXPORTER_OTLP_ENDPOINT: *otel-endpoint
+  OTEL_METRIC_EXPORT_INTERVAL: "10000"
+  ConnectionStrings__Redis: redis:6379,password=${REDIS_PASSWORD:?Missing REDIS_PASSWORD in .env - run run-local.ps1},abortConnect=false
 
 services:
   kafka:
@@ -257,18 +270,7 @@ services:
     profiles: ["app"]
     ports:
       - "127.0.0.1:8001:8080"
-    environment:
-      ConnectionStrings__Postgres: *postgres-connection
-      ConnectionStrings__StarRocks: Server=starrocks;Port=9030;User ID=reapdeep_query;Password=${STARROCKS_QUERY_PASSWORD:?Missing STARROCKS_QUERY_PASSWORD in .env};Database=analytics;ConnectionReset=false;Pooling=true;MaximumPoolSize=50
-      QueryApi__AllowExplain: "true"
-      Alerts__PollSeconds: "5"
-      Alerts__AllowPrivateWebhooks: "true"
-      Auth__BootstrapEmail: ${ADMIN_EMAIL:-admin@reapdeep.local}
-      Auth__BootstrapPassword: ${ADMIN_PASSWORD:?Missing ADMIN_PASSWORD in .env - run run-local.ps1 or smoke-test.sh}
-      Auth__SecureCookie: "false"
-      ForwardedHeaders__TrustedNetworks: 172.16.0.0/12
-      OTEL_EXPORTER_OTLP_ENDPOINT: *otel-endpoint
-      OTEL_METRIC_EXPORT_INTERVAL: "10000"
+    environment: *query-api-environment
     healthcheck:
       test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /healthz HTTP/1.0\r\n\r\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
       interval: 10s
@@ -280,6 +282,30 @@ services:
         condition: service_healthy
       starrocks-init:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+
+  query-api-2:
+    image: reapdeep-query-api
+    container_name: reapdeep-query-api-2
+    profiles: ["scale"]
+    ports:
+      - "127.0.0.1:8003:8080"
+    environment: *query-api-environment
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /healthz HTTP/1.0\r\n\r\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    depends_on:
+      postgres:
+        condition: service_healthy
+      starrocks-init:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
 
   lgtm:
     image: grafana/otel-lgtm:0.37.0

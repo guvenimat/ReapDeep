@@ -33,7 +33,7 @@ public static class ApiKeyEndpoints
     static async Task<IResult> Revoke(long id, ProjectContext project, ApiKeyRepository keys, ApiKeyAuthenticator authenticator, CancellationToken ct)
     {
         if (await keys.RevokeAsync(project.ProjectId, id, ct) is not { } hash) return ApiResults.NotFound("API key not found");
-        authenticator.Invalidate(hash);
+        await authenticator.InvalidateAsync(hash);
         return Results.NoContent();
     }
 }

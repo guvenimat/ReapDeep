@@ -38,7 +38,7 @@ public static class ProjectEndpoints
         var key = PublicKeyPrefix + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
         if (await projects.CreateAsync(project.ProjectId, name, timezone, key, ct) is not { } created)
             return ApiResults.Conflict($"A project named '{name}' already exists in this organization");
-        sessions.InvalidateUser(project.UserId!.Value);
+        await sessions.InvalidateUserAsync(project.UserId!.Value);
         return ApiResults.Created(created, AppJsonContext.Default.ProjectDetail);
     }
 }
