@@ -162,7 +162,7 @@ export function Trends({ params, range, onChange, onInsight }: {
 
       <section className="content">
         <SaveInsight kind="trends" query={state} params={params} onInsight={onInsight} />
-        <Status state={q} empty={results.length === 0 || results.every((r) => r.total === 0)}>
+        <Status state={q} empty={results.every((r) => r.total === 0)}>
           {current.length <= 4 && (
             <div className="stats">
               {current.map((r, i) => {

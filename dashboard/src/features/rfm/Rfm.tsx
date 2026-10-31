@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { api, errorMessage } from '../../api/client'
-import type { Filter, RfmResponse, RfmSegmentKey } from '../../api/types'
+import type { Filter, RfmMigrationResponse, RfmResponse, RfmSegmentKey } from '../../api/types'
 import { readState } from '../../app/route'
 import { completeFilters, EditorSection, FilterEditor } from '../../components/editors'
 import { Icon } from '../../components/icons'
@@ -58,7 +58,7 @@ export function RfmGrid({ data, active, onActive }: { data: RfmResponse; active?
         </tbody>
         <tfoot>
           <tr>
-            <th />
+            <th><span className="sr-only">Segment</span></th>
             {[1, 2, 3, 4, 5].map((f) => <th key={f} className="num">F{f}</th>)}
           </tr>
         </tfoot>
@@ -204,16 +204,8 @@ const PERIODS = [7, 30, 90]
 const segmentLabel = (k: RfmSegmentKey | 'none', side: 'from' | 'to') =>
   k === 'none' ? (side === 'from' ? 'Not a customer then' : 'No purchase in the window now') : RFM_SEGMENT_NAMES[k]
 
-function SegmentMovement({ state }: { state: RfmState }) {
-  const [period, setPeriod] = useState(30)
-  const [segment, setSegment] = useState<RfmSegmentKey>('champions')
-  const body = JSON.stringify({ window_days: state.window_days, purchase_event: state.purchase_event.trim() || undefined, period_days: period })
-  const q = useQuery((signal) => api.rfmMigration(JSON.parse(body), signal), [body])
-  const rows = q.data?.rows ?? []
-  const cameFrom = rows.filter((r) => r.to === segment).sort((a, b) => b.persons - a.persons)
-  const wentTo = rows.filter((r) => r.from === segment).sort((a, b) => b.persons - a.persons)
-
-  const List = ({ items, side, total }: { items: typeof rows; side: 'from' | 'to'; total: number }) => (
+function MovementList({ items, side, total }: { items: RfmMigrationResponse['rows']; side: 'from' | 'to'; total: number }) {
+  return (
     <ul className="movement-list">
       {items.length === 0 && <li className="muted small">Nobody</li>}
       {items.map((r) => {
@@ -229,6 +221,16 @@ function SegmentMovement({ state }: { state: RfmState }) {
       })}
     </ul>
   )
+}
+
+function SegmentMovement({ state }: { state: RfmState }) {
+  const [period, setPeriod] = useState(30)
+  const [segment, setSegment] = useState<RfmSegmentKey>('champions')
+  const body = JSON.stringify({ window_days: state.window_days, purchase_event: state.purchase_event.trim() || undefined, period_days: period })
+  const q = useQuery((signal) => api.rfmMigration(JSON.parse(body), signal), [body])
+  const rows = q.data?.rows ?? []
+  const cameFrom = rows.filter((r) => r.to === segment).toSorted((a, b) => b.persons - a.persons)
+  const wentTo = rows.filter((r) => r.from === segment).toSorted((a, b) => b.persons - a.persons)
 
   return (
     <Card testId="rfm-movement" title="Segment movement" meta={q.data ? `scores now vs ${period} days ago · ${ms(q.data.took_ms)}` : undefined}
@@ -242,11 +244,11 @@ function SegmentMovement({ state }: { state: RfmState }) {
         <div className="movement">
           <div>
             <div className="editor-title">Today's {RFM_SEGMENT_NAMES[segment]} {period} days ago</div>
-            <List items={cameFrom} side="from" total={cameFrom.reduce((n, r) => n + r.persons, 0)} />
+            <MovementList items={cameFrom} side="from" total={cameFrom.reduce((n, r) => n + r.persons, 0)} />
           </div>
           <div>
             <div className="editor-title">{RFM_SEGMENT_NAMES[segment]} of {period} days ago, today</div>
-            <List items={wentTo} side="to" total={wentTo.reduce((n, r) => n + r.persons, 0)} />
+            <MovementList items={wentTo} side="to" total={wentTo.reduce((n, r) => n + r.persons, 0)} />
           </div>
         </div>
         <p className="footnote">Both sides score all customers of the project with the same window, ending today and {period} days ago. Filters on this page do not apply here.</p>

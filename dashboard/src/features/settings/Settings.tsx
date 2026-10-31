@@ -172,7 +172,7 @@ function Members({ me, project, canManage, onAccessChanged }: { me: Me; project:
       <Status state={list}>
         <div className="table-wrap">
           <table data-testid="members-table">
-            <thead><tr><th>Member</th><th>Role</th><th>Added</th><th /></tr></thead>
+            <thead><tr><th>Member</th><th>Role</th><th>Added</th><th><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>
               {list.data?.members.map((m) => {
                 const editable = canManage && (isOwner || m.role !== 'owner')
@@ -270,7 +270,7 @@ function ApiKeys() {
       <Status state={list} empty={list.data?.api_keys.length === 0} emptyTitle="No API keys yet" emptyText="Create a read-only key for scripts and reporting tools.">
         <div className="table-wrap">
           <table data-testid="api-keys-table">
-            <thead><tr><th>Name</th><th>Key</th><th>Scope</th><th>Created</th><th>By</th><th>Status</th><th /></tr></thead>
+            <thead><tr><th>Name</th><th>Key</th><th>Scope</th><th>Created</th><th>By</th><th>Status</th><th><span className="sr-only">Actions</span></th></tr></thead>
             <tbody>
               {list.data?.api_keys.map((k) => (
                 <tr key={k.id} className={k.revoked_at ? 'revoked' : undefined}>

@@ -146,12 +146,13 @@ function PreviewCount({ definition, problem }: { definition: CohortDefinition; p
   return <span className="preview-count" data-testid="cohort-preview"><strong>{num(preview.data.persons)}</strong> persons match right now</span>
 }
 
+const withEvent = (t: CohortCondition['type']) => t === 'performed_event' || t === 'not_performed_event'
+
 function ConditionRow({ condition: c, onChange, onRemove }: {
   condition: CohortCondition; onChange: (c: CohortCondition) => void; onRemove?: () => void
 }) {
   const changeType = (type: CohortCondition['type']) => {
     const next = newCondition(type)
-    const withEvent = (t: CohortCondition['type']) => t === 'performed_event' || t === 'not_performed_event'
     if (withEvent(next.type) && (c.type === 'performed_event' || c.type === 'not_performed_event'))
       onChange({ ...next, event: c.event, within_days: c.within_days } as CohortCondition)
     else onChange(next)

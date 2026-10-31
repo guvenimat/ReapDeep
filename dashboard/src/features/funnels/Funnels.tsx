@@ -88,7 +88,7 @@ export function Funnels({ params, range, onChange, onInsight }: {
 
       <section className="content">
         <SaveInsight kind="funnels" query={state} params={params} onInsight={onInsight} />
-        <Status state={q} empty={groups.length === 0 || groups.every((g) => g.counts[0] === 0)}>
+        <Status state={q} empty={groups.every((g) => g.counts[0] === 0)}>
           {overall && last && (
             <div className="stats">
               <StatTile label="Entered" value={num(overall[0].count)} hint={overall[0].event} />

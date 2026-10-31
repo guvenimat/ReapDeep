@@ -94,7 +94,7 @@ export function Lifecycle({ params, range, onChange, onInsight }: {
                       </tr>
                     </thead>
                     <tbody>
-                      {[...d.periods].reverse().map((p) => (
+                      {d.periods.toReversed().map((p) => (
                         <tr key={p.start}>
                           <td className="nowrap">{bucketLabel(p.start, d.period as Interval, true)}</td>
                           <td className="num">{num(p.new)}</td>
