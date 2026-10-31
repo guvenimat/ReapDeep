@@ -14,9 +14,12 @@ public sealed class ApiExceptionHandler(ILogger<ApiExceptionHandler> log) : IExc
             ValidationException e => (StatusCodes.Status400BadRequest, e.Message),
             CohortNotFoundException e => (StatusCodes.Status404NotFound, e.Message),
             CohortNotReadyException e => (StatusCodes.Status409Conflict, e.Message),
-            MySqlException e when IsResourceLimit(e) =>
-                (StatusCodes.Status503ServiceUnavailable, "Query exceeded the database resource limits; narrow the date range or filters"),
-            MySqlException => (StatusCodes.Status502BadGateway, "Query failed in the analytics database"),
+            MySqlException e => StarRocksErrors.Classify(e) switch
+            {
+                StarRocksFailure.ResourceLimit => (StatusCodes.Status503ServiceUnavailable, "Query exceeded the database resource limits; narrow the date range or filters"),
+                StarRocksFailure.Unavailable => (StatusCodes.Status503ServiceUnavailable, "The analytics database is not reachable right now"),
+                _ => (StatusCodes.Status502BadGateway, "Query failed in the analytics database"),
+            },
             _ => (0, ""),
         };
         if (status == 0) return false;
@@ -26,7 +29,4 @@ public sealed class ApiExceptionHandler(ILogger<ApiExceptionHandler> log) : IExc
         await ctx.Response.WriteAsJsonAsync(new ErrorResponse(message), AppJsonContext.Default.ErrorResponse, cancellationToken: ct);
         return true;
     }
-
-    static bool IsResourceLimit(MySqlException e) =>
-        e.Message.Contains("exceed", StringComparison.OrdinalIgnoreCase) || e.Message.Contains("timeout", StringComparison.OrdinalIgnoreCase);
 }

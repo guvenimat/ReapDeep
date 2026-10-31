@@ -17,4 +17,5 @@ public sealed record CaptureEvent(
 
 public sealed record CaptureResponse(
     [property: JsonPropertyName("accepted")] int Accepted,
-    [property: JsonPropertyName("rejected")] int Rejected);
+    [property: JsonPropertyName("rejected")] int Rejected,
+    [property: JsonPropertyName("duplicates")] int Duplicates);

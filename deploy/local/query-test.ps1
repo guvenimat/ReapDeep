@@ -3,7 +3,8 @@ Set-Location -Path $PSScriptRoot
 . (Join-Path $PSScriptRoot "env.ps1")
 Add-Type -AssemblyName System.Net.Http
 
-$readKey = (Initialize-LocalEnv).READ_API_KEY
+$localEnv = Initialize-LocalEnv
+$readKey = $localEnv.READ_API_KEY
 $tag = "qt" + [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 $anonA = "anonA_$tag"; $user = "user_$tag"; $anonB = "anonB_$tag"
 $chrome = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
@@ -50,10 +51,14 @@ Check "invalid property name -> 400" ((Call POST "/api/v1/query/trends" '{"serie
 Write-Host "`n2) Sending test data (tag: $tag)"
 Capture $chrome @'
 [{"event":"$pageview","distinct_id":"__A__","event_id":"__TAG__-pv1","properties":{"qt":"__TAG__","$current_url":"https://example.com/products/1"}},
- {"event":"$pageview","distinct_id":"__A__","event_id":"__TAG__-pv1","properties":{"qt":"__TAG__","$current_url":"https://example.com/products/1"}},
  {"event":"$pageview","distinct_id":"__A__","event_id":"__TAG__-pv2","properties":{"qt":"__TAG__","$current_url":"https://example.com/products/2"}},
  {"event":"view_product","distinct_id":"__A__","timestamp":"__T10__","properties":{"qt":"__TAG__","product":"Pro plan"}}]
 '@
+$redisPassword = $localEnv.REDIS_PASSWORD
+$prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+$null = docker.exe exec reapdeep-redis sh -c "redis-cli -a '$redisPassword' --no-auth-warning --scan --pattern 'dedup:*:$tag-pv1' | xargs -r redis-cli -a '$redisPassword' --no-auth-warning DEL" 2>&1
+$ErrorActionPreference = $prev
+Capture $chrome '[{"event":"$pageview","distinct_id":"__A__","event_id":"__TAG__-pv1","properties":{"qt":"__TAG__","$current_url":"https://example.com/products/1"}}]'
 Start-Sleep -Milliseconds 500
 Capture $chrome '[{"event":"$identify","distinct_id":"__U__","properties":{"qt":"__TAG__","$anon_distinct_id":"__A__","$set":{"email":"__U__@example.com","plan":"pro"}}}]'
 Start-Sleep -Milliseconds 500
@@ -77,7 +82,7 @@ do {
     $ev = (Call GET "/api/v1/events?distinct_id=$anonA&limit=10").Json.events
     $all = Trend ('{"series":[{"event":"$pageview"}],"filters":[' + $qtFilter + ']}')
     $pp = Trend ('{"series":[{"event":"$pageview","metric":"unique_users"}],"filters":[' + $qtFilter + ',{"scope":"person","property":"plan","op":"eq","value":"pro"}]}')
-    $ready = $ev.Count -ge 4 -and @($ev | Where-Object { $_.resolved_person_id -ne $anonA }).Count -eq $ev.Count -and $all[0].total -eq 5 -and $pp[0].total -eq 1
+    $ready = $ev.Count -ge 3 -and @($ev | Where-Object { $_.resolved_person_id -ne $anonA }).Count -eq $ev.Count -and $all[0].total -eq 5 -and $pp[0].total -eq 1
 } until ($ready -or (Get-Date) -gt $deadline)
 Check "data ready (events loaded, identity mapping and person synced)" $ready
 $personId = $ev[0].resolved_person_id
@@ -152,7 +157,7 @@ Check "dropped after the last step -> 400" ((Call POST "/api/v1/query/funnels/pe
 
 Write-Host "`n5) Events / Persons / Metadata"
 $ev = (Call GET "/api/v1/events?person_id=$personId&limit=50").Json.events
-Check "events by person_id: anonA + user events together -> $($ev.Count)" ($ev.Count -eq 9 -and ($ev.distinct_id | Sort-Object -Unique).Count -eq 2)
+Check "events by person_id: anonA + user events together, each event id once -> $($ev.Count)" ($ev.Count -eq 8 -and ($ev.distinct_id | Sort-Object -Unique).Count -eq 2)
 $p = (Call GET "/api/v1/persons/$personId").Json
 Check "person detail: distinct_ids [$($p.distinct_ids -join ', ')], email=$($p.properties.email)" (($p.distinct_ids -contains $anonA) -and ($p.distinct_ids -contains $user) -and $p.properties.email -eq "$user@example.com")
 Check "person search (email)" (@((Call GET "/api/v1/persons?search=$user").Json.persons | Where-Object { $_.id -eq $personId }).Count -eq 1)
