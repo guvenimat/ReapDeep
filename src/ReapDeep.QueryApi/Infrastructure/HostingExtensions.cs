@@ -1,6 +1,6 @@
+using Microsoft.AspNetCore.HttpOverrides;
 using System.Text.Json;
 using System.Threading.RateLimiting;
-using Microsoft.AspNetCore.HttpOverrides;
 using MySqlConnector;
 using Npgsql;
 using ReapDeep.QueryApi.Alerts;
@@ -13,6 +13,7 @@ using ReapDeep.QueryApi.Insights;
 using ReapDeep.QueryApi.Metadata;
 using ReapDeep.QueryApi.Organization;
 using ReapDeep.QueryApi.Persons;
+using ReapDeep.ServiceDefaults;
 
 namespace ReapDeep.QueryApi.Infrastructure;
 
@@ -24,6 +25,7 @@ public static class HostingExtensions
     {
         var cfg = builder.Configuration;
         var services = builder.Services;
+        builder.AddReapDeepTelemetry("reapdeep-query-api");
 
         services.ConfigureHttpJsonOptions(o =>
         {

@@ -1,5 +1,6 @@
 name: reapdeep
 
+x-otel-endpoint: &otel-endpoint http://lgtm:4317
 x-postgres-connection: &postgres-connection Host=postgres;Database=reapdeep;Username=reapdeep;Password=${POSTGRES_PASSWORD:?Missing .env - run run-local.ps1 or copy .env.example to .env}
 
 services:
@@ -111,10 +112,16 @@ services:
           ALTER USER 'reapdeep_jobs'@'%' IDENTIFIED BY '$$STARROCKS_JOBS_PASSWORD';
           GRANT SELECT, DELETE ON ALL TABLES IN DATABASE analytics TO USER 'reapdeep_jobs'@'%';
           GRANT INSERT ON TABLE analytics.cohort_members TO USER 'reapdeep_jobs'@'%';
+          CREATE USER IF NOT EXISTS 'reapdeep_ops'@'%' IDENTIFIED BY '$$STARROCKS_OPS_PASSWORD';
+          ALTER USER 'reapdeep_ops'@'%' IDENTIFIED BY '$$STARROCKS_OPS_PASSWORD';
+          GRANT INSERT ON TABLE analytics.events TO USER 'reapdeep_ops'@'%';
+          GRANT INSERT ON TABLE analytics.persons TO USER 'reapdeep_ops'@'%';
+          GRANT INSERT ON TABLE analytics.person_distinct_ids TO USER 'reapdeep_ops'@'%';
           CREATE RESOURCE GROUP IF NOT EXISTS rg_jobs TO (user='reapdeep_jobs') WITH ('cpu_weight'='2', 'mem_limit'='0.3', 'concurrency_limit'='4');"
     environment:
       STARROCKS_QUERY_PASSWORD: ${STARROCKS_QUERY_PASSWORD:?Missing STARROCKS_QUERY_PASSWORD in .env - run run-local.ps1 or smoke-test.sh}
       STARROCKS_JOBS_PASSWORD: ${STARROCKS_JOBS_PASSWORD:?Missing STARROCKS_JOBS_PASSWORD in .env - run run-local.ps1 or smoke-test.sh}
+      STARROCKS_OPS_PASSWORD: ${STARROCKS_OPS_PASSWORD:?Missing STARROCKS_OPS_PASSWORD in .env - run run-local.ps1 or smoke-test.sh}
     restart: "no"
 
   redis:
@@ -151,7 +158,9 @@ services:
       retries: 10
 
   ingestion:
-    build: ../../src/ReapDeep.Ingestion
+    build:
+      context: ../../src
+      dockerfile: ReapDeep.Ingestion/Dockerfile
     image: reapdeep-ingestion
     container_name: reapdeep-ingestion
     profiles: ["app"]
@@ -161,6 +170,14 @@ services:
       Kafka__BootstrapServers: kafka:29092
       ConnectionStrings__Postgres: *postgres-connection
       ConnectionStrings__Redis: redis:6379,password=${REDIS_PASSWORD:?Missing REDIS_PASSWORD in .env - run run-local.ps1},abortConnect=false
+      OTEL_EXPORTER_OTLP_ENDPOINT: *otel-endpoint
+      OTEL_METRIC_EXPORT_INTERVAL: "10000"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8000 && printf 'GET /healthz HTTP/1.0\r\n\r\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
     depends_on:
       kafka-init:
         condition: service_completed_successfully
@@ -187,6 +204,16 @@ services:
       Cohorts__MaxRefreshSeconds: "30"
       Recommendations__PollSeconds: "10"
       Recommendations__RefreshSeconds: "60"
+      ConnectionStrings__StarRocksOps: Server=starrocks;Port=9030;User ID=reapdeep_ops;Password=${STARROCKS_OPS_PASSWORD:?Missing STARROCKS_OPS_PASSWORD in .env};Database=analytics
+      RoutineLoad__CheckSeconds: "10"
+      OTEL_EXPORTER_OTLP_ENDPOINT: *otel-endpoint
+      OTEL_METRIC_EXPORT_INTERVAL: "10000"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "test $$(( $$(date +%s) - $$(stat -c %Y /tmp/reapdeep-heartbeat) )) -lt 60"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 30s
     depends_on:
       kafka-init:
         condition: service_completed_successfully
@@ -208,6 +235,14 @@ services:
     environment:
       ConnectionStrings__Postgres: *postgres-connection
       Recommender__RefreshSeconds: "5"
+      OTEL_EXPORTER_OTLP_ENDPOINT: *otel-endpoint
+      OTEL_METRIC_EXPORT_INTERVAL: "10000"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8002 && printf 'GET /healthz HTTP/1.0\r\n\r\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
     depends_on:
       postgres:
         condition: service_healthy
@@ -232,11 +267,30 @@ services:
       Auth__BootstrapPassword: ${ADMIN_PASSWORD:?Missing ADMIN_PASSWORD in .env - run run-local.ps1 or smoke-test.sh}
       Auth__SecureCookie: "false"
       ForwardedHeaders__TrustedNetworks: 172.16.0.0/12
+      OTEL_EXPORTER_OTLP_ENDPOINT: *otel-endpoint
+      OTEL_METRIC_EXPORT_INTERVAL: "10000"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /healthz HTTP/1.0\r\n\r\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
     depends_on:
       postgres:
         condition: service_healthy
       starrocks-init:
         condition: service_completed_successfully
+
+  lgtm:
+    image: grafana/otel-lgtm:0.37.0
+    container_name: reapdeep-lgtm
+    profiles: ["app"]
+    ports:
+      - "127.0.0.1:3005:3000"
+    volumes:
+      - ./grafana/dashboards.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/reapdeep.yaml:ro
+      - ./grafana/reapdeep-overview.json:/otel-lgtm/reapdeep-overview.json:ro
+    restart: unless-stopped
 
   dashboard:
     build: ../../dashboard

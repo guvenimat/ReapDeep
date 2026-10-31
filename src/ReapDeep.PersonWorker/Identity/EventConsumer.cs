@@ -1,6 +1,7 @@
 using System.Text;
 using Confluent.Kafka;
 using Npgsql;
+using ReapDeep.ServiceDefaults;
 
 namespace ReapDeep.PersonWorker.Identity;
 
@@ -29,7 +30,8 @@ public sealed class EventConsumer(IConfiguration cfg, IdentityResolver resolver,
         {
             while (!ct.IsCancellationRequested)
             {
-                var result = consumer.Consume(ct);
+                Heartbeat.Beat();
+                if (consumer.Consume(TimeSpan.FromSeconds(1)) is not { } result) continue;
                 Handle(result, ct);
                 consumer.StoreOffset(result);
             }
