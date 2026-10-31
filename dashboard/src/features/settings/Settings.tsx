@@ -21,13 +21,17 @@ export function Settings({ me, project, onAccessChanged }: { me: Me; project: Pr
 }
 
 function ProjectInfo({ project, onAccessChanged }: { project: Project; onAccessChanged: () => void }) {
-  const detail = useQuery((signal) => api.project(signal), [project.id])
+  const [version, setVersion] = useState(0)
+  const detail = useQuery((signal) => api.project(signal), [project.id, version])
   const action = useAction()
   const [name, setName] = useState('')
   const [timezone, setTimezone] = useState('Europe/Istanbul')
   const [created, setCreated] = useState<string>()
   const [copied, setCopied] = useState(false)
+  const [secretCopied, setSecretCopied] = useState(false)
+  const secretAction = useAction()
   const isOwner = project.role === 'owner'
+  const canManage = isOwner || project.role === 'admin'
 
   const create = async (e: FormEvent) => {
     e.preventDefault()
@@ -39,9 +43,17 @@ function ProjectInfo({ project, onAccessChanged }: { project: Project; onAccessC
     })
   }
   const copy = (key: string) => navigator.clipboard?.writeText(key).then(() => setCopied(true))
+  const secret = detail.data?.recommendation_secret
+  const rotateSecret = async () => {
+    if (secret && !window.confirm('Rotate the recommendation secret? Signatures made with the current secret stop working at once.')) return
+    if (await secretAction.run(() => api.rotateRecommendationSecret())) {
+      setSecretCopied(false)
+      setVersion((v) => v + 1)
+    }
+  }
 
   return (
-    <Card title={<><Icon name="settings" />Project</>} meta="The public key goes into the JS SDK and the ingestion API; it is safe to ship in web pages">
+    <Card title={<><Icon name="settings" />Project</>} meta="The public key goes into the JS SDK and the ingestion API; it is safe to ship in web pages. The recommendation secret stays on your server: it signs personalized recommendation requests">
       <Status state={detail}>
         {detail.data && (
           <dl className="project-facts" data-testid="project-info">
@@ -55,8 +67,21 @@ function ProjectInfo({ project, onAccessChanged }: { project: Project; onAccessC
                 <button type="button" onClick={() => copy(detail.data!.public_key)}><Icon name="copy" />{copied ? 'Copied' : 'Copy'}</button>
               </dd>
             </div>
+            {canManage && (
+              <div className="full" data-testid="recommendation-secret">
+                <dt>Recommendation secret</dt>
+                <dd className="row">
+                  {secret
+                    ? <><code className="mono">{`${secret.slice(0, 4)}…${secret.slice(-4)}`}</code>
+                        <button type="button" onClick={() => navigator.clipboard?.writeText(secret).then(() => setSecretCopied(true))}><Icon name="copy" />{secretCopied ? 'Copied' : 'Copy'}</button></>
+                    : <span className="muted">Not set</span>}
+                  <button type="button" onClick={() => void rotateSecret()} disabled={secretAction.busy}>{secret ? 'Rotate' : 'Generate'}</button>
+                </dd>
+              </div>
+            )}
           </dl>
         )}
+        <FormMessage error={secretAction.error} />
       </Status>
       {isOwner && (
         <form className="inline-form" onSubmit={create} data-testid="create-project">

@@ -469,4 +469,5 @@ button.link.active { text-decoration: underline; }
 .project-facts dt { color: var(--text-muted); font-size: 12px; }
 .project-facts dd { margin: 0; }
 .project-facts dd.row { display: flex; align-items: center; gap: 8px; }
+.project-facts .full { grid-column: 1 / -1; }
 .project-facts code { padding: 4px 8px; background: var(--page); border-radius: var(--radius-sm); word-break: break-all; }

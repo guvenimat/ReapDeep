@@ -22,6 +22,7 @@ public static class HostingExtensions
         services.AddSingleton(pg.Build());
         services.AddSingleton<ProjectCache>();
         services.AddHostedService(sp => sp.GetRequiredService<ProjectCache>());
+        services.AddSingleton<PersonHistoryStore>();
         services.AddSingleton<RecommendationCache>();
         services.AddHostedService(sp => sp.GetRequiredService<RecommendationCache>());
         return builder;

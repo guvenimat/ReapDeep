@@ -11,4 +11,6 @@ public sealed record ApiKeysResponse(List<ApiKeyRow> ApiKeys);
 public sealed record CreatedApiKey(ApiKeyRow ApiKey, string Key);
 
 public sealed record CreateProjectRequest(string? Name, string? Timezone);
-public sealed record ProjectDetail(long Id, string Name, long OrganizationId, string OrganizationName, string Timezone, string PublicKey, DateTime CreatedAt);
+public sealed record ProjectDetail(long Id, string Name, long OrganizationId, string OrganizationName, string Timezone, string PublicKey, DateTime CreatedAt,
+    string? RecommendationSecret = null);
+public sealed record RecommendationSecretResponse(string RecommendationSecret);

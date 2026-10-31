@@ -80,4 +80,16 @@ public class RecommendationSqlTests
     {
         Assert.Throws<ValidationException>(() => RecommendationSql.Build("collaborative", Project, Now));
     }
+
+    [Fact]
+    public void Person_history_keeps_recent_items_and_every_purchase_per_person()
+    {
+        var q = RecommendationSql.PersonHistory(Project, Now);
+
+        Assert.Contains("COALESCE(pdi.person_id, d.distinct_id) AS person", q.Sql);
+        Assert.Contains("ROW_NUMBER() OVER (PARTITION BY person ORDER BY ts DESC, item_id)", q.Sql);
+        Assert.Contains($"WHERE n <= {RecommendationSql.MaxHistoryItems} OR w >= {RecommendationSql.PurchaseWeight}", q.Sql);
+        Assert.Contains(q.Parameters, p => p.Value is DateTime t && t == Now - RecommendationSql.HistoryWindow);
+        Assert.Contains(q.Parameters, p => p.Value is long v && v == Project);
+    }
 }

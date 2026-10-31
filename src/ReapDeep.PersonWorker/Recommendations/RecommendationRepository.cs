@@ -50,4 +50,16 @@ public sealed class RecommendationRepository(NpgsqlDataSource db)
             """, new { Project = projectId, Model = model, Ms = calculationMs, Count = sources.Length }, tx);
         await tx.CommitAsync(ct);
     }
+
+    public async Task ReplaceHistoryAsync(long projectId, string[] people, string[] histories, CancellationToken ct)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+        await conn.ExecuteAsync("DELETE FROM person_item_history WHERE project_id = @Project", new { Project = projectId }, tx);
+        await conn.ExecuteAsync("""
+            INSERT INTO person_item_history (project_id, person_key, items, calculated_at)
+            SELECT @Project, k, h::jsonb, now() FROM unnest(@People, @Histories) AS t(k, h)
+            """, new { Project = projectId, People = people, Histories = histories }, tx);
+        await tx.CommitAsync(ct);
+    }
 }

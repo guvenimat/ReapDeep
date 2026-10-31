@@ -99,6 +99,7 @@ export const api = {
   createApiKey: (name: string, scope: KeyScope) => request<{ api_key: ApiKey; key: string }>('POST', '/api/v1/api-keys', { name, scope }),
   revokeApiKey: (id: number) => request<void>('DELETE', `/api/v1/api-keys/${id}`),
   project: (signal?: AbortSignal) => request<ProjectDetail>('GET', '/api/v1/project', undefined, signal),
+  rotateRecommendationSecret: () => request<{ recommendation_secret: string }>('POST', '/api/v1/project/recommendation-secret'),
   createProject: (name: string, timezone: string) => request<ProjectDetail>('POST', '/api/v1/projects', { name, timezone }),
 
   insights: (signal?: AbortSignal) => request<{ insights: Insight[] }>('GET', '/api/v1/insights', undefined, signal),
