@@ -6,6 +6,7 @@ public static class RecommendationSql
     public const string Trending = "trending";
     public const string CoViewed = "co_viewed";
     public const string BoughtTogether = "bought_together";
+    public const string ForYou = "for_you";
     public static readonly string[] Models = [Popular, Trending, CoViewed, BoughtTogether];
 
     public const string ViewEvent = "product_viewed";
@@ -19,6 +20,7 @@ public static class RecommendationSql
     public const int ItemCandidates = 50;
     public const int MaxItemsPerPerson = 50;
     public const int MinCoOccurrence = 2;
+    public const int MaxHistoryItems = 30;
 
     public static readonly TimeSpan PopularWindow = TimeSpan.FromDays(30);
     public static readonly TimeSpan TrendingRecent = TimeSpan.FromDays(7);
@@ -26,6 +28,7 @@ public static class RecommendationSql
     public static readonly TimeSpan CoViewedWindow = TimeSpan.FromDays(30);
     public static readonly TimeSpan BoughtTogetherWindow = TimeSpan.FromDays(90);
     public static readonly TimeSpan EvaluationWindow = TimeSpan.FromDays(7);
+    public static readonly TimeSpan HistoryWindow = TimeSpan.FromDays(90);
 
     public static SqlQuery Build(string model, long projectId, DateTime nowUtc) => model switch
     {
@@ -61,6 +64,16 @@ public static class RecommendationSql
         var b = new SqlBuilder(projectId, fromUtc, toUtc);
         return b.Build($"WITH {PersonItems(b, projectId, fromUtc, toUtc)}, {SimilarityCtes(b, purchasesOnly)} " +
                        $"SELECT src AS source, dst AS item_id, score FROM ranked WHERE rn <= {perItem}");
+    }
+
+    public static SqlQuery PersonHistory(long projectId, DateTime nowUtc)
+    {
+        var from = nowUtc - HistoryWindow;
+        var b = new SqlBuilder(projectId, from, nowUtc);
+        return b.Build(
+            $"WITH {PersonItems(b, projectId, from, nowUtc)}, " +
+            "h AS (SELECT person, item_id, w, ts, ROW_NUMBER() OVER (PARTITION BY person ORDER BY ts DESC, item_id) AS n FROM pi) " +
+            $"SELECT person, item_id, w, ts FROM h WHERE n <= {MaxHistoryItems} OR w >= {PurchaseWeight} ORDER BY person, ts DESC, item_id");
     }
 
     public static SqlQuery HitRate(long projectId, DateTime nowUtc, int k)

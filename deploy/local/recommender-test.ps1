@@ -30,7 +30,7 @@ function Send($client, [string]$method, [string]$url, $body = $null, [hashtable]
     }
     $r = $client.SendAsync($req).Result
     $t = $r.Content.ReadAsStringAsync().Result
-    [pscustomobject]@{ Status = [int]$r.StatusCode; Json = $(if ($t) { try { $t | ConvertFrom-Json } catch { $null } } else { $null }) }
+    [pscustomobject]@{ Status = [int]$r.StatusCode; CacheControl = "$($r.Headers.CacheControl)"; Json = $(if ($t) { try { $t | ConvertFrom-Json } catch { $null } } else { $null }) }
 }
 function S([string]$method, [string]$path, $body = $null) { Send $session $method "$api$path" $body @{ "X-Project-Id" = "1" } }
 function K([string]$key, [string]$method, [string]$path, $body = $null) { Send $plain $method "$api$path" $body @{ Authorization = "Bearer $key" } }
@@ -104,7 +104,7 @@ Check "co_viewed: tee and chinos, never the out-of-stock dress or the item itsel
 $long = Reco "model=co_viewed&item_id=$A&limit=6"
 Check "a short list is filled with popular items, marked as such -> $((Ids $long) -join ', ')" ((Ids $long) -contains $F -and @($long.Json.items | Where-Object { $_.item_id -eq $F })[0].source -eq "popular" -and $long.Json.items[0].source -eq "co_viewed")
 Check "items carry catalog fields (title, price, category)" ($r.Json.items[0].title -eq "Tee" -and $r.Json.items[0].price -eq 19)
-Check "bought_together: boots" ((Ids (Reco "model=bought_together&item_id=$A&limit=1")) -contains $E)
+Check "bought_together: boots" (WaitFor { (Ids (Reco "model=bought_together&item_id=$A&limit=1")) -contains $E } 30)
 Check "category filter on popular" (@((Reco "model=popular&category=shoes-$tag").Json.items | Where-Object { $_.category -ne "shoes-$tag" }).Count -eq 0)
 $null = K $ck.key PUT "/items" @{ items = @(@{ item_id = $B; title = "Tee"; category = "apparel-$tag"; price = 19; in_stock = $false }) }
 $dropped = WaitFor { (Ids (Reco "model=co_viewed&item_id=$A&limit=3")) -notcontains $B } 30
@@ -117,6 +117,37 @@ Write-Host "`n4) Quality endpoint"
 $q = S POST "/recommendations/evaluate?k=10"
 Check "hit rate endpoint answers with counts and rates" ($q.Status -eq 200 -and $null -ne $q.Json.cases -and $q.Json.k -eq 10)
 Check "read key cannot run the evaluation -> 403" ((K $readKey POST "/recommendations/evaluate").Status -eq 403)
+
+Write-Host "`n5) Personalized recommendations"
+Check "a read key cannot create the recommendation secret -> 403" ((K $readKey POST "/project/recommendation-secret").Status -eq 403)
+$secret = (S POST "/project/recommendation-secret").Json.recommendation_secret
+Check "a manager creates the recommendation secret" ($secret -like "rsk_*")
+Check "the project shows the secret to managers only" ((S GET "/project").Json.recommendation_secret -eq $secret -and $null -eq (K $readKey GET "/project").Json.recommendation_secret)
+function Sign([string]$distinctId, [long]$expires) {
+    $h = New-Object System.Security.Cryptography.HMACSHA256 (,[Text.Encoding]::UTF8.GetBytes($secret))
+    (($h.ComputeHash([Text.Encoding]::UTF8.GetBytes("$distinctId.$expires")) | ForEach-Object { $_.ToString("x2") }) -join "")
+}
+function Soon { [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + 300 }
+function ForYou([string]$distinctId, [long]$expires = (Soon), [string]$signature = $null) {
+    if (-not $signature) { $signature = Sign $distinctId $expires }
+    Reco "model=for_you&limit=10&distinct_id=$([Uri]::EscapeDataString($distinctId))&expires=$expires&signature=$signature"
+}
+function Personal($response) { return ,@($response.Json.items | Where-Object { $_.source -eq "for_you" } | ForEach-Object { $_.item_id }) }
+$mine = $null
+Check "a signed request returns the person's list: boots, bought with the shirt they viewed" (WaitFor { $script:mine = ForYou "user-$tag"; $script:mine.Status -eq 200 -and (Personal $script:mine) -contains $E } 90)
+Check "viewed items can come back, out-of-stock ones never -> $((Personal $mine) -join ', ')" ((Personal $mine) -contains $A -and (Personal $mine) -contains $C -and (Ids $mine) -notcontains $B -and (Ids $mine) -notcontains $D)
+Check "the response is private and never cached by proxies" ($mine.CacheControl -match "private" -and $mine.CacheControl -match "no-store")
+Check "the anonymous id of the same person gets the same list" (((Ids (ForYou "anon-$tag")) -join ",") -eq ((Ids $mine) -join ","))
+$buyerReco = ForYou "b1-$tag"
+Check "purchased items are never recommended -> $((Ids $buyerReco) -join ', ')" ($buyerReco.Status -eq 200 -and (Ids $buyerReco) -notcontains $A -and (Ids $buyerReco) -notcontains $E)
+$exp = Soon
+Check "a signature for another person -> 401" ((ForYou "user-$tag" $exp (Sign "b1-$tag" $exp)).Status -eq 401)
+$past = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds() - 5
+Check "an expired signature -> 401" ((ForYou "user-$tag" $past).Status -eq 401)
+Check "a signature valid for more than an hour -> 400" ((ForYou "user-$tag" ([DateTimeOffset]::UtcNow.ToUnixTimeSeconds() + 7200)).Status -eq 400)
+Check "for_you without a signature -> 400" ((Reco "model=for_you&distinct_id=user-$tag").Status -eq 400)
+$null = S POST "/deletion-requests" @{ target_type = "distinct_id"; target_id = "user-$tag" }
+Check "after a deletion request the person's history is no longer used" (WaitFor { $r = ForYou "user-$tag"; $r.Status -eq 200 -and (Personal $r).Count -eq 0 } 120)
 
 foreach ($i in @($A, $B, $C, $D, $E, $F)) { $null = S DELETE "/items/$i" }
 $null = S DELETE "/api-keys/$($ck.api_key.id)"

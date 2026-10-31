@@ -18,6 +18,7 @@ public sealed class RecommendationRefreshJob(RecommendationRepository repository
     ILogger<RecommendationRefreshJob> log) : BackgroundService
 {
     readonly record struct Row(string Source, string ItemId, double Score);
+    readonly record struct HistoryRow(string Person, string ItemId, int Weight, DateTime At);
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
@@ -63,11 +64,42 @@ public sealed class RecommendationRefreshJob(RecommendationRepository repository
                 log.LogInformation("Recommendations {Model} (project {Project}): {Sources} source items, {Rows} candidates in {Ms} ms",
                     model, projectId, groups.Count, rows.Count, sw.ElapsedMilliseconds);
             }
+            await RefreshHistoryAsync(store, projectId, ct);
         }
         finally
         {
             await RecommendationRepository.UnlockAsync(lockConn, projectId);
         }
+    }
+
+    async Task RefreshHistoryAsync(StarRocksStore store, long projectId, CancellationToken ct)
+    {
+        var sw = Stopwatch.StartNew();
+        var rows = await store.QueryAsync(RecommendationSql.PersonHistory(projectId, DateTime.UtcNow),
+            r => new HistoryRow(r.GetString(0), r.GetString(1), Convert.ToInt32(r.GetValue(2)), r.GetDateTime(3)), ct);
+        var people = rows.GroupBy(r => r.Person).ToList();
+        await repository.ReplaceHistoryAsync(projectId, people.Select(g => g.Key).ToArray(), people.Select(HistoryJson).ToArray(), ct);
+        log.LogInformation("Person history (project {Project}): {People} people, {Rows} items in {Ms} ms",
+            projectId, people.Count, rows.Count, sw.ElapsedMilliseconds);
+    }
+
+    static string HistoryJson(IEnumerable<HistoryRow> items)
+    {
+        var buffer = new ArrayBufferWriter<byte>(1024);
+        using (var w = new Utf8JsonWriter(buffer))
+        {
+            w.WriteStartArray();
+            foreach (var i in items)
+            {
+                w.WriteStartObject();
+                w.WriteString("item_id", i.ItemId);
+                w.WriteNumber("weight", i.Weight);
+                w.WriteNumber("at", new DateTimeOffset(DateTime.SpecifyKind(i.At, DateTimeKind.Utc)).ToUnixTimeSeconds());
+                w.WriteEndObject();
+            }
+            w.WriteEndArray();
+        }
+        return Encoding.UTF8.GetString(buffer.WrittenSpan);
     }
 
     static string Json(IEnumerable<Row> candidates)

@@ -188,6 +188,7 @@ Check "members table lists the owner" ((Section $html "members-table") -match [r
 Check "API keys table lists the local read key" ((Section $html "api-keys-table") -match 'Local read key')
 Check "change password form is shown" ($html -match 'data-testid="settings-account"')
 Check "project card shows the public key and the new project form" ((Section $html "project-info") -match 'pk_dev_local' -and $html -match 'data-testid="create-project"')
+Check "the owner manages the recommendation secret on the project card" ((Section $html "recommendation-secret") -match 'Recommendation secret' -and (Section $html "recommendation-secret") -match '>(Rotate|Generate)<')
 
 Write-Host "`n8) Sign-out"
 $html = Dom "#/trends" "(function(){const b=document.querySelector('[data-testid=logout]');if(b&&!window.__out){window.__out=1;b.click()}return false})() || document.querySelector('[data-testid=login-form]')"

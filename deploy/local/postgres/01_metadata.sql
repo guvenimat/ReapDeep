@@ -34,6 +34,7 @@ CREATE TABLE projects (
     name             TEXT        NOT NULL,
     public_key       TEXT        NOT NULL UNIQUE,
     timezone         TEXT        NOT NULL DEFAULT 'Europe/Istanbul',
+    recommendation_secret TEXT,
     created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
@@ -200,6 +201,14 @@ CREATE TABLE item_recommendations (
     recommended_items  JSONB         NOT NULL DEFAULT '[]',
     calculated_at      TIMESTAMPTZ   NOT NULL DEFAULT now(),
     PRIMARY KEY (project_id, model, source_item_id)
+);
+
+CREATE TABLE person_item_history (
+    project_id     BIGINT        NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    person_key     VARCHAR(200)  NOT NULL,
+    items          JSONB         NOT NULL DEFAULT '[]',
+    calculated_at  TIMESTAMPTZ   NOT NULL DEFAULT now(),
+    PRIMARY KEY (project_id, person_key)
 );
 
 CREATE TABLE recommendation_runs (

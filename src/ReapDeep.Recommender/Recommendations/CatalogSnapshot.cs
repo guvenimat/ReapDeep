@@ -7,6 +7,8 @@ public sealed record CatalogItem(string ItemId, string Title, string Category, d
 
 public readonly record struct Candidate(string ItemId, double Score);
 
+public readonly record struct HistoryItem(string ItemId, int Weight, long At);
+
 public sealed record RecommendedItem(
     string ItemId, string Title, string Category, decimal? Price, string Currency, string Url, string ImageUrl, double Score, string Source);
 
@@ -18,6 +20,9 @@ public sealed class CatalogSnapshot(
     public static readonly CatalogSnapshot Empty = new(
         FrozenDictionary<string, CatalogItem>.Empty, FrozenDictionary<string, Candidate[]>.Empty,
         FrozenDictionary<string, FrozenDictionary<string, Candidate[]>>.Empty);
+
+    public const double PersonalHalfLifeDays = 14;
+    static readonly string[] PersonalSources = [RecommendationSql.CoViewed, RecommendationSql.BoughtTogether];
 
     public int ItemCount => items.Count;
 
@@ -42,6 +47,34 @@ public sealed class CatalogSnapshot(
             if (!string.IsNullOrEmpty(sourceCategory)) Take(popular, RecommendationSql.Popular, sourceCategory, limit, result, taken);
             Take(popular, RecommendationSql.Popular, category, limit, result, taken);
         }
+        return result;
+    }
+
+    public List<RecommendedItem> RecommendForPerson(IReadOnlyList<HistoryItem> history, string? category, int limit, DateTime nowUtc)
+    {
+        var bought = history.Where(h => h.Weight >= RecommendationSql.PurchaseWeight).Select(h => h.ItemId).ToHashSet(StringComparer.Ordinal);
+        var now = new DateTimeOffset(nowUtc).ToUnixTimeSeconds();
+        var scores = new Dictionary<string, double>(StringComparer.Ordinal);
+        foreach (var h in history)
+        {
+            var ageDays = Math.Max(0, now - h.At) / 86_400d;
+            var weight = h.Weight * Math.Pow(0.5, ageDays / PersonalHalfLifeDays);
+            foreach (var model in PersonalSources)
+            {
+                foreach (var c in similar.GetValueOrDefault(model)?.GetValueOrDefault(h.ItemId) ?? [])
+                {
+                    if (bought.Contains(c.ItemId)) continue;
+                    scores[c.ItemId] = scores.GetValueOrDefault(c.ItemId) + weight * c.Score;
+                }
+            }
+        }
+
+        var result = new List<RecommendedItem>(limit);
+        var taken = new HashSet<string>(bought, StringComparer.Ordinal);
+        var ranked = scores.OrderByDescending(s => s.Value).ThenBy(s => s.Key, StringComparer.Ordinal)
+            .Select(s => new Candidate(s.Key, Math.Round(s.Value, 6))).ToArray();
+        Take(ranked, RecommendationSql.ForYou, category, limit, result, taken);
+        Take(global.GetValueOrDefault(RecommendationSql.Popular) ?? [], RecommendationSql.Popular, category, limit, result, taken);
         return result;
     }
 

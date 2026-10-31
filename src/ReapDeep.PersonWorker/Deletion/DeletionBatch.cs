@@ -62,6 +62,10 @@ public sealed class DeletionBatch(NpgsqlConnection conn, NpgsqlTransaction tx, l
             "DELETE FROM cohort_static_members WHERE project_id = @ProjectId AND distinct_id = ANY(@DistinctIds)",
             new { ProjectId = projectId, DistinctIds = DistinctIds.ToArray() }, tx);
 
+        await conn.ExecuteAsync(
+            "DELETE FROM person_item_history WHERE project_id = @ProjectId AND person_key = ANY(@Keys)",
+            new { ProjectId = projectId, Keys = DistinctIds.Concat(affected.Select(p => p.ToString())).ToArray() }, tx);
+
         return new DeletionResult(removed.Count, persons, staticMembers);
     }
 

@@ -9,9 +9,10 @@ public sealed class ProjectCache(NpgsqlDataSource db, ILogger<ProjectCache> log)
     static readonly TimeSpan RefreshInterval = TimeSpan.FromSeconds(30);
     static readonly TimeSpan RetryInterval = TimeSpan.FromSeconds(2);
 
-    internal sealed record ProjectKeyRecord(string PublicKey, long Id);
+    internal sealed record ProjectKeyRecord(string PublicKey, long Id, string? RecommendationSecret);
 
     volatile FrozenDictionary<string, long>? _projects;
+    volatile FrozenDictionary<long, string> _secrets = FrozenDictionary<long, string>.Empty;
 
     public bool IsLoaded => _projects is not null;
 
@@ -21,6 +22,8 @@ public sealed class ProjectCache(NpgsqlDataSource db, ILogger<ProjectCache> log)
         return _projects?.TryGetValue(publicKey, out projectId) == true;
     }
 
+    public string? RecommendationSecret(long projectId) => _secrets.GetValueOrDefault(projectId);
+
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
@@ -28,7 +31,8 @@ public sealed class ProjectCache(NpgsqlDataSource db, ILogger<ProjectCache> log)
             try
             {
                 await using var conn = await db.OpenConnectionAsync(ct);
-                var rows = await conn.QueryAsync<ProjectKeyRecord>("SELECT public_key, id FROM projects");
+                var rows = (await conn.QueryAsync<ProjectKeyRecord>("SELECT public_key, id, recommendation_secret FROM projects")).AsList();
+                _secrets = rows.Where(r => !string.IsNullOrEmpty(r.RecommendationSecret)).ToFrozenDictionary(r => r.Id, r => r.RecommendationSecret!);
                 _projects = rows.ToFrozenDictionary(r => r.PublicKey, r => r.Id);
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)

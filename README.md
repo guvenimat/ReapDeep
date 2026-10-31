@@ -61,7 +61,7 @@ flowchart LR
 - **Identity.** PostgreSQL is the source of truth for persons. The worker applies merge rules (two identified persons are never merged) and writes changes to an outbox in the same transaction. A publisher forwards them to Kafka, and StarRocks applies them in version order.
 - **Definitions.** The ingestion API keeps an in-memory set of the event names, event properties and `$set` person properties it has seen per project, with an inferred type (string, number, boolean, datetime). New names are written to PostgreSQL (`event_definitions`, `property_definitions`) in batches every 10 s, and known names are refreshed at most once an hour, so the hot path never waits on the database. The dashboard's autocomplete reads them from `GET /api/v1/metadata`. Each project is capped at 10K names per scope.
 - **Deletion.** Owners and admins request deletion of a person or a `distinct_id` (`POST /api/v1/deletion-requests`). A periodic batch job in the person worker (daily by default) deletes the events from StarRocks with one `DELETE` per project, removes the identity rows from PostgreSQL, and sends tombstones through the outbox so StarRocks drops the mappings and person properties in version order; the tombstones are purged later. Batching keeps StarRocks delete-predicate and compaction load low.
-- **Recommendations.** Product events carry `item_id`, which ingestion stores in its own column. The person worker computes four models in StarRocks (popular, trending, co_viewed, bought_together) and writes each project's lists to PostgreSQL. The Recommender answers `GET /recommend?api_key=pk_...` from an in-memory copy of the catalog and the lists, so it never queries StarRocks; stock and category are applied per request.
+- **Recommendations.** Product events carry `item_id`, which ingestion stores in its own column. The person worker computes four models in StarRocks (popular, trending, co_viewed, bought_together) and writes each project's lists to PostgreSQL. The Recommender answers `GET /recommend?api_key=pk_...` from an in-memory copy of the catalog and the lists, so it never queries StarRocks; stock and category are applied per request. Personalized lists (`for_you`) need a request signed by the store's backend.
 - **Queries.** A person is `COALESCE(pdi.person_id, e.distinct_id)` over a `LEFT JOIN`, so anonymous events are never dropped. Date filters use UTC boundaries for partition pruning; the project time zone is used only for bucketing.
 
 ## Quick start
@@ -201,6 +201,21 @@ Quality is measured on demand (`POST /api/v1/recommendations/evaluate`, the Cata
 
 The recommendation tables hold aggregates over many people, not personal data. A deleted person's interactions drop out at the next refresh.
 
+#### Personalized recommendations
+
+`for_you` recommends from a person's own history: each item they touched in the last 90 days (their 30 most recent, plus every purchase) adds its `co_viewed` and `bought_together` neighbors, weighted by the interaction (view 1, cart 3, purchase 5) and halved every 14 days. Purchased items are never recommended; items the person only viewed can come back. Short lists are filled with popular items (`source: popular`).
+
+The person worker writes each person's history to PostgreSQL (`person_item_history`) in the same refresh as the models, and the Recommender reads one row per request: the `distinct_id` is resolved to its person first, so an anonymous visit before sign-in counts too. A deletion request removes the person's history at once.
+
+A public key alone must not reveal what someone looked at, so the request carries a signature made with the project's recommendation secret (Settings, owners and admins; `POST /api/v1/project/recommendation-secret` creates or rotates it). The secret stays on the store's server:
+
+```
+signature = hex(HMAC-SHA256(recommendation_secret, "{distinct_id}.{expires}"))
+GET /recommend?api_key=pk_...&model=for_you&distinct_id=customer-42&expires=1793430000&signature=...
+```
+
+`expires` is a Unix time at most one hour ahead. A wrong or expired signature is `401`; personalized answers are sent with `Cache-Control: private, no-store`. On the demo project (3,985 people with a history) a personalized request takes 1.2 ms at p50 and 1.6 ms at p95, measured from the host.
+
 Measured on the 30M-event seed with a 2,000-item catalog (`load-test.ps1`):
 
 | | Result |
@@ -315,7 +330,7 @@ cd deploy/local
 .\cohort-test.ps1       # cohorts: rules, identity merge, static lists, filters and breakdowns, recalculation, deletion
 .\rfm-lifecycle-test.ps1  # RFM scores and segments with known answers, rfm_segment cohorts, lifecycle states and look-back
 .\alerts-test.ps1       # alerts: validation, firing and resolving, signed webhooks to a local receiver, change and formula conditions, errors
-.\recommender-test.ps1  # catalog, key scopes, models from real events, the public Recommender, stock changes
+.\recommender-test.ps1  # catalog, key scopes, models from real events, the public Recommender, stock changes, signed for_you requests
 .\query-test.ps1        # Query API: trends, funnels, retention, paths, events, persons, EXPLAIN, latency
 .\dashboard-test.ps1    # headless Chrome against the dashboard (Chrome DevTools Protocol)
 .\load-test.ps1         # ingestion load, 100M seed, cohort calculation, query benchmark (incl. RFM and lifecycle), cleanup

@@ -284,10 +284,17 @@ summary table.
 analytics: the project-access middleware rejects them on every endpoint not marked as a catalog endpoint.
 
 The recommendation tables are aggregates over many people and hold no personal data; when a person is
-deleted, their interactions drop out at the next refresh. Personalized recommendations ("for this
-visitor") were left out on purpose: they would be fetched with the public key, so anyone who knows or
-guesses a `distinct_id` could read what that person looked at. They need a token signed by the store's
-backend first.
+deleted, their interactions drop out at the next refresh.
+
+Personalized recommendations (`for_you`) are the exception, and they are built around it:
+
+| Decision | Alternative | Why |
+|---|---|---|
+| Store each person's recent items (`person_item_history`) and score at request time | store a finished list per person | the item lists and stock are already live in the Recommender, so a personal list follows stock changes at once; the stored history is small (30 items plus purchases) |
+| Request signed with a per-project secret, `HMAC(secret, distinct_id.expires)`, at most one hour | the public key alone | anyone who knows or guesses a `distinct_id` could otherwise read what that person looked at |
+| A signature, not a secret API key | a server-only `recommend` key | the same request works from a browser when the store's backend renders the signature into the page |
+| The Recommender reads one PostgreSQL row per request | keep every history in memory | the history can be large; the lookup resolves `distinct_id` to the person and is a primary-key read (1.2 ms p50 end to end on the demo project) |
+| A deletion request deletes the person's history in the same transaction | wait for the next refresh | the history is personal data |
 
 ### RFM and lifecycle
 

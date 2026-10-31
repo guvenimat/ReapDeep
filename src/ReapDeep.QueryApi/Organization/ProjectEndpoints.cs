@@ -8,18 +8,27 @@ namespace ReapDeep.QueryApi.Organization;
 public static class ProjectEndpoints
 {
     const string PublicKeyPrefix = "pk_";
+    const string RecommendationSecretPrefix = "rsk_";
     const string DefaultTimezone = "Europe/Istanbul";
 
     public static void MapProjects(this RouteGroupBuilder api)
     {
         api.MapGet("/project", Current);
         api.MapPost("/projects", Create).RequireOwner();
+        api.MapPost("/project/recommendation-secret", RotateRecommendationSecret).RequireManager();
     }
 
     static async Task<IResult> Current(ProjectContext project, ProjectRepository projects, CancellationToken ct) =>
         await projects.GetAsync(project.ProjectId, ct) is { } detail
-            ? ApiResults.Ok(detail, AppJsonContext.Default.ProjectDetail)
+            ? ApiResults.Ok(project.CanManage && project.UserId is not null ? detail : detail with { RecommendationSecret = null }, AppJsonContext.Default.ProjectDetail)
             : ApiResults.NotFound("Project not found");
+
+    static async Task<IResult> RotateRecommendationSecret(ProjectContext project, ProjectRepository projects, CancellationToken ct)
+    {
+        var secret = RecommendationSecretPrefix + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
+        await projects.SetRecommendationSecretAsync(project.ProjectId, secret, ct);
+        return ApiResults.Ok(new RecommendationSecretResponse(secret), AppJsonContext.Default.RecommendationSecretResponse);
+    }
 
     static async Task<IResult> Create(CreateProjectRequest req, ProjectContext project, ProjectRepository projects, SessionService sessions, CancellationToken ct)
     {
