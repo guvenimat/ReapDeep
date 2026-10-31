@@ -66,6 +66,14 @@ flowchart LR
 - **Recommendations.** Product events carry `item_id`, which ingestion stores in its own column. The person worker computes four models in StarRocks (popular, trending, co_viewed, bought_together) and writes each project's lists to PostgreSQL. The Recommender answers `GET /recommend?api_key=pk_...` from an in-memory copy of the catalog and the lists, so it never queries StarRocks; stock and category are applied per request. Personalized lists (`for_you`) need a request signed by the store's backend.
 - **Queries.** A person is `COALESCE(pdi.person_id, e.distinct_id)` over a `LEFT JOIN`, so anonymous events are never dropped. Date filters use UTC boundaries for partition pruning; the project time zone is used only for bucketing.
 
+### Operations
+
+- **Telemetry.** Ingestion, the Query API, the person worker and the Recommender share `ReapDeep.ServiceDefaults`, which exports traces, metrics and logs over OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. The local stack sends them to `grafana/otel-lgtm` (Tempo, Prometheus, Loki, Grafana) at http://localhost:3005, where the provisioned *ReapDeep overview* dashboard shows events per second, duplicates, rejections and Kafka refusals, capture latency against the 50 ms target, the routine load jobs, query latency per route against the 1 s and 3 s targets, database latency, memory and recent warnings. MySqlConnector and Npgsql spans show each SQL statement.
+- **Health checks.** Every service container has a Docker health check: the HTTP services answer `/healthz` (the Query API also checks PostgreSQL and StarRocks, the Recommender waits for its caches), and the person worker writes a heartbeat file from its Kafka loop.
+- **Routine load watchdog.** The person worker reads `SHOW ROUTINE LOAD` every 30 s with its own `reapdeep_ops` user. A job that StarRocks paused after an outage (for example a backend that was briefly unavailable) is resumed automatically, at most once a minute. A job stopped by a message it cannot parse is never skipped automatically: it is reported in the logs and on the dashboard so an operator can inspect the message. Jobs paused by an operator are left alone.
+
+![ReapDeep overview dashboard in Grafana](docs/images/grafana-overview.png)
+
 ## Quick start
 
 Requirements: Docker with at least **8 GB of RAM**. The .NET 10 SDK and Node.js 22+ are only needed for development outside Docker.
@@ -86,7 +94,7 @@ cd deploy/local
 docker compose --profile app up -d --build
 ```
 
-On first start, `.env` is created with random local credentials: the PostgreSQL password, a project read API key (`READ_API_KEY`), the dashboard admin account (`ADMIN_EMAIL`, `ADMIN_PASSWORD`) and the password of the read-only StarRocks user the Query API connects with. Missing keys are added to an existing `.env` automatically. The file is git-ignored, and every port is bound to `127.0.0.1`.
+On first start, `.env` is created with random local credentials: the PostgreSQL password, a project read API key (`READ_API_KEY`), the dashboard admin account (`ADMIN_EMAIL`, `ADMIN_PASSWORD`) the passwords of the StarRocks users (read-only for the Query API, jobs for the person worker, operations for the routine load watchdog) and the Redis password. Missing keys are added to an existing `.env` automatically. The file is git-ignored, and every port is bound to `127.0.0.1`.
 
 | Service | Address |
 |---|---|
@@ -95,6 +103,7 @@ On first start, `.env` is created with random local credentials: the PostgreSQL 
 | Query API | http://localhost:8001 (`Authorization: Bearer <READ_API_KEY>`, or a dashboard session) |
 | StarRocks (MySQL protocol) | `localhost:9030`, user `root` |
 | PostgreSQL | `localhost:5432`, user `reapdeep`, password in `.env` |
+| Grafana (traces, metrics, logs) | http://localhost:3005 |
 | Kafka | `localhost:9092` |
 
 ### Send an event
@@ -335,6 +344,7 @@ cd deploy/local
 .\recommender-test.ps1  # catalog, key scopes, models from real events, the public Recommender, stock changes, signed for_you requests
 .\query-test.ps1        # Query API: trends, funnels, retention, paths, events, persons, EXPLAIN, latency
 .\durability-test.ps1   # duplicate retries, Redis and Kafka outages without loss, dead letters, de-duplicated event list
+.\observability-test.ps1  # health checks, metrics, traces and logs in Grafana, the routine load watchdog
 .\dashboard-test.ps1    # headless Chrome against the dashboard (Chrome DevTools Protocol)
 .\load-test.ps1         # ingestion load, 100M seed, cohort calculation, query benchmark (incl. RFM and lifecycle), cleanup
 

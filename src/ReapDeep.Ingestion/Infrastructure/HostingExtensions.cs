@@ -4,6 +4,7 @@ using ReapDeep.Ingestion.Capture;
 using ReapDeep.Ingestion.Definitions;
 using ReapDeep.Ingestion.Kafka;
 using ReapDeep.Ingestion.Projects;
+using ReapDeep.ServiceDefaults;
 
 namespace ReapDeep.Ingestion.Infrastructure;
 
@@ -15,6 +16,7 @@ public static class HostingExtensions
     {
         var cfg = builder.Configuration;
         var services = builder.Services;
+        builder.AddReapDeepTelemetry("reapdeep-ingestion");
 
         builder.WebHost.ConfigureKestrel(o => o.Limits.MaxRequestBodySize = MaxRequestBodyBytes);
         services.ConfigureHttpJsonOptions(o => o.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonContext.Default));

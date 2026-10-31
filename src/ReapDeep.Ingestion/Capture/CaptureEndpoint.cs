@@ -66,11 +66,16 @@ public static class CaptureEndpoint
         catch (Exception ex) when (EventProducer.IsDeliveryFailure(ex))
         {
             await dedup.ReleaseAsync(projectId, claimed);
+            IngestionMetrics.KafkaFailures.Add(1);
             loggers.CreateLogger(typeof(CaptureEndpoint).FullName!).LogError(ex, "Failed to write to Kafka");
             return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
         }
 
         foreach (var e in accepted) definitions.Observe(projectId, e.Event!, e.Properties);
+        var project = new KeyValuePair<string, object?>("project_id", projectId);
+        IngestionMetrics.Accepted.Add(accepted.Count, project);
+        if (duplicates > 0) IngestionMetrics.Duplicates.Add(duplicates, project);
+        if (batch.Count > valid.Count) IngestionMetrics.Rejected.Add(batch.Count - valid.Count, project);
         return Results.Json(new CaptureResponse(accepted.Count + duplicates, batch.Count - valid.Count, duplicates), AppJsonContext.Default.CaptureResponse,
             statusCode: StatusCodes.Status202Accepted);
     }

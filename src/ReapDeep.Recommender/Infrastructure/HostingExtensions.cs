@@ -2,6 +2,7 @@ using System.Text.Json;
 using Npgsql;
 using ReapDeep.Recommender.Projects;
 using ReapDeep.Recommender.Recommendations;
+using ReapDeep.ServiceDefaults;
 
 namespace ReapDeep.Recommender.Infrastructure;
 
@@ -10,6 +11,7 @@ public static class HostingExtensions
     public static WebApplicationBuilder AddRecommender(this WebApplicationBuilder builder)
     {
         var services = builder.Services;
+        builder.AddReapDeepTelemetry("reapdeep-recommender");
         services.ConfigureHttpJsonOptions(o =>
         {
             o.SerializerOptions.TypeInfoResolverChain.Insert(0, AppJsonContext.Default);

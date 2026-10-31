@@ -3,8 +3,10 @@ using Npgsql;
 using ReapDeep.PersonWorker.Cohorts;
 using ReapDeep.PersonWorker.Deletion;
 using ReapDeep.PersonWorker.Identity;
+using ReapDeep.PersonWorker.Operations;
 using ReapDeep.PersonWorker.Outbox;
 using ReapDeep.PersonWorker.Recommendations;
+using ReapDeep.ServiceDefaults;
 
 namespace ReapDeep.PersonWorker.Infrastructure;
 
@@ -14,6 +16,7 @@ public static class HostingExtensions
     {
         var cfg = builder.Configuration;
         var services = builder.Services;
+        builder.AddReapDeepTelemetry("reapdeep-person-worker", "ReapDeep.PersonWorker");
 
         var pg = new NpgsqlSlimDataSourceBuilder(cfg.GetConnectionString("Postgres"));
         pg.EnableArrays();
@@ -22,6 +25,7 @@ public static class HostingExtensions
         services.AddSingleton<IdentityResolver>();
         services.AddSingleton<DeadLetterProducer>();
         services.AddHostedService<EventConsumer>();
+        services.AddHostedService<RoutineLoadWatchdog>();
         services.AddHostedService<OutboxPublisher>();
 
         var starRocks = cfg.GetConnectionString("StarRocks");

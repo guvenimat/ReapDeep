@@ -30,5 +30,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\ReapDeep.Analytics\ReapDeep.Analytics.csproj" />
+    <ProjectReference Include="..\ReapDeep.ServiceDefaults\ReapDeep.ServiceDefaults.csproj" />
   </ItemGroup>
 </Project>
