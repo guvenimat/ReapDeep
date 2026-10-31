@@ -333,7 +333,7 @@ The 1.1 s runs of the filtered RFM query overlapped with the person worker's 30 
 ## Tests
 
 ```powershell
-dotnet test tests/ReapDeep.UnitTests   # SQL builder tenancy and parameters, cohort, RFM, lifecycle and recommendation SQL, recommender selection, time ranges, passwords, user agents
+dotnet test tests/ReapDeep.UnitTests   # SQL builder tenancy and parameters, cohort, RFM, lifecycle and recommendation SQL, recommender selection, time ranges, passwords, user agents, migrations, and contract tests (below)
 
 cd deploy/local
 .\identity-test.ps1     # identity resolution, 10 end-to-end scenarios
@@ -356,6 +356,8 @@ cd ../../sdk/js
 npm test                # SDK unit tests (vitest + jsdom)
 .\demo\e2e.ps1          # real browser -> ingestion -> Kafka -> StarRocks
 ```
+
+The contract tests keep the hand-synchronized formats honest without running the stack: the event JSON written by ingestion must have exactly the fields the `events_from_kafka` routine load reads and the `events` table has; the person and distinct id payloads that the person worker and the deletion job write to the outbox must match their routine loads; the SDK may only send fields the ingestion contract reads; and every field the dashboard's TypeScript types use must exist on the Query API contract of the same name.
 
 Useful commands:
 
