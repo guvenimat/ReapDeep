@@ -75,7 +75,7 @@ export function Alerts({ canManage }: { canManage: boolean }) {
           <div className="table-wrap">
             <table data-testid="alerts-table">
               <thead>
-                <tr><th>Alert</th><th>State</th><th className="num">Last value</th><th>Checked</th>{canManage && <th />}</tr>
+                <tr><th>Alert</th><th>State</th><th className="num">Last value</th><th>Checked</th>{canManage && <th><span className="sr-only">Actions</span></th>}</tr>
               </thead>
               <tbody>
                 {alerts.map((a) => (

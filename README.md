@@ -352,7 +352,11 @@ cd deploy/local
 .\dashboard-test.ps1    # headless Chrome against the dashboard (Chrome DevTools Protocol)
 .\load-test.ps1         # ingestion load, 100M seed, cohort calculation, query benchmark (incl. RFM and lifecycle), cleanup
 
-cd ../../sdk/js
+cd ../../dashboard
+npm run lint            # oxlint: correctness, React hooks, accessibility
+npm test                # component and formatting tests (vitest + Testing Library)
+
+cd ../sdk/js
 npm test                # SDK unit tests (vitest + jsdom)
 .\demo\e2e.ps1          # real browser -> ingestion -> Kafka -> StarRocks
 ```
@@ -388,6 +392,8 @@ tests/ReapDeep.UnitTests    unit tests for the pure logic
 docs/architecture.md        design decisions, alternatives and measurements
 deploy/local                Docker Compose stack, Grafana dashboard and test scripts
 ```
+
+Shared build settings and every NuGet package version live in `src/Directory.Build.props` and `src/Directory.Packages.props` (central package management, imported by `tests/`), the SDK version is pinned in `global.json`, and `.editorconfig` sets the formatting and C# style conventions. The dashboard is linted with oxlint rather than ESLint because typescript-eslint does not support TypeScript 7 yet.
 
 ## Status and limitations
 

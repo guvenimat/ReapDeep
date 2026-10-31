@@ -28,7 +28,7 @@ export function TimeChart({ buckets, interval, series, mode, height = 280 }: {
 
   let endLabels: { s: ChartSeries; y: number }[] = []
   if (directLabels && n > 0) {
-    endLabels = series.map((s) => ({ s, y: y(s.values[n - 1]) })).sort((a, b) => a.y - b.y)
+    endLabels = series.map((s) => ({ s, y: y(s.values[n - 1]) })).toSorted((a, b) => a.y - b.y)
     if (endLabels.some((l, k) => k > 0 && l.y - endLabels[k - 1].y < 14)) endLabels = []
   }
 
@@ -111,7 +111,7 @@ export function TimeChart({ buckets, interval, series, mode, height = 280 }: {
       {hover && n > 0 && (
         <Tooltip x={hover.x} y={hover.y} width={width}>
           <div className="tooltip-title">{bucketLabel(buckets[hover.i], interval, true)}</div>
-          {[...series].sort((a, b) => b.values[hover.i] - a.values[hover.i]).map((s) => (
+          {series.toSorted((a, b) => b.values[hover.i] - a.values[hover.i]).map((s) => (
             <TooltipRow key={s.key} color={seriesColor(s.colorIndex)} label={s.label} value={num(s.values[hover.i])} />
           ))}
         </Tooltip>

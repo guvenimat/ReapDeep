@@ -46,7 +46,7 @@ async function request<T>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', p
       ...(currentProject !== undefined ? { 'X-Project-Id': String(currentProject) } : {}),
       ...(body ? { 'Content-Type': 'application/json' } : {}),
     },
-    body: body ? JSON.stringify(body) : undefined,
+    ...(body ? { body: JSON.stringify(body) } : {}),
   })
   if (res.status === 401 && !path.startsWith('/api/v1/auth/')) onUnauthorized()
   if (!res.ok) {

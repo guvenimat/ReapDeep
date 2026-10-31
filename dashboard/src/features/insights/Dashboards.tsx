@@ -75,7 +75,7 @@ function DashboardList({ params, openDashboard }: { params: URLSearchParams; ope
         <Status state={insights} empty={insights.data?.insights.length === 0} emptyText="Open an analysis tab and save it to see it here.">
           <div className="table-wrap">
             <table data-testid="insights-table">
-              <thead><tr><th>Name</th><th>Type</th><th>Created by</th><th>Updated</th><th /></tr></thead>
+              <thead><tr><th>Name</th><th>Type</th><th>Created by</th><th>Updated</th><th><span className="sr-only">Actions</span></th></tr></thead>
               <tbody>
                 {insights.data?.insights.map((i) => (
                   <tr key={i.id}>

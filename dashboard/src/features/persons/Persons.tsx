@@ -94,7 +94,7 @@ function PersonDetail({ id, onClose, canManage, onDeletionRequested }: {
   const person = useQuery((signal) => api.person(id, signal), [id])
   const [deletion, setDeletion] = useState<{ id: string; state: 'sending' | 'done' | string }>()
   const deletionState = deletion?.id === id ? deletion.state : undefined
-  const from = new Date(Date.now() - 365 * 86400_000).toISOString()
+  const [from] = useState(() => new Date(Date.now() - 365 * 86400_000).toISOString())
   const events = useQuery((signal) => api.events({ person_id: id, limit: 200, date_from: from }, signal), [id])
   const rfm = useQuery((signal) => api.personRfm(id, signal), [id])
 

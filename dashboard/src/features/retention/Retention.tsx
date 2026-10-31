@@ -24,10 +24,11 @@ export function retentionBody(state: RetentionState, range: Range) {
 
 const heatClass = (ratio: number) => (ratio <= 0 ? 'heat-0' : `heat-${Math.min(6, Math.ceil(ratio * 6))}`)
 
+const cohortLabel = (iso: string) => new Date(iso).toLocaleDateString('en-US', { day: '2-digit', month: 'short' })
+
 export function RetentionTable({ data, maxCohorts }: { data: RetentionResponse; maxCohorts?: number }) {
   const label = data.period === 'week' ? 'Week' : 'Day'
   const cohorts = maxCohorts ? data.cohorts.slice(-maxCohorts) : data.cohorts
-  const cohortLabel = (iso: string) => new Date(iso).toLocaleDateString('en-US', { day: '2-digit', month: 'short' })
   return (
     <div className="table-wrap">
       <table className="retention" data-testid="retention-table">

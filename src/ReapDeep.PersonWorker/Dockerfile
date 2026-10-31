@@ -1,5 +1,6 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0-noble-aot AS build
 WORKDIR /src
+COPY Directory.Build.props Directory.Packages.props ./
 COPY ReapDeep.Analytics/ReapDeep.Analytics.csproj ReapDeep.Analytics/
 COPY ReapDeep.ServiceDefaults/ReapDeep.ServiceDefaults.csproj ReapDeep.ServiceDefaults/
 COPY ReapDeep.PersonWorker/ReapDeep.PersonWorker.csproj ReapDeep.PersonWorker/
