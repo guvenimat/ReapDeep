@@ -16,4 +16,4 @@ The Query API connects to StarRocks as a SELECT-only user.
 
 - Tenant isolation is a property of one class, which is unit tested and covered by contract tests.
 - A new analysis cannot be written as hand-made SQL in an endpoint; it has to go through the builder.
-- Per-project quotas (events, alerts, cohorts) protect shared capacity from one large tenant.
+- Per-project limits (query quotas, at most 50 alerts, 10K event and property names) protect shared capacity from one large tenant.
