@@ -192,7 +192,18 @@ $i1 = S POST "/insights" @{ name = "RFM $tag"; kind = "rfm"; query = @{ window_d
 $i2 = S POST "/insights" @{ name = "Lifecycle $tag"; kind = "lifecycle"; query = @{ event = $act; period = "week" } }
 Check "rfm and lifecycle insights can be saved" ($i1.Status -eq 201 -and $i2.Status -eq 201)
 
-Write-Host "`n6) Cleanup"
+Write-Host "`n6) Refunds"
+$refunder = "refunder_$tag"
+Buy $refunder 3 "o-ref-$tag" 100
+Ev "refund" $refunder (Ago 1) @{ amount = 40; order_id = "o-ref-$tag"; item_id = "sku-1" }
+Ev "refund" $refunder (Ago 0.5) @{ amount = 5; order_id = "o-old-$tag"; item_id = "sku-1" }
+Flush
+$refunded = $null
+$seen = WaitFor { $script:refunded = (S GET "/persons/$refunder/rfm?purchase_event=$buy").Json; $script:refunded.monetary -eq 55 } 60
+Check "a refund lowers the spend (100 - 40 - 5 = 55) -> $($refunded.monetary)" $seen
+Check "but never counts as an order or as the last purchase -> $($refunded.orders) orders, $($refunded.recency_days) days" ($refunded.orders -eq 1 -and $refunded.recency_days -eq 3)
+
+Write-Host "`n7) Cleanup"
 $null = S DELETE "/cohorts/$($cohort.id)"
 foreach ($i in @($i1, $i2)) { if ($i.Json.id) { $null = S DELETE "/insights/$($i.Json.id)" } }
 

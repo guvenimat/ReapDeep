@@ -182,7 +182,7 @@ A dynamic cohort is a set of OR'ed groups of AND'ed conditions: *did event X at 
 
 ![Catalog](docs/images/catalog.png)
 
-The commerce contract is small: `product_viewed`, `add_to_cart` and `purchase` events with `properties.item_id` (one `purchase` per item, linked by `order_id`; the SDK's `trackPurchase` does that). The catalog lives in PostgreSQL and is written with `PUT /api/v1/items` by an owner or admin, a CSV upload in the dashboard, or a `catalog_write` API key (`ck_...`), which can only reach the catalog endpoints.
+The commerce contract is small: `product_viewed`, `add_to_cart` and `purchase` events with `properties.item_id` (one `purchase` per item, linked by `order_id`; the SDK's `trackPurchase` does that). A `refund` event with the same `order_id` and a positive `amount` lowers the customer's spend in RFM; it never counts as an order or as the last purchase. The catalog lives in PostgreSQL and is written with `PUT /api/v1/items` by an owner or admin, a CSV upload in the dashboard, or a `catalog_write` API key (`ck_...`), which can only reach the catalog endpoints.
 
 | Model | Signal | Window |
 |---|---|---|
