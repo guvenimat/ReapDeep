@@ -19,12 +19,12 @@ try {
     docker compose up -d
     if ($LASTEXITCODE -ne 0) { throw "docker compose up failed." }
 
-    Step "Waiting for init containers (up to 6 minutes)"
+    Step "Waiting for the migrations (up to 6 minutes)"
     $deadline = (Get-Date).AddMinutes(6)
     while ((Get-Date) -lt $deadline) {
-        $state = docker inspect -f "{{.State.Status}} {{.State.ExitCode}}" reapdeep-starrocks-init 2>$null
-        if ($state -like "exited 0") { Write-Host "starrocks-init finished."; break }
-        if ($state -like "exited *") { docker compose logs starrocks-init; throw "starrocks-init exited with an error: $state" }
+        $state = docker inspect -f "{{.State.Status}} {{.State.ExitCode}}" reapdeep-migrate 2>$null
+        if ($state -like "exited 0") { Write-Host "migrations finished."; break }
+        if ($state -like "exited *") { docker compose logs migrate; throw "migrate exited with an error: $state" }
         Start-Sleep -Seconds 10
         Write-Host "  waiting... ($state)"
     }
