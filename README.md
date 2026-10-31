@@ -24,7 +24,13 @@ retention, path and person questions over hundreds of millions of events.
 ## Architecture
 
 The design decisions, alternatives and measurements behind each component are written up in
-[docs/architecture.md](docs/architecture.md).
+[docs/architecture.md](docs/architecture.md); the key choices are summarized as decision records in
+[docs/adr](docs/adr): [StarRocks for events](docs/adr/0001-starrocks-for-events.md),
+[a durable 202 through Kafka](docs/adr/0002-durable-202-through-kafka.md),
+[shared tables behind one SQL builder](docs/adr/0003-shared-tables-one-sql-builder.md),
+[persons in PostgreSQL with an outbox](docs/adr/0004-persons-in-postgres-with-outbox.md),
+[a public in-memory Recommender](docs/adr/0005-public-recommender-service.md) and
+[customers on public interfaces only](docs/adr/0006-customers-use-public-interfaces.md).
 
 ```mermaid
 flowchart LR
@@ -266,6 +272,38 @@ Any trend or funnel can be saved by name from its tab (`/api/v1/insights`). A da
 ```
 
 Page views (including SPA navigation), sessions, UTM parameters, batching, retries and `sendBeacon` on page unload are handled automatically. See [`sdk/js/README.md`](sdk/js/README.md).
+
+## Used by ReapSeek
+
+[ReapSeek](https://github.com/guvenimat/ReapSeek) is a multi-seller marketplace built as ReapDeep's reference
+customer. It uses nothing but the public interfaces below, so everything it does is something any customer can do.
+
+```mermaid
+sequenceDiagram
+  participant B as Shopper's browser
+  participant S as ReapSeek
+  participant I as Ingestion API
+  participant R as Recommender
+  participant Q as Query API
+  S->>Q: PUT /api/v1/items (catalog key, on every product change)
+  B->>I: $pageview, product_viewed, add_to_cart (JS SDK)
+  S->>R: similar, bought together, popular, for_you (signed)
+  R-->>S: item ids, stock-aware
+  S->>I: purchase / refund per order line (server side)
+  S->>Q: cohorts and RFM segments (read key)
+  Note over S: issues targeted coupons
+  Q-->>S: alert webhook, HMAC signed
+```
+
+| ReapSeek feature | ReapDeep feature it uses |
+|---|---|
+| Product, cart and search tracking | JS SDK, identity merge on sign-in |
+| "Customers also viewed", "Frequently bought together", "Popular", "Trending" | Recommender lists |
+| "Recommended for you" on the home page | `for_you` with an HMAC-signed request |
+| Revenue and refund reports | server-side `purchase` and `refund` events with stable ids |
+| Coupon campaigns for "Customers at risk" or "Champions" | cohorts and RFM segments |
+| Back office alerts when purchases drop or refunds spike | trend alerts with signed webhooks |
+| Customer page with segment and recent activity | person RFM and event APIs |
 
 ## Performance
 
