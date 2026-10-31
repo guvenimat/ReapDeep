@@ -27,7 +27,7 @@ public static class Telemetry
             o.IncludeScopes = true;
         });
         builder.Services.AddOpenTelemetry()
-            .ConfigureResource(r => r.AddService(serviceName, serviceNamespace: "reapdeep"))
+            .ConfigureResource(r => r.AddService(Environment.GetEnvironmentVariable("OTEL_SERVICE_NAME") is { Length: > 0 } name ? name : serviceName, serviceNamespace: "reapdeep"))
             .WithTracing(t =>
             {
                 t.AddSource(Sources).AddHttpClientInstrumentation();

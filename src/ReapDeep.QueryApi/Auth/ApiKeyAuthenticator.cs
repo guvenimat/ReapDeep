@@ -31,6 +31,8 @@ public sealed class ApiKeyAuthenticator(ApiKeyRepository keys, AuthCache cache, 
 
     public Task InvalidateAsync(string keyHash) => cache.RemoveAsync(AuthCacheKeys.ApiKey(keyHash));
 
+    public static string? KeyHashOf(HttpRequest req) => ReadKey(req) is { Length: > 0 } key ? HashKey(key) : null;
+
     static string? ReadKey(HttpRequest req)
     {
         var auth = req.Headers.Authorization.ToString();

@@ -62,7 +62,9 @@ public static class HostingExtensions
         services.AddSingleton<StarRocksClient>();
 
         services.AddSingleton<AccountRepository>();
+        services.AddSingleton<RedisConnection>();
         services.AddSingleton<AuthCache>();
+        services.AddSingleton<QueryQuota>();
         services.AddSingleton<SessionService>();
         services.AddSingleton<ApiKeyAuthenticator>();
         services.AddHostedService<BootstrapOwner>();
@@ -90,7 +92,7 @@ public static class HostingExtensions
         services.AddSingleton<AlertRepository>();
         services.AddSingleton<WebhookSender>();
         services.AddSingleton<AlertService>();
-        services.AddHostedService<AlertJob>();
+        if (cfg.GetValue("Alerts:RunJob", true)) services.AddHostedService<AlertJob>();
         return builder;
     }
 
@@ -101,6 +103,7 @@ public static class HostingExtensions
         if (List(app.Configuration["QueryApi:CorsOrigins"]).Length > 0) app.UseCors();
         app.UseRateLimiter();
         app.UseMiddleware<ProjectAccessMiddleware>();
+        app.UseMiddleware<QueryQuotaMiddleware>();
         app.MapQueryApi();
         return app;
     }
