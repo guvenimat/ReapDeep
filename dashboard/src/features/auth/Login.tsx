@@ -34,7 +34,7 @@ export function Login({ onLogin }: { onLogin: (me: Me) => void }) {
         </div>
         <label className="field">
           <span>Email</span>
-          <input type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} name="email" placeholder="you@company.com" />
+          <input type="email" autoComplete="username" required value={email} onChange={(e) => setEmail(e.target.value)} name="email" placeholder="you@example.com" />
         </label>
         <label className="field">
           <span>Password</span>
