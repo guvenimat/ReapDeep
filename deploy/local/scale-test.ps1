@@ -59,7 +59,25 @@ $null = Send $owner $one DELETE "/members/$memberId"
 Check "a removed member loses access on instance 2 at once" ((Send $member $two GET "/members").Status -in 401, 403)
 Check "and on instance 1" ((Send $member $one GET "/members").Status -in 401, 403)
 
-Write-Host "`n3) Redis down"
+Write-Host "`n3) A request quota shared by the instances"
+$quotaKey = (Send $owner $one POST "/api-keys" "{`"name`":`"quota $tag`"}").Json
+$qauth = @{ Authorization = "Bearer $($quotaKey.key)" }
+$statuses = @()
+for ($i = 0; $i -lt 160; $i++) {
+    $base = if ($i % 2 -eq 0) { $one } else { $two }
+    $statuses += (Send $keyClient $base GET "/metadata" -headers $qauth).Status
+}
+$blocked = $null
+for ($i = 0; $i -lt 200; $i++) {
+    $r = $keyClient.SendAsync((New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::Get, "$(if ($i % 2 -eq 0) { $one } else { $two })/metadata") | ForEach-Object { $_.Headers.Add("Authorization", "Bearer $($quotaKey.key)"); $_ })).Result
+    if ([int]$r.StatusCode -eq 429) { $blocked = $r; break }
+}
+Check "requests from one key are counted across both instances and refused past the limit" ($null -ne $blocked -and ($statuses | Where-Object { $_ -ne 200 }).Count -eq 0)
+Check "the refusal says when to retry" ($blocked -and $blocked.Headers.RetryAfter.Delta.TotalSeconds -gt 0 -and $blocked.Headers.RetryAfter.Delta.TotalSeconds -le 60)
+Check "another key of the same project is not affected" ((Send $keyClient $one GET "/metadata" -headers @{ Authorization = "Bearer $($envValues.READ_API_KEY)" }).Status -eq 200)
+$null = Send $owner $one DELETE "/api-keys/$($quotaKey.api_key.id)"
+
+Write-Host "`n4) Redis down"
 Quiet @("stop", "reapdeep-redis")
 $other = New-Client
 Check "sign-in still works" ((Login $other $two $envValues.ADMIN_EMAIL $envValues.ADMIN_PASSWORD) -eq 200)

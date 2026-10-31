@@ -72,6 +72,8 @@ flowchart LR
 - **Health checks.** Every service container has a Docker health check: the HTTP services answer `/healthz` (the Query API also checks PostgreSQL and StarRocks, the Recommender waits for its caches), and the person worker writes a heartbeat file from its Kafka loop.
 - **Routine load watchdog.** The person worker reads `SHOW ROUTINE LOAD` every 30 s with its own `reapdeep_ops` user. A job that StarRocks paused after an outage (for example a backend that was briefly unavailable) is resumed automatically, at most once a minute. A job stopped by a message it cannot parse is never skipped automatically: it is reported in the logs and on the dashboard so an operator can inspect the message. Jobs paused by an operator are left alone.
 - **Several Query API instances.** Sessions and API keys are cached in Redis, not in process memory (`auth:session:*` for 30 s, `auth:key:*` for 60 s, 10 s for unknown keys), and every change that affects access (role change, removed member, password change, revoked key) deletes the cached entries, so a second instance never accepts a revoked session or key. Without Redis every request reads PostgreSQL. `docker compose --profile scale up -d query-api-2` starts a second instance on port 8003.
+- **Alerts run apart from user queries.** The alert job runs in its own process (`alert-runner`, the Query API image with `Alerts__RunJob=true`); the API instances leave it off. It connects to StarRocks as `reapdeep_alerts` in the `rg_alerts` resource group (CPU weight 1, 20% memory, 2 concurrent queries), so a burst of alert checks cannot slow down the dashboard. Alerts are claimed with a lease, so several runners never check the same alert twice.
+- **Request quotas.** Project endpoints are limited per minute to 300 requests per user or API key and 1,200 per project (`QueryApi__RequestsPerMinutePerPrincipal`, `QueryApi__RequestsPerMinutePerProject`). The counters live in Redis, so the limit holds across instances; past it the API answers `429` with `Retry-After`. Without Redis each instance counts on its own.
 
 ![ReapDeep overview dashboard in Grafana](docs/images/grafana-overview.png)
 
@@ -346,7 +348,7 @@ cd deploy/local
 .\query-test.ps1        # Query API: trends, funnels, retention, paths, events, persons, EXPLAIN, latency
 .\durability-test.ps1   # duplicate retries, Redis and Kafka outages without loss, dead letters, de-duplicated event list
 .\observability-test.ps1  # health checks, metrics, traces and logs in Grafana, the routine load watchdog
-.\scale-test.ps1        # two Query API instances: shared sessions, revocations seen at once, Redis outage (needs --profile scale)
+.\scale-test.ps1        # two Query API instances: shared sessions, revocations seen at once, a shared request quota, Redis outage (needs --profile scale)
 .\dashboard-test.ps1    # headless Chrome against the dashboard (Chrome DevTools Protocol)
 .\load-test.ps1         # ingestion load, 100M seed, cohort calculation, query benchmark (incl. RFM and lifecycle), cleanup
 

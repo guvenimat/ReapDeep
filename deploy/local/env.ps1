@@ -9,6 +9,7 @@ function Initialize-LocalEnv {
         STARROCKS_JOBS_PASSWORD  = { [guid]::NewGuid().ToString('N') }
         REDIS_PASSWORD           = { [guid]::NewGuid().ToString('N') }
         STARROCKS_OPS_PASSWORD   = { [guid]::NewGuid().ToString('N') }
+        STARROCKS_ALERTS_PASSWORD = { [guid]::NewGuid().ToString('N') }
     }
     $existing = if (Test-Path $path) { [IO.File]::ReadAllText($path) } else { "" }
     $missing = @($required.Keys | Where-Object { $existing -cnotmatch "(?m)^\s*$_\s*=" })

@@ -15,6 +15,7 @@ x-query-api-environment: &query-api-environment
   OTEL_EXPORTER_OTLP_ENDPOINT: *otel-endpoint
   OTEL_METRIC_EXPORT_INTERVAL: "10000"
   ConnectionStrings__Redis: redis:6379,password=${REDIS_PASSWORD:?Missing REDIS_PASSWORD in .env - run run-local.ps1},abortConnect=false
+  Alerts__RunJob: "false"
 
 services:
   kafka:
@@ -130,11 +131,16 @@ services:
           GRANT INSERT ON TABLE analytics.events TO USER 'reapdeep_ops'@'%';
           GRANT INSERT ON TABLE analytics.persons TO USER 'reapdeep_ops'@'%';
           GRANT INSERT ON TABLE analytics.person_distinct_ids TO USER 'reapdeep_ops'@'%';
+          CREATE USER IF NOT EXISTS 'reapdeep_alerts'@'%' IDENTIFIED BY '$$STARROCKS_ALERTS_PASSWORD';
+          ALTER USER 'reapdeep_alerts'@'%' IDENTIFIED BY '$$STARROCKS_ALERTS_PASSWORD';
+          GRANT SELECT ON ALL TABLES IN DATABASE analytics TO USER 'reapdeep_alerts'@'%';
+          CREATE RESOURCE GROUP IF NOT EXISTS rg_alerts TO (user='reapdeep_alerts') WITH ('cpu_weight'='1', 'mem_limit'='0.2', 'concurrency_limit'='2');
           CREATE RESOURCE GROUP IF NOT EXISTS rg_jobs TO (user='reapdeep_jobs') WITH ('cpu_weight'='2', 'mem_limit'='0.3', 'concurrency_limit'='4');"
     environment:
       STARROCKS_QUERY_PASSWORD: ${STARROCKS_QUERY_PASSWORD:?Missing STARROCKS_QUERY_PASSWORD in .env - run run-local.ps1 or smoke-test.sh}
       STARROCKS_JOBS_PASSWORD: ${STARROCKS_JOBS_PASSWORD:?Missing STARROCKS_JOBS_PASSWORD in .env - run run-local.ps1 or smoke-test.sh}
       STARROCKS_OPS_PASSWORD: ${STARROCKS_OPS_PASSWORD:?Missing STARROCKS_OPS_PASSWORD in .env - run run-local.ps1 or smoke-test.sh}
+      STARROCKS_ALERTS_PASSWORD: ${STARROCKS_ALERTS_PASSWORD:?Missing STARROCKS_ALERTS_PASSWORD in .env - run run-local.ps1 or smoke-test.sh}
     restart: "no"
 
   redis:
@@ -285,6 +291,28 @@ services:
       redis:
         condition: service_healthy
 
+
+  alert-runner:
+    image: reapdeep-query-api
+    container_name: reapdeep-alert-runner
+    profiles: ["app"]
+    environment:
+      <<: *query-api-environment
+      ConnectionStrings__StarRocks: Server=starrocks;Port=9030;User ID=reapdeep_alerts;Password=${STARROCKS_ALERTS_PASSWORD:?Missing STARROCKS_ALERTS_PASSWORD in .env};Database=analytics;ConnectionReset=false;Pooling=true;MaximumPoolSize=4
+      Alerts__RunJob: "true"
+      OTEL_SERVICE_NAME: reapdeep-alert-runner
+    healthcheck:
+      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/127.0.0.1/8080 && printf 'GET /healthz HTTP/1.0\r\n\r\n' >&3 && head -1 <&3 | grep -q ' 200 '"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    depends_on:
+      query-api:
+        condition: service_started
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
 
   query-api-2:
     image: reapdeep-query-api

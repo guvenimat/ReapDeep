@@ -13,6 +13,7 @@ add_env STARROCKS_QUERY_PASSWORD "$(rand)"
 add_env STARROCKS_JOBS_PASSWORD "$(rand)"
 add_env REDIS_PASSWORD "$(rand)"
 add_env STARROCKS_OPS_PASSWORD "$(rand)"
+add_env STARROCKS_ALERTS_PASSWORD "$(rand)"
 
 EVENT_ID="smoke-$(date +%s)"
 NOW="$(date -u '+%Y-%m-%d %H:%M:%S')"
