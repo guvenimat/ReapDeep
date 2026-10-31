@@ -1,29 +1,27 @@
-using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
+using ReapDeep.QueryApi.Infrastructure;
 
 namespace ReapDeep.QueryApi.Auth;
 
-public sealed class SessionService(AccountRepository accounts, IConfiguration cfg, ILogger<SessionService> log)
+public sealed class SessionService(AccountRepository accounts, AuthCache cache, IConfiguration cfg, ILogger<SessionService> log)
 {
     public const string CookieName = "rd_session";
     static readonly TimeSpan Lifetime = TimeSpan.FromDays(14);
     static readonly TimeSpan CacheTtl = TimeSpan.FromSeconds(30);
-    const int MaxCacheEntries = 10_000;
     const int MaxTokenLength = 128;
 
-    readonly ConcurrentDictionary<string, (MeResponse? Me, DateTime Expires)> _cache = new();
     readonly bool _secureCookie = cfg["Auth:SecureCookie"] != "false";
 
     public async ValueTask<MeResponse?> GetCurrentAsync(HttpContext ctx)
     {
         if (TokenHash(ctx.Request) is not { } hash) return null;
-        var now = DateTime.UtcNow;
-        if (_cache.TryGetValue(hash, out var hit) && hit.Expires > now) return hit.Me;
+        var key = AuthCacheKeys.Session(hash);
+        var (hit, cached) = await cache.GetAsync(key, AppJsonContext.Default.MeResponse);
+        if (hit) return cached;
 
         var me = await accounts.FindSessionAsync(hash, ctx.RequestAborted);
-        if (_cache.Count >= MaxCacheEntries) _cache.Clear();
-        _cache[hash] = (me, now + CacheTtl);
+        await cache.SetAsync(key, me, AppJsonContext.Default.MeResponse, CacheTtl, me?.User.Id);
         return me;
     }
 
@@ -50,8 +48,8 @@ public sealed class SessionService(AccountRepository accounts, IConfiguration cf
     {
         if (TokenHash(ctx.Request) is { } hash)
         {
-            _cache.TryRemove(hash, out _);
             await accounts.DeleteSessionAsync(hash, ctx.RequestAborted);
+            await cache.RemoveAsync(AuthCacheKeys.Session(hash));
         }
         ctx.Response.Cookies.Delete(CookieName, CookieOptions(null));
     }
@@ -60,15 +58,11 @@ public sealed class SessionService(AccountRepository accounts, IConfiguration cf
     {
         var changed = await accounts.ChangePasswordAsync(userId, stored => PasswordHasher.Verify(currentPassword, stored),
             PasswordHasher.Hash(newPassword), TokenHash(ctx.Request) ?? "", ctx.RequestAborted);
-        if (changed) InvalidateUser(userId);
+        if (changed) await InvalidateUserAsync(userId);
         return changed;
     }
 
-    public void InvalidateUser(long userId)
-    {
-        foreach (var (hash, entry) in _cache)
-            if (entry.Me?.User.Id == userId) _cache.TryRemove(hash, out _);
-    }
+    public Task InvalidateUserAsync(long userId) => cache.RemoveUserAsync(userId);
 
     public static string NormalizeEmail(string email) => email.Trim().ToLowerInvariant();
 

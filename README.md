@@ -71,6 +71,7 @@ flowchart LR
 - **Telemetry.** Ingestion, the Query API, the person worker and the Recommender share `ReapDeep.ServiceDefaults`, which exports traces, metrics and logs over OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. The local stack sends them to `grafana/otel-lgtm` (Tempo, Prometheus, Loki, Grafana) at http://localhost:3005, where the provisioned *ReapDeep overview* dashboard shows events per second, duplicates, rejections and Kafka refusals, capture latency against the 50 ms target, the routine load jobs, query latency per route against the 1 s and 3 s targets, database latency, memory and recent warnings. MySqlConnector and Npgsql spans show each SQL statement.
 - **Health checks.** Every service container has a Docker health check: the HTTP services answer `/healthz` (the Query API also checks PostgreSQL and StarRocks, the Recommender waits for its caches), and the person worker writes a heartbeat file from its Kafka loop.
 - **Routine load watchdog.** The person worker reads `SHOW ROUTINE LOAD` every 30 s with its own `reapdeep_ops` user. A job that StarRocks paused after an outage (for example a backend that was briefly unavailable) is resumed automatically, at most once a minute. A job stopped by a message it cannot parse is never skipped automatically: it is reported in the logs and on the dashboard so an operator can inspect the message. Jobs paused by an operator are left alone.
+- **Several Query API instances.** Sessions and API keys are cached in Redis, not in process memory (`auth:session:*` for 30 s, `auth:key:*` for 60 s, 10 s for unknown keys), and every change that affects access (role change, removed member, password change, revoked key) deletes the cached entries, so a second instance never accepts a revoked session or key. Without Redis every request reads PostgreSQL. `docker compose --profile scale up -d query-api-2` starts a second instance on port 8003.
 
 ![ReapDeep overview dashboard in Grafana](docs/images/grafana-overview.png)
 
@@ -345,6 +346,7 @@ cd deploy/local
 .\query-test.ps1        # Query API: trends, funnels, retention, paths, events, persons, EXPLAIN, latency
 .\durability-test.ps1   # duplicate retries, Redis and Kafka outages without loss, dead letters, de-duplicated event list
 .\observability-test.ps1  # health checks, metrics, traces and logs in Grafana, the routine load watchdog
+.\scale-test.ps1        # two Query API instances: shared sessions, revocations seen at once, Redis outage (needs --profile scale)
 .\dashboard-test.ps1    # headless Chrome against the dashboard (Chrome DevTools Protocol)
 .\load-test.ps1         # ingestion load, 100M seed, cohort calculation, query benchmark (incl. RFM and lifecycle), cleanup
 

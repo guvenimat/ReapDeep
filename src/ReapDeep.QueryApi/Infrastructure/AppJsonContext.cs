@@ -47,6 +47,7 @@ namespace ReapDeep.QueryApi.Infrastructure;
 [JsonSerializable(typeof(LoginRequest))]
 [JsonSerializable(typeof(PasswordChangeRequest))]
 [JsonSerializable(typeof(MeResponse))]
+[JsonSerializable(typeof(ApiKeyRepository.ActiveKey))]
 [JsonSerializable(typeof(AddMemberRequest))]
 [JsonSerializable(typeof(RoleChangeRequest))]
 [JsonSerializable(typeof(MemberRow))]
