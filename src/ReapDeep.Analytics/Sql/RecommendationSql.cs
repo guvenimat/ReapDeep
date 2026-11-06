@@ -12,6 +12,12 @@ public static class RecommendationSql
     public const string ViewEvent = "product_viewed";
     public const string CartEvent = "add_to_cart";
     public const string PurchaseEvent = "purchase";
+    public const string ShownEvent = "recommendation_shown";
+    public const string ClickedEvent = "recommendation_clicked";
+    public const string ModelProperty = "model";
+    public const string PlacementProperty = "placement";
+    public const int AttributionDays = 7;
+    public static readonly int[] PerformanceDays = [7, 30, 90];
     public const int PurchaseWeight = 5;
     public const int CartWeight = 3;
     public const int ViewWeight = 1;
@@ -92,6 +98,33 @@ public static class RecommendationSql
             $"LEFT JOIN (SELECT src, dst FROM ranked WHERE rn <= {k}) r ON r.src = c.seen AND r.dst = c.next " +
             "LEFT JOIN (SELECT DISTINCT src FROM ranked) cov ON cov.src = c.seen " +
             $"LEFT JOIN (SELECT item_id FROM pop WHERE rn <= {k}) p ON p.item_id = c.next");
+    }
+
+    public static SqlQuery Performance(long projectId, DateTime nowUtc, int days)
+    {
+        var from = nowUtc.AddDays(-days);
+        var b = new SqlBuilder(projectId, from, nowUtc);
+        var (project, start, end) = (b.P(projectId), b.P(from), b.P(nowUtc));
+        var range = $"e.project_id = {project} AND e.timestamp >= {start} AND e.timestamp < {end}";
+        var model = $"COALESCE({ColumnMapper.Expression(b, "event", ModelProperty)}, '')";
+        var placement = $"COALESCE({ColumnMapper.Expression(b, "event", PlacementProperty)}, '')";
+        const string person = "LEFT JOIN analytics.person_distinct_ids pdi ON d.project_id = pdi.project_id AND d.distinct_id = pdi.distinct_id AND pdi.is_deleted = 0";
+        return b.Build(
+            $"WITH shown AS (SELECT {model} AS model, {placement} AS placement, COUNT(*) AS impressions FROM analytics.events e " +
+            $"WHERE {range} AND e.event = {b.P(ShownEvent)} GROUP BY 1, 2), " +
+            $"clicks_d AS (SELECT e.project_id, e.distinct_id, {model} AS model, {placement} AS placement, e.item_id, e.timestamp AS ts FROM analytics.events e " +
+            $"WHERE {range} AND e.event = {b.P(ClickedEvent)} AND e.item_id IS NOT NULL AND e.item_id <> ''), " +
+            $"clicks AS (SELECT COALESCE(pdi.person_id, d.distinct_id) AS person, d.model, d.placement, d.item_id, d.ts FROM clicks_d d {person}), " +
+            $"buys_d AS (SELECT e.project_id, e.distinct_id, e.item_id, e.timestamp AS ts FROM analytics.events e " +
+            $"WHERE {range} AND e.event = {b.P(PurchaseEvent)} AND e.item_id IS NOT NULL AND e.item_id <> ''), " +
+            $"buys AS (SELECT COALESCE(pdi.person_id, d.distinct_id) AS person, d.item_id, d.ts FROM buys_d d {person}), " +
+            "conv AS (SELECT c.model, c.placement, c.person, c.item_id, c.ts, MAX(IF(b.person IS NULL, 0, 1)) AS bought FROM clicks c " +
+            "LEFT JOIN buys b ON b.person = c.person AND b.item_id = c.item_id AND b.ts >= c.ts " +
+            $"AND b.ts < date_add(c.ts, INTERVAL {AttributionDays} DAY) GROUP BY 1, 2, 3, 4, 5), " +
+            "cl AS (SELECT model, placement, COUNT(*) AS clicks, SUM(bought) AS purchases FROM conv GROUP BY 1, 2) " +
+            "SELECT COALESCE(s.model, cl.model), COALESCE(s.placement, cl.placement), COALESCE(s.impressions, 0), COALESCE(cl.clicks, 0), " +
+            "COALESCE(cl.purchases, 0) FROM shown s FULL OUTER JOIN cl ON s.model = cl.model AND s.placement = cl.placement " +
+            "ORDER BY 3 DESC, 4 DESC, 1, 2 LIMIT 200");
     }
 
     static string PersonItems(SqlBuilder b, long projectId, DateTime fromUtc, DateTime toUtc, string name = "pi", bool firstSeen = false)

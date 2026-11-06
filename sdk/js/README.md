@@ -44,6 +44,16 @@ rd.capture('search_result_clicked', { query: 'linen dress', item_id: 'linen-shir
 rd.capture('search_suggestion_clicked', { query: 'lin', type: 'product', value: 'linen-shirt' })
 ```
 
+To measure how recommendations perform, report what was shown and what was clicked. `model` is the list's model, `placement` is where it appears on the site (any short name such as `product_page`, `home` or `cart`), and `sourceItemId` the item a similar-items list was built for:
+
+```js
+const context = { model: 'co_viewed', placement: 'product_page', sourceItemId: 'linen-shirt' }
+rd.trackRecommendationShown(context, similar.map((i) => i.item_id))
+rd.trackRecommendationClicked(context, 'wool-scarf', 2)
+```
+
+They send `recommendation_shown` (`model`, `placement`, `source_item_id`, `item_ids`) and `recommendation_clicked` (`model`, `placement`, `source_item_id`, `item_id`, `position`, 1-based). Server-rendered or native lists can send the same events through the Ingestion API. `GET /api/v1/recommendations/performance` reports impressions, clicks, click rate and purchases of a clicked item by the same person within 7 days, per model and placement.
+
 Models: `popular`, `trending`, `co_viewed` and `bought_together` (the last two need `itemId`). Only items that are in the catalog and in stock are returned; each item has a `source`, which is `popular` when a short item-based list was filled with popular items. Personalized `for_you` lists are not available through `recommend()`: they need a request signed with the project's recommendation secret, so the store's server calls the Recommender directly (see [Personalized recommendations](../../README.md#personalized-recommendations)).
 
 | Option | Default | |

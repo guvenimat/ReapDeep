@@ -48,8 +48,12 @@ export interface RfmMigrationResponse {
   window_days: number; period_days: number; from_date: string; to_date: string
   rows: { from: RfmSegmentKey | 'none'; to: RfmSegmentKey | 'none'; persons: number }[]; took_ms: number
 }
-export interface PersonCohorts {
-  cohorts: { id: number; name: string; kind: 'dynamic' | 'static'; calculated_at: string | null }[]
+export interface PersonCohort {
+  id: number; name: string; kind: 'dynamic' | 'static'; calculated_at: string | null
+}
+
+export interface PersonCohortsResponse {
+  cohorts: PersonCohort[]
 }
 
 export interface RfmPerson {
@@ -131,6 +135,14 @@ export interface RecommendedCatalogItem { item_id: string; title: string; catego
 export interface CatalogItemDetail { item: CatalogItem; co_viewed: RecommendedCatalogItem[]; bought_together: RecommendedCatalogItem[] }
 export type RecommendationModel = 'popular' | 'trending' | 'co_viewed' | 'bought_together'
 export interface ModelRun { model: RecommendationModel; calculated_at: string; calculation_ms: number; source_items: number }
+export interface RecommendationPerformance {
+  model: string; placement: string; impressions: number; clicks: number; purchases: number; click_rate: number | null; purchase_rate: number | null
+}
+
+export interface RecommendationPerformanceResponse {
+  days: number; attribution_days: number; took_ms: number; rows: RecommendationPerformance[]
+}
+
 export interface HitRate {
   k: number; cases: number; covered: number; co_viewed_hits: number; co_viewed_hit_rate: number; popular_hits: number; popular_hit_rate: number
   train_from: string; test_from: string; test_to: string; took_ms: number

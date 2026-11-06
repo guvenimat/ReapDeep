@@ -34,6 +34,12 @@ export interface RecommendedItem {
   source: RecommendationModel
 }
 
+export interface RecommendationContext {
+  model: RecommendationModel | 'for_you' | (string & {})
+  placement: string
+  sourceItemId?: string
+}
+
 export interface PurchasedItem extends Properties {
   item_id: string
   price?: number
@@ -110,6 +116,14 @@ export class ReapDeep {
 
   trackPurchase(items: PurchasedItem[], orderId: string, properties?: Properties): void {
     for (const item of items) if (item?.item_id) this.capture('purchase', { ...properties, ...item, order_id: orderId })
+  }
+
+  trackRecommendationShown(context: RecommendationContext, itemIds: string[], properties?: Properties): void {
+    if (itemIds.length) this.capture('recommendation_shown', { ...properties, ...recommendationProps(context), item_ids: itemIds })
+  }
+
+  trackRecommendationClicked(context: RecommendationContext, itemId: string, position: number, properties?: Properties): void {
+    if (itemId) this.capture('recommendation_clicked', { ...properties, ...recommendationProps(context), item_id: itemId, position })
   }
 
   async recommend(options: RecommendOptions = {}): Promise<RecommendedItem[]> {
@@ -272,4 +286,10 @@ function referringDomain(referrer: string): string {
 const instances: Record<string, ReapDeep> = {}
 export function init(apiKey: string, config: Config): ReapDeep {
   return (instances[apiKey] ??= new ReapDeep(apiKey, config))
+}
+
+function recommendationProps(context: RecommendationContext): Properties {
+  const props: Properties = { model: context.model, placement: context.placement }
+  if (context.sourceItemId) props.source_item_id = context.sourceItemId
+  return props
 }

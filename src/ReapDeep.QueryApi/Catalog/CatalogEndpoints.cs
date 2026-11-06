@@ -18,6 +18,7 @@ public static class CatalogEndpoints
         api.MapDelete("/items/{itemId}", Delete).RequireCatalogWriter();
         api.MapGet("/recommendations/models", Models);
         api.MapPost("/recommendations/evaluate", Evaluate).RequireUser();
+        api.MapGet("/recommendations/performance", Performance);
     }
 
     static async Task<IResult> List(ProjectContext project, CatalogRepository catalog, string? search, string? category, string? cursor, int? limit,
@@ -43,6 +44,9 @@ public static class CatalogEndpoints
 
     static async Task<IResult> Models(ProjectContext project, CatalogRepository catalog, CancellationToken ct) =>
         ApiResults.Ok(new ModelRunsResponse(await catalog.RunsAsync(project.ProjectId, ct)), AppJsonContext.Default.ModelRunsResponse);
+
+    static async Task<IResult> Performance(ProjectContext project, CatalogService service, int? days, CancellationToken ct) =>
+        ApiResults.Ok(await service.PerformanceAsync(project, days, ct), AppJsonContext.Default.RecommendationPerformanceResponse);
 
     static async Task<IResult> Evaluate(ProjectContext project, CatalogService service, int? k, CancellationToken ct) =>
         ApiResults.Ok(await service.HitRateAsync(project, Ensure.InRange(k ?? 10, 1, 50, "k"), ct), AppJsonContext.Default.HitRateResponse);
