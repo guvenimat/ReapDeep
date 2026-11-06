@@ -1,7 +1,7 @@
 import type {
   Alert, AlertEvent, AlertInput,
   ApiKey, CatalogItem, CatalogItemDetail, CatalogItemInput, Cohort, CohortDefinition, CohortKind, CohortPerson, Dashboard, DashboardSummary, DateRange, DeletionRequest, EventRow, FunnelPersonsResponse, FunnelRequest, FunnelResponse, Insight, InsightKind,
-  HitRate, KeyScope, Me, Member, Metadata, ModelRun, LifecycleResponse, PathsResponse, Person, RetentionResponse, RfmMigrationResponse, RfmPerson, RfmResponse, Role, TrendRequest, TrendResponse, ProjectDetail,
+  HitRate, KeyScope, Me, Member, Metadata, ModelRun, LifecycleResponse, PathsResponse, Person, PersonCohorts, RetentionResponse, RfmMigrationResponse, RfmPerson, RfmResponse, Role, TrendRequest, TrendResponse, ProjectDetail,
 } from './types'
 
 const PROJECT_STORAGE = 'reapdeep.projectId'
@@ -83,6 +83,7 @@ export const api = {
   rfm: (body: object, signal?: AbortSignal) => request<RfmResponse>('POST', '/api/v1/query/rfm', body, signal),
   rfmMigration: (body: object, signal?: AbortSignal) => request<RfmMigrationResponse>('POST', '/api/v1/query/rfm/migration', body, signal),
   personRfm: (id: string, signal?: AbortSignal) => request<RfmPerson>('GET', `/api/v1/persons/${encodeURIComponent(id)}/rfm`, undefined, signal),
+  personCohorts: (id: string, signal?: AbortSignal) => request<PersonCohorts>('GET', `/api/v1/persons/${encodeURIComponent(id)}/cohorts`, undefined, signal),
   lifecycle: (body: object, signal?: AbortSignal) => request<LifecycleResponse>('POST', '/api/v1/query/lifecycle', body, signal),
 
   events: (params: { event?: string; distinct_id?: string; person_id?: string; limit?: number } & DateRange, signal?: AbortSignal) =>

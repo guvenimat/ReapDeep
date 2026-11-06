@@ -20,6 +20,7 @@ public sealed class CohortRepository(NpgsqlDataSource db)
 
     internal sealed record CohortRefRecord(long Id, string Name, string Status, long? ActiveVersion);
     internal sealed record UsageRecord(long Id, string Name, string Kind);
+    public sealed record ActiveCohortRecord(long Id, string Name, string Kind, long ActiveVersion, DateTime? CalculatedAt);
 
     const string Select = """
         SELECT c.id, c.name, c.description, c.kind, c.definition::text AS definition, c.status, c.active_version, c.member_count,
@@ -121,6 +122,33 @@ public sealed class CohortRepository(NpgsqlDataSource db)
         return rows.Select(r => r.ActiveVersion is { } v
             ? new CohortRef(r.Id, r.Name, v)
             : throw new CohortNotReadyException(r.Id, r.Name, r.Status)).ToList();
+    }
+
+    public async Task<List<ActiveCohortRecord>> ActiveAsync(long projectId, CancellationToken ct)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<ActiveCohortRecord>("""
+            SELECT id, name, kind, active_version, calculated_at FROM cohorts
+            WHERE project_id = @ProjectId AND deleted_at IS NULL AND active_version IS NOT NULL
+            """, new { ProjectId = projectId });
+        return rows.AsList();
+    }
+
+    public async Task<List<string>> PersonDistinctIdsAsync(long projectId, string key, int limit, CancellationToken ct)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<string>("""
+            WITH target AS (
+                SELECT p.id FROM persons p WHERE p.project_id = @ProjectId AND NOT p.is_deleted AND p.id::text = @Key
+                UNION
+                SELECT d.person_id FROM person_distinct_ids d WHERE d.project_id = @ProjectId AND d.distinct_id = @Key
+            )
+            SELECT d.distinct_id FROM person_distinct_ids d JOIN target t ON d.person_id = t.id WHERE d.project_id = @ProjectId
+            UNION
+            SELECT @Key
+            LIMIT @Limit
+            """, new { ProjectId = projectId, Key = key, Limit = limit });
+        return rows.AsList();
     }
 
     public async Task<List<string>> ResolveDistinctIdsAsync(long projectId, string[] ids, CancellationToken ct)

@@ -60,6 +60,14 @@ public static class CohortSql
         return b.Build($"SELECT DISTINCT {PersonOfMember} AS person FROM {from}{cursor} ORDER BY person LIMIT {limit}");
     }
 
+    public static SqlQuery MembershipsOf(long projectId, IReadOnlyList<string> distinctIds)
+    {
+        Ensure.That(distinctIds.Count > 0, "No distinct_ids to look up");
+        var b = Builder(projectId, DateTime.UtcNow);
+        var ids = string.Join(", ", distinctIds.Select(d => b.P(d)));
+        return b.Build($"SELECT DISTINCT cohort_id, version FROM {Members} WHERE project_id = {b.P(projectId)} AND distinct_id IN ({ids})");
+    }
+
     public static SqlQuery DeleteVersionsUpTo(long projectId, long cohortId, long version)
     {
         var b = Builder(projectId, DateTime.UtcNow);

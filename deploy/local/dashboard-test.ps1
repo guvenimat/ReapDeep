@@ -178,6 +178,8 @@ Check "person detail: properties (plan: pro)" ($ids -match '<pre class="json">[^
 Check "person detail: owner sees 'Delete person data'" ((Section $html "request-deletion") -match 'Delete person data')
 $rfmHtml = Dom "#/persons/$personId" "document.querySelector('[data-testid=person-rfm]') && !/Loading/.test(document.querySelector('[data-testid=person-rfm]').textContent)"
 Check "person detail: customer value card (no purchase event -> no segment)" ((Section $rfmHtml "person-rfm") -match 'No purchases in this window')
+$cohortsHtml = Dom "#/persons/$personId" "document.querySelector('[data-testid=person-cohorts]') && !/Loading/.test(document.querySelector('[data-testid=person-cohorts]').textContent)"
+Check "person detail: cohorts card loads" ((Section $cohortsHtml "person-cohorts") -match 'Not in any cohort|cohort-chip')
 $evTable = Section $html "events-table"
 $rows = ([regex]::Matches($evTable, '<tr class="clickable')).Count
 Check "person event history: anonymous + after identify = 7 events -> $rows" ($rows -eq 7)

@@ -140,7 +140,7 @@ curl http://localhost:8001/api/v1/query/trends \
   -d '{ "series": [{ "event": "$pageview", "metric": "unique_users" }], "interval": "day" }'
 ```
 
-Other endpoints: `POST /api/v1/query/funnels`, `POST /api/v1/query/funnels/persons`, `/api/v1/cohorts` (CRUD, `preview`, `persons`, `recalculate`), `POST /api/v1/query/retention`, `POST /api/v1/query/paths`, `POST /api/v1/query/lifecycle`, `POST /api/v1/query/rfm`, `POST /api/v1/query/rfm/migration`, `GET /api/v1/persons/{id}/rfm`, `/api/v1/alerts` (CRUD, `check`, `events`), `GET /api/v1/events`, `GET /api/v1/persons[/{id}]`, `GET /api/v1/metadata`, `GET /healthz`.
+Other endpoints: `POST /api/v1/query/funnels`, `POST /api/v1/query/funnels/persons`, `/api/v1/cohorts` (CRUD, `preview`, `persons`, `recalculate`), `POST /api/v1/query/retention`, `POST /api/v1/query/paths`, `POST /api/v1/query/lifecycle`, `POST /api/v1/query/rfm`, `POST /api/v1/query/rfm/migration`, `GET /api/v1/persons/{id}/rfm`, `GET /api/v1/persons/{id}/cohorts`, `/api/v1/alerts` (CRUD, `check`, `events`), `GET /api/v1/events`, `GET /api/v1/persons[/{id}]`, `GET /api/v1/metadata`, `GET /healthz`.
 
 ### Demo data
 
@@ -202,6 +202,7 @@ A dynamic cohort is a set of OR'ed groups of AND'ed conditions: *did event X at 
 - **Materialized membership:** the person worker evaluates the rules in StarRocks and writes the members to `cohort_members` (every distinct_id of each person, so anonymous history counts for the merged person). Cohorts refresh hourly by default; the editor shows a live count computed on the fly.
 - **Cheap to use in analyses:** `cohort_members` is keyed by `(project_id, distinct_id)` in the same colocate group as `events`, so a cohort filter (`{"scope":"cohort","property":"<id>","op":"in" | "not_in"}`) is a bucket-local semi or anti join on the events table. Trends and funnels can also break down by up to 5 cohorts.
 - **Consistent versions:** each refresh writes a new version and switches to it atomically; the previous version is kept for 60 s so queries already running are not affected.
+- **Membership lookup:** `GET /api/v1/persons/{id}/cohorts` (read key) returns the calculated cohorts a person is in. `{id}` is a person id or any of the person's distinct_ids, including an earlier anonymous one, so a site can ask with its own user id and personalize the page or target a campaign. `GET /api/v1/cohorts/{id}/persons` lists the members page by page.
 - **Privacy:** deletion requests also remove the person from every cohort, and refreshes never run at the same time as a deletion batch of the same project.
 
 ### Catalog and recommendations
@@ -279,15 +280,16 @@ Any trend or funnel can be saved by name from its tab (`/api/v1/insights`). A da
 
 Page views (including SPA navigation), sessions, UTM parameters, batching, retries and `sendBeacon` on page unload are handled automatically. See [`sdk/js/README.md`](sdk/js/README.md).
 
-## Used by ReapSeek
+## Example integration: an online store
 
-[ReapSeek](https://github.com/guvenimat/ReapSeek) is a multi-seller marketplace built as ReapDeep's reference
-customer. It uses nothing but the public interfaces below, so everything it does is something any customer can do.
+An online store uses nothing but the public interfaces below, so everything here is something any customer can do.
+[ReapSeek](https://github.com/guvenimat/ReapSeek), a separate multi-seller marketplace project, is used as a sample store
+while developing and testing ReapDeep; ReapDeep does not depend on it.
 
 ```mermaid
 sequenceDiagram
   participant B as Shopper's browser
-  participant S as ReapSeek
+  participant S as Store backend
   participant I as Ingestion API
   participant R as Recommender
   participant Q as Query API
@@ -301,13 +303,13 @@ sequenceDiagram
   Q-->>S: alert webhook, HMAC signed
 ```
 
-| ReapSeek feature | ReapDeep feature it uses |
+| Store feature | ReapDeep feature it uses |
 |---|---|
 | Product, cart and search tracking | JS SDK, identity merge on sign-in |
 | "Customers also viewed", "Frequently bought together", "Popular", "Trending" | Recommender lists |
 | "Recommended for you" on the home page | `for_you` with an HMAC-signed request |
 | Revenue and refund reports | server-side `purchase` and `refund` events with stable ids |
-| Coupon campaigns for "Customers at risk" or "Champions" | cohorts and RFM segments |
+| Coupon campaigns for "Customers at risk" or "Champions" | cohorts and RFM segments, person cohort lookup |
 | Back office alerts when purchases drop or refunds spike | trend alerts with signed webhooks |
 | Customer page with segment and recent activity | person RFM and event APIs |
 

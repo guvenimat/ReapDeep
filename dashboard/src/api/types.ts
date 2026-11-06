@@ -48,6 +48,10 @@ export interface RfmMigrationResponse {
   window_days: number; period_days: number; from_date: string; to_date: string
   rows: { from: RfmSegmentKey | 'none'; to: RfmSegmentKey | 'none'; persons: number }[]; took_ms: number
 }
+export interface PersonCohorts {
+  cohorts: { id: number; name: string; kind: 'dynamic' | 'static'; calculated_at: string | null }[]
+}
+
 export interface RfmPerson {
   window_days: number; segment: RfmSegmentKey | null; segment_name: string | null; r: number | null; f: number | null
   recency_days: number | null; orders: number | null; monetary: number | null
