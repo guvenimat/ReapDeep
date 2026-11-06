@@ -1,6 +1,6 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react'
 import { api, errorMessage } from '../../api/client'
-import type { Cohort, CohortCondition, CohortDefinition, CohortKind, CountOp, Filter, RfmSegmentKey } from '../../api/types'
+import type { Cohort, CohortCondition, CohortDefinition, CohortKind, CountOp, Filter, FunnelOutcome, RfmSegmentKey } from '../../api/types'
 import { AddButton, needsValue, OpSelect, propList, SuggestInput } from '../../components/editors'
 import { Icon } from '../../components/icons'
 import { Card, FormMessage, IconButton, Segmented } from '../../components/ui'
@@ -16,7 +16,10 @@ const CONDITION_TYPES: { id: CohortCondition['type']; label: string }[] = [
   { id: 'not_performed_event', label: 'Did not do event' },
   { id: 'person_property', label: 'Person property' },
   { id: 'rfm_segment', label: 'RFM segment' },
+  { id: 'funnel', label: 'Funnel' },
 ]
+
+const FUNNEL_WINDOWS = [{ s: 3600, label: '1 hour' }, { s: 86400, label: '1 day' }, { s: 7 * 86400, label: '7 days' }, { s: 30 * 86400, label: '30 days' }]
 
 export function CohortEditor({ cohort, onSaved, onCancel }: { cohort?: Cohort; onSaved: (c: Cohort) => void; onCancel: () => void }) {
   const [name, setName] = useState(cohort?.name ?? '')
@@ -167,6 +170,8 @@ function ConditionRow({ condition: c, onChange, onRemove }: {
           ? <SuggestInput list={propList('person')} placeholder="property" value={c.property} onChange={(v) => onChange({ ...c, property: v })} aria-label="Person property" />
           : c.type === 'rfm_segment'
             ? <span className="editor-hint">customers scored on their purchases</span>
+            : c.type === 'funnel'
+              ? <span className="editor-hint">persons by how far they got</span>
             : <SuggestInput list="events" placeholder="event" value={c.event} onChange={(v) => onChange({ ...c, event: v })} aria-label="Event" />}
         {onRemove && <IconButton icon="close" label="Remove condition" onClick={onRemove} />}
       </div>
@@ -194,6 +199,7 @@ function ConditionRow({ condition: c, onChange, onRemove }: {
         </div>
       )}
       {c.type === 'rfm_segment' && <RfmConditionEditor condition={c} onChange={onChange} />}
+      {c.type === 'funnel' && <FunnelConditionEditor condition={c} onChange={onChange} />}
       {c.type === 'performed_event' && (
         <EventFilters filters={c.filters ?? []} onChange={(filters) => onChange({ ...c, filters })} />
       )}
@@ -224,6 +230,52 @@ function RfmConditionEditor({ condition: c, onChange }: {
         <select value={c.within_days} onChange={(e) => onChange({ ...c, within_days: Number(e.target.value) })} aria-label="RFM window" className="op">
           {RFM_WINDOWS.map((d) => <option key={d} value={d}>{d} days</option>)}
         </select>
+      </div>
+    </>
+  )
+}
+
+function FunnelConditionEditor({ condition: c, onChange }: {
+  condition: Extract<CohortCondition, { type: 'funnel' }>; onChange: (c: CohortCondition) => void
+}) {
+  const setSteps = (steps: string[]) => {
+    const max = c.outcome === 'dropped' ? steps.length - 1 : steps.length
+    onChange({ ...c, steps, step: Math.min(Math.max(c.step, c.outcome === 'dropped' ? 1 : 2), Math.max(1, max)) })
+  }
+  const choices = c.outcome === 'dropped' ? c.steps.slice(0, -1) : c.steps.slice(1)
+  const offset = c.outcome === 'dropped' ? 1 : 2
+  return (
+    <>
+      <div className="condition-filters">
+        {c.steps.map((s, i) => (
+          <div className="row" key={i}>
+            <span className="where">{i + 1}.</span>
+            <SuggestInput list="events" placeholder="event" value={s} aria-label={`Funnel step ${i + 1}`}
+              onChange={(v) => setSteps(c.steps.map((x, k) => (k === i ? v : x)))} />
+            {c.steps.length > 2 && <IconButton icon="close" label="Remove step" onClick={() => setSteps(c.steps.filter((_, k) => k !== i))} />}
+          </div>
+        ))}
+        {c.steps.length < 8 && <button type="button" className="link small" onClick={() => setSteps([...c.steps, ''])}>+ step</button>}
+      </div>
+      <div className="row sentence">
+        <select value={c.outcome} aria-label="Funnel outcome" className="op fit"
+          onChange={(e) => {
+            const outcome = e.target.value as FunnelOutcome
+            onChange({ ...c, outcome, step: outcome === 'dropped' ? Math.min(c.step, c.steps.length - 1) : Math.max(2, c.step) })
+          }}>
+          <option value="dropped">dropped after</option>
+          <option value="converted">reached</option>
+        </select>
+        <select value={c.step} aria-label="Funnel step" className="op fit" onChange={(e) => onChange({ ...c, step: Number(e.target.value) })}>
+          {choices.map((s, i) => <option key={i} value={i + offset}>{i + offset}. {s || 'step'}</option>)}
+        </select>
+        <span>within</span>
+        <select value={c.window_seconds} aria-label="Conversion window" className="op" onChange={(e) => onChange({ ...c, window_seconds: Number(e.target.value) })}>
+          {FUNNEL_WINDOWS.some((w) => w.s === c.window_seconds) ? null : <option value={c.window_seconds}>{num(c.window_seconds)} s</option>}
+          {FUNNEL_WINDOWS.map((w) => <option key={w.s} value={w.s}>{w.label}</option>)}
+        </select>
+        <span>in the last</span>
+        <DaysInput value={c.within_days} onChange={(within_days) => onChange({ ...c, within_days })} />
       </div>
     </>
   )

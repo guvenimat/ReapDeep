@@ -10,6 +10,10 @@ public static class CohortRules
     public const int MaxWithinDays = 90;
     public const int MaxCount = 10_000;
     public const int MaxConditionFilters = 5;
+    public const int MaxFunnelSteps = 8;
+    public const long MaxFunnelWindowSeconds = 90L * 86400;
+    public const string Dropped = "dropped";
+    public const string Converted = "converted";
     static readonly string[] CountOps = ["gte", "lte", "eq"];
 
     public static CohortDefinition Normalize(CohortDefinition? definition)
@@ -22,8 +26,8 @@ public static class CohortRules
         {
             var conditions = g.Conditions ?? [];
             Ensure.That(conditions.Count > 0, "Each group needs at least one condition");
-            Ensure.That(conditions.Any(c => c.Type is ConditionTypes.Performed or ConditionTypes.PersonProperty or ConditionTypes.RfmSegment),
-                "Each group needs a performed_event, person_property or rfm_segment condition; not_performed_event alone has no population");
+            Ensure.That(conditions.Any(c => ConditionTypes.DefinesPopulation(c.Type)),
+                "Each group needs a performed_event, person_property, rfm_segment or funnel condition; not_performed_event alone has no population");
             return new CohortGroup(conditions.Select(NormalizeCondition).ToList());
         }).ToList());
     }
@@ -47,6 +51,20 @@ public static class CohortRules
             Ensure.That(RfmSql.WindowDays.Contains(window), $"within_days of an rfm_segment condition: {string.Join(" | ", RfmSql.WindowDays)}");
             return new CohortCondition(c.Type, Event: string.IsNullOrWhiteSpace(c.Event) ? RfmSql.DefaultEvent : Ensure.NotBlank(c.Event, "event"),
                 WithinDays: window, Segments: segments);
+        }
+
+        if (c.Type == ConditionTypes.Funnel)
+        {
+            var steps = (c.Steps ?? []).Select(s => Ensure.NotBlank(s, "steps")).ToList();
+            Ensure.That(steps.Count is >= 2 and <= MaxFunnelSteps, $"A funnel condition needs 2-{MaxFunnelSteps} steps");
+            var outcome = Ensure.OneOf(c.Outcome ?? Dropped, "outcome", [Dropped, Converted]);
+            var step = c.Step ?? 1;
+            Ensure.That(outcome == Dropped ? step >= 1 && step < steps.Count : step >= 2 && step <= steps.Count,
+                outcome == Dropped ? $"step of a dropped funnel condition: 1-{steps.Count - 1}" : $"step of a converted funnel condition: 2-{steps.Count}");
+            var window = c.WindowSeconds ?? 86400;
+            Ensure.That(window is >= 60 and <= MaxFunnelWindowSeconds, "window_seconds of a funnel condition must be between 60 seconds and 90 days");
+            Ensure.That(c.WithinDays is >= 1 and <= MaxWithinDays, $"within_days must be between 1 and {MaxWithinDays}");
+            return new CohortCondition(c.Type, WithinDays: c.WithinDays, Steps: steps, Step: step, Outcome: outcome, WindowSeconds: window);
         }
 
         var eventName = Ensure.NotBlank(c.Event, "event");

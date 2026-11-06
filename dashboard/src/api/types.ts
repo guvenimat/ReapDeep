@@ -110,11 +110,13 @@ export interface DeletionRequest {
 export type CohortKind = 'dynamic' | 'static'
 export type CohortStatus = 'pending' | 'calculating' | 'ready' | 'error'
 export type CountOp = 'gte' | 'lte' | 'eq'
+export type FunnelOutcome = 'dropped' | 'converted'
 export type CohortCondition =
   | { type: 'performed_event'; event: string; count_op: CountOp; count: number; within_days: number; filters?: Filter[] }
   | { type: 'not_performed_event'; event: string; within_days: number }
   | { type: 'person_property'; property: string; op: Op; value?: string }
   | { type: 'rfm_segment'; segments: RfmSegmentKey[]; within_days: number; event?: string }
+  | { type: 'funnel'; steps: string[]; outcome: FunnelOutcome; step: number; window_seconds: number; within_days: number }
 export interface CohortDefinition { groups: { conditions: CohortCondition[] }[] }
 export interface Cohort {
   id: number; name: string; description: string; kind: CohortKind; definition: CohortDefinition | null
