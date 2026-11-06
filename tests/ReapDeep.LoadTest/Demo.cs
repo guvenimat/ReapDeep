@@ -230,11 +230,33 @@ static class Demo
                         }
                     }
                 }
-                page = rng.NextDouble() < 0.3 ? "/products" : rng.NextDouble() < 0.75 ? "/products/" + DemoCatalog.Next(rng, product).Id : "exit";
+                var similar = Recommendations(rng, () => DemoCatalog.Next(rng, product), product);
+                Add("recommendation_shown", page, Shown("co_viewed", "product_page", similar, product.Id));
+                if (rng.NextDouble() < 0.3) page = "/products";
+                else if (rng.NextDouble() >= 0.75) page = "exit";
+                else if (rng.NextDouble() < 0.45)
+                {
+                    var position = rng.Next(similar.Count);
+                    Add("recommendation_clicked", page, Clicked("co_viewed", "product_page", similar[position].Id, position, product.Id));
+                    page = "/products/" + similar[position].Id;
+                }
+                else page = "/products/" + DemoCatalog.Next(rng, product).Id;
                 continue;
             }
 
             Add("$pageview", page);
+            if (page == "/")
+            {
+                var popular = Recommendations(rng, () => DemoCatalog.Popular(rng), null);
+                Add("recommendation_shown", page, Shown("popular", "home", popular, null));
+                if (rng.NextDouble() < 0.12)
+                {
+                    var position = rng.Next(popular.Count);
+                    Add("recommendation_clicked", page, Clicked("popular", "home", popular[position].Id, position, null));
+                    page = "/products/" + popular[position].Id;
+                    continue;
+                }
+            }
             if (page == "/pricing" && rng.NextDouble() < 0.3) Identify("/pricing");
             if (page == "/" && first && rng.NextDouble() < 0.08) Identify("/");
             page = page switch
@@ -247,6 +269,31 @@ static class Demo
             };
         }
         if (list.Count > 0) sessions.Add((v.Device, list));
+    }
+
+    static List<DemoItem> Recommendations(Random rng, Func<DemoItem> pick, DemoItem? source)
+    {
+        var items = new List<DemoItem>();
+        for (var tries = 0; items.Count < 4 && tries < 40; tries++)
+        {
+            var item = pick();
+            if (item != source && item.InStock && !items.Contains(item)) items.Add(item);
+        }
+        return items;
+    }
+
+    static Dictionary<string, object?> Shown(string model, string placement, List<DemoItem> items, string? source)
+    {
+        var props = new Dictionary<string, object?> { ["model"] = model, ["placement"] = placement, ["item_ids"] = items.Select(i => i.Id).ToArray() };
+        if (source is not null) props["source_item_id"] = source;
+        return props;
+    }
+
+    static Dictionary<string, object?> Clicked(string model, string placement, string itemId, int index, string? source)
+    {
+        var props = new Dictionary<string, object?> { ["model"] = model, ["placement"] = placement, ["item_id"] = itemId, ["position"] = index + 1 };
+        if (source is not null) props["source_item_id"] = source;
+        return props;
     }
 
     static Dictionary<string, object?> BaseProps(Visitor v, string sessionId, string path) => new()

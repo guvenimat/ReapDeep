@@ -224,9 +224,9 @@ Interactions are counted per `distinct_id` first and then merged per person, so 
 curl "http://localhost:8002/recommend?api_key=pk_demo_shop&model=co_viewed&item_id=linen-shirt&limit=5"
 ```
 
-Quality is measured on demand (`POST /api/v1/recommendations/evaluate`, the Catalog tab's "Measure now"): the models are trained on the 30 days before the last week, and for each person the second item they touched last week counts as a hit if it was in the top 10 for their first. On the demo data co_viewed reaches a 27.1% hit rate against 25.4% for the popular baseline; the demo browsing is strongly popularity-driven, so the gap is small.
+Quality is measured on demand (`POST /api/v1/recommendations/evaluate`, the Catalog tab's "Measure now"): the models are trained on the 30 days before the last week, and for each person the second item they touched last week counts as a hit if it was in the top 10 for their first. On the demo data co_viewed reaches a 26.9% hit rate against 23.1% for the popular baseline; the demo browsing is strongly popularity-driven, so the gap is small.
 
-Live performance comes from the site itself: the SDK's `trackRecommendationShown` and `trackRecommendationClicked` send `recommendation_shown` and `recommendation_clicked` events with the model and the placement, and `GET /api/v1/recommendations/performance?days=7|30|90` (read key; the Catalog tab's "Live performance") returns impressions, clicks, click rate and purchases per model and placement. A purchase counts when the same person buys the clicked item within 7 days of the click.
+Live performance comes from the site itself: the SDK's `trackRecommendationShown` and `trackRecommendationClicked` send `recommendation_shown` and `recommendation_clicked` events with the model and the placement, and `GET /api/v1/recommendations/performance?days=7|30|90` (read key; the Catalog tab's "Live performance") returns impressions, clicks, click rate and purchases per model and placement. A purchase counts when the same person buys the clicked item within 7 days of the click. The demo shop sends both events: similar items on product pages are clicked 23.5% of the time and popular items on the home page 11.9%.
 
 The recommendation tables hold aggregates over many people, not personal data. A deleted person's interactions drop out at the next refresh.
 
