@@ -8,8 +8,8 @@ using ReapDeep.QueryApi.Insights;
 
 namespace ReapDeep.QueryApi.Alerts;
 
-public sealed class AlertService(AlertRepository alerts, InsightRepository insights, TrendService trends, WebhookSender webhooks, IConfiguration cfg,
-    ILogger<AlertService> log)
+public sealed class AlertService(AlertRepository alerts, InsightRepository insights, TrendService trends, WebhookSender webhooks, EmailSender email,
+    IConfiguration cfg, ILogger<AlertService> log)
 {
     readonly IReadOnlyList<TimeSpan> _retryDelays = AlertRules.ParseDelays(cfg["Alerts:RetryDelaysSeconds"]);
 
@@ -17,10 +17,10 @@ public sealed class AlertService(AlertRepository alerts, InsightRepository insig
 
     public async Task<AlertRow> CreateAsync(ProjectContext project, AlertBody req, CancellationToken ct)
     {
-        var (name, insight, condition, threshold, window, url) = await ValidateAsync(project, req, ct);
+        var (name, insight, condition, threshold, window, target) = await ValidateAsync(project, req, ct);
         Ensure.That((await alerts.ListAsync(project.ProjectId, ct)).Count < MaxAlertsPerProject, $"A project can have at most {MaxAlertsPerProject} alerts");
         var secret = "whsec_" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(24));
-        var id = await alerts.CreateAsync(project.ProjectId, name, insight.Id, condition, threshold, window, url.ToString(), secret, req.Enabled ?? true,
+        var id = await alerts.CreateAsync(project.ProjectId, name, insight.Id, condition, threshold, window, target, secret, req.Enabled ?? true,
             project.UserId!.Value, ct);
         return (await alerts.GetAsync(project.ProjectId, id, ct))!.ToContract(withSecret: true);
     }
@@ -28,11 +28,14 @@ public sealed class AlertService(AlertRepository alerts, InsightRepository insig
     public async Task<AlertRow?> UpdateAsync(ProjectContext project, long id, AlertBody req, CancellationToken ct)
     {
         if (await alerts.GetAsync(project.ProjectId, id, ct) is not { } current) return null;
+        var channel = req.Channel ?? current.Channel;
+        var sameChannel = channel == current.Channel;
         var merged = new AlertBody(req.Name ?? current.Name, req.InsightId ?? current.InsightId, req.Condition ?? current.Condition,
-            req.Threshold ?? current.Threshold, req.Window ?? current.WindowUnit, req.WebhookUrl ?? current.WebhookUrl, req.Enabled ?? current.Enabled);
-        var (name, insight, condition, threshold, window, url) = await ValidateAsync(project, merged, ct);
+            req.Threshold ?? current.Threshold, req.Window ?? current.WindowUnit, req.WebhookUrl ?? (sameChannel ? current.WebhookUrl : null),
+            req.Enabled ?? current.Enabled, channel, req.EmailTo ?? (sameChannel ? current.EmailTo?.ToList() : null));
+        var (name, insight, condition, threshold, window, target) = await ValidateAsync(project, merged, ct);
         var rulesChanged = insight.Id != current.InsightId || condition != current.Condition || threshold != current.Threshold || window != current.WindowUnit;
-        await alerts.UpdateAsync(project.ProjectId, id, name, insight.Id, condition, threshold, window, url.ToString(), merged.Enabled!.Value, rulesChanged, ct);
+        await alerts.UpdateAsync(project.ProjectId, id, name, insight.Id, condition, threshold, window, target, merged.Enabled!.Value, rulesChanged, ct);
         return (await alerts.GetAsync(project.ProjectId, id, ct))!.ToContract(withSecret: true);
     }
 
@@ -66,18 +69,24 @@ public sealed class AlertService(AlertRepository alerts, InsightRepository insig
         {
             var payload = new AlertWebhookPayload(alert.Id, alert.Name, alert.ProjectId, firing ? AlertRules.Firing : AlertRules.Resolved,
                 alert.Condition, alert.Threshold, alert.WindowUnit, value, previous, text, new AlertWebhookInsight(alert.InsightId, alert.InsightName), DateTime.UtcNow);
-            var body = WebhookSender.Serialize(payload);
-            var pending = await alerts.AddEventAsync(alert.Id, alert.ProjectId, kind, value, previous, text, body, DateTime.UtcNow + AlertJob.Lease, ct);
-            evt = await DeliverAsync(pending.Id, alert.Id, alert.WebhookUrl, alert.Secret, body, 1, ct);
+            var body = AlertMessages.Render(alert.Channel, payload);
+            var pending = await alerts.AddEventAsync(alert.Id, alert.ProjectId, kind, value, previous, text, body, DateTime.UtcNow + AlertJob.Lease, ct,
+                alert.Channel);
+            evt = await DeliverAsync(pending.Id, alert.Id, alert.Channel, alert.WebhookUrl, alert.EmailTo, alert.Secret, body, 1, ct);
         }
         await alerts.SaveResultAsync(alert.Id, state, value, previous, null, next, ct);
         return new AlertCheckResponse(state, value, previous, text, evt);
     }
 
-    internal async Task<AlertEventRow> DeliverAsync(long eventId, long alertId, string url, string secret, string payload, int attempt,
-        CancellationToken ct)
+    internal async Task<AlertEventRow> DeliverAsync(long eventId, long alertId, string channel, string? url, string[]? emailTo, string secret,
+        string payload, int attempt, CancellationToken ct)
     {
-        var result = await webhooks.SendAsync(new Uri(url), secret, payload, alertId, eventId, attempt, ct);
+        var result = channel switch
+        {
+            AlertChannels.Email when emailTo is { Length: > 0 } => await email.SendAsync(emailTo, payload, ct),
+            AlertChannels.Webhook or AlertChannels.Slack when url is not null => await webhooks.SendAsync(new Uri(url), secret, payload, alertId, eventId, attempt, ct),
+            _ => new WebhookResult(null, $"The alert no longer has a {channel} destination", false),
+        };
         if (result.Error is null)
             return await alerts.RecordAttemptAsync(eventId, result.Status, null, AlertRules.DeliveryDelivered, null, ct);
         var retryIn = result.Retryable ? AlertRules.RetryAfter(attempt, _retryDelays) : null;
@@ -111,7 +120,7 @@ public sealed class AlertService(AlertRepository alerts, InsightRepository insig
         return (current.Total, prev?.Total);
     }
 
-    async Task<(string Name, InsightRow Insight, string Condition, double Threshold, string Window, Uri Url)> ValidateAsync(
+    async Task<(string Name, InsightRow Insight, string Condition, double Threshold, string Window, AlertTarget Target)> ValidateAsync(
         ProjectContext project, AlertBody req, CancellationToken ct)
     {
         var name = Ensure.NotBlank(req.Name, "name");
@@ -123,9 +132,15 @@ public sealed class AlertService(AlertRepository alerts, InsightRepository insig
         var threshold = req.Threshold ?? 0;
         AlertRules.Validate(condition, threshold);
         var window = Ensure.OneOf(req.Window ?? "day", "window", AlertRules.Windows);
+        var channel = Ensure.OneOf(req.Channel ?? AlertChannels.Webhook, "channel", AlertChannels.All);
+        if (channel == AlertChannels.Email)
+        {
+            Ensure.That(email.Configured, "Email alerts need an SMTP server (Alerts__Smtp__Host)");
+            return (name, insight, condition, threshold, window, new AlertTarget(channel, null, EmailSender.ParseRecipients(req.EmailTo)));
+        }
         var url = WebhookSender.ParseUrl(req.WebhookUrl);
         await webhooks.CheckDestinationAsync(url, ct);
-        return (name, insight, condition, threshold, window, url);
+        return (name, insight, condition, threshold, window, new AlertTarget(channel, url.ToString(), null));
     }
 }
 

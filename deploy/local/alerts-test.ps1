@@ -148,6 +148,31 @@ try {
     Check "410 is not retried: failed after 1 attempt" ($g.delivery_status -eq "failed" -and $g.attempts -eq 1 -and @(Hooks "/gone").Count -eq 1 -and @((S GET "/alerts/$($gone.id)/events").Json.events)[0].attempts -eq 1)
     foreach ($a in @($flaky, $gone)) { $null = S DELETE "/alerts/$($a.id)" }
 
+    Write-Host "`n4c) Slack and email channels"
+    $slack = (S POST "/alerts" (With @{ name = "Slack $tag"; channel = "slack"; webhook_url = "http://host.docker.internal:$port/slack"; enabled = $false })).Json
+    $sEvent = (S POST "/alerts/$($slack.id)/check").Json.event
+    $sHook = @(Hooks "/slack")
+    $sBody = if ($sHook.Count) { $sHook[0].body | ConvertFrom-Json } else { $null }
+    Check "slack: delivered as a text message naming the alert and the trend" ($sEvent.delivery_status -eq "delivered" -and $sHook.Count -eq 1 -and $sBody.text -like "*Slack $tag* is firing: 3 is above 2*" -and $sBody.text -match "Trend: Alert source $tag" -and @($sBody.PSObject.Properties).Count -eq 1)
+    Check "slack: no signing secret is returned" ($null -eq $slack.secret -and $slack.channel -eq "slack")
+    Check "email without recipients -> 400" ((S POST "/alerts" (With @{ name = "Mail bad $tag"; channel = "email"; webhook_url = $null; email_to = @() })).Status -eq 400)
+    Check "invalid email address -> 400" ((S POST "/alerts" (With @{ name = "Mail bad $tag"; channel = "email"; email_to = @("not-an-address") })).Status -eq 400)
+    $mailAlert = (S POST "/alerts" (With @{ name = "Mail $tag"; channel = "email"; webhook_url = $null; email_to = @("ops-$tag@example.com", "team-$tag@example.org"); enabled = $false })).Json
+    $mEvent = (S POST "/alerts/$($mailAlert.id)/check").Json.event
+    $mail = $null
+    $gotMail = WaitFor {
+        $list = (Invoke-RestMethod "http://127.0.0.1:8026/api/v1/messages?limit=50").messages
+        $script:mail = @($list | Where-Object { $_.Subject -eq "[ReapDeep] Mail $tag is firing" })[0]
+        $null -ne $script:mail
+    } 30
+    $to = @($mail.To | ForEach-Object { $_.Address } | Sort-Object) -join ","
+    Check "email: delivered over SMTP to both recipients with the alert in the subject -> $to" ($mEvent.delivery_status -eq "delivered" -and $gotMail -and $to -eq "ops-$tag@example.com,team-$tag@example.org")
+    $text = if ($mail) { (Invoke-RestMethod "http://127.0.0.1:8026/api/v1/message/$($mail.ID)").Text } else { "" }
+    Check "email: plain text body with the value and the trend" ($text -match "3 is above 2" -and $text -match "Trend: Alert source $tag" -and $text -match "Value: 3")
+    $switched = S PUT "/alerts/$($mailAlert.id)" @{ channel = "webhook"; webhook_url = $hookUrl }
+    Check "switching an email alert to a webhook keeps it valid and clears the recipients" ($switched.Status -eq 200 -and $switched.Json.channel -eq "webhook" -and $null -eq $switched.Json.email_to)
+    foreach ($a in @($slack, $mailAlert)) { $null = S DELETE "/alerts/$($a.id)" }
+
     Write-Host "`n5) Change against the previous window and formulas"
     $inc = (S POST "/alerts" (With @{ name = "Growth $tag"; condition = "increase"; threshold = 50; enabled = $false })).Json
     $r = (S POST "/alerts/$($inc.id)/check").Json

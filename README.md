@@ -95,7 +95,7 @@ Requirements: Docker with at least **8 GB of RAM**. The .NET 10 SDK and Node.js 
 ```powershell
 cd deploy/local
 .\run-local.ps1                               # creates .env, starts the data stack, runs a smoke test
-docker compose --profile app up -d --build    # ingestion, person worker, query API, recommender, alert runner, dashboard, Grafana
+docker compose --profile app up -d --build    # ingestion, person worker, query API, recommender, alert runner, dashboard, Grafana, Mailpit
 ```
 
 **Linux / macOS:**
@@ -119,6 +119,7 @@ On first start, `.env` is created with random local credentials: the PostgreSQL 
 | StarRocks (MySQL protocol) | `localhost:9030`, user `root` |
 | PostgreSQL | `localhost:5432`, user `reapdeep`, password in `.env` |
 | Grafana (traces, metrics, logs) | http://localhost:3005 |
+| Mailpit (alert emails sent locally) | http://localhost:8026 |
 | Kafka | `localhost:9092` (optional web UI at http://localhost:8080 with `--profile tools`) |
 
 ### Send an event
@@ -191,7 +192,7 @@ A trend series counts events, counts unique persons, or aggregates a numeric eve
 
 An alert watches a saved trend over the last hour, day or week: *above* or *below* a value, or a *growth* or *drop* of at least N% against the window before. It follows the trend's first series, or its formula when there is one. A background job in the Query API checks hourly-window alerts every 10 minutes, daily ones every hour and weekly ones every 6 hours (instances claim alerts with `FOR UPDATE SKIP LOCKED`), and "Check now" runs one on demand.
 
-A webhook is called only when an alert starts or stops firing, with a JSON body (`state`, `value`, `previous_value`, `message`, the insight) and an `X-ReapDeep-Signature: sha256=<HMAC-SHA256(secret, body)>` header; the secret is shown when the alert is created. Each event and the outcome of its delivery are kept in the alert's history. Deliveries are queued in PostgreSQL before they are sent: a network error, a timeout, `408`, `429` or `5xx` is retried after 1, 5 and 15 minutes, 1 hour and 3 hours (six attempts in all), while other `4xx` answers fail at once. Every attempt carries `X-ReapDeep-Delivery` (the same id on each retry, so receivers can drop duplicates) and `X-ReapDeep-Attempt`, and the body and signature do not change between attempts. Webhook URLs that resolve to private, loopback or link-local addresses are refused, and the check is repeated on the connection itself so DNS rebinding cannot bypass it; the local compose file sets `Alerts__AllowPrivateWebhooks=true` so tests can use a receiver on the host. Only owners and admins manage alerts.
+An alert notifies one channel: a webhook, a Slack incoming webhook (a short text message) or up to 10 email addresses over SMTP (`Alerts__Smtp__Host`, `Port`, `From`, `Username`, `Password`, `EnableSsl`; the local stack sends to Mailpit). A notification goes out only when an alert starts or stops firing; a webhook gets a JSON body (`state`, `value`, `previous_value`, `message`, the insight) and an `X-ReapDeep-Signature: sha256=<HMAC-SHA256(secret, body)>` header; the secret is shown when the alert is created. Each event and the outcome of its delivery are kept in the alert's history. Deliveries are queued in PostgreSQL before they are sent: a network error, a timeout, `408`, `429` or `5xx` is retried after 1, 5 and 15 minutes, 1 hour and 3 hours (six attempts in all), while other `4xx` answers fail at once. Every attempt carries `X-ReapDeep-Delivery` (the same id on each retry, so receivers can drop duplicates) and `X-ReapDeep-Attempt`, and the body and signature do not change between attempts. Webhook URLs that resolve to private, loopback or link-local addresses are refused, and the check is repeated on the connection itself so DNS rebinding cannot bypass it; the local compose file sets `Alerts__AllowPrivateWebhooks=true` so tests can use a receiver on the host. Only owners and admins manage alerts.
 
 ### Cohorts
 

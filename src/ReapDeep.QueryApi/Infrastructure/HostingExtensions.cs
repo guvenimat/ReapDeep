@@ -91,6 +91,7 @@ public static class HostingExtensions
         services.AddSingleton<CatalogService>();
         services.AddSingleton<AlertRepository>();
         services.AddSingleton<WebhookSender>();
+        services.AddSingleton<EmailSender>();
         services.AddSingleton<AlertService>();
         if (cfg.GetValue("Alerts:RunJob", true)) services.AddHostedService<AlertJob>();
         return builder;

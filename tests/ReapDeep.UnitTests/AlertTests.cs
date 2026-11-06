@@ -7,6 +7,46 @@ namespace ReapDeep.UnitTests;
 
 public class AlertTests
 {
+    static AlertWebhookPayload Payload(string state = "firing") => new(7, "Revenue <drop>", 1, state, "below", 100, "day", 80, 120,
+        "80 is below 100", new AlertWebhookInsight(3, "Revenue & orders"), new DateTime(2026, 11, 6, 12, 30, 0, DateTimeKind.Utc));
+
+    [Fact]
+    public void Slack_messages_are_escaped_text_payloads()
+    {
+        var json = System.Text.Json.JsonDocument.Parse(AlertMessages.Render(AlertChannels.Slack, Payload())).RootElement;
+        var text = json.GetProperty("text").GetString()!;
+        Assert.StartsWith("*Revenue &lt;drop&gt;* is firing: 80 is below 100", text);
+        Assert.Contains("Trend: Revenue &amp; orders", text);
+        Assert.Single(json.EnumerateObject());
+    }
+
+    [Fact]
+    public void Email_messages_have_a_subject_and_a_plain_text_body()
+    {
+        var json = System.Text.Json.JsonDocument.Parse(AlertMessages.Render(AlertChannels.Email, Payload("resolved"))).RootElement;
+        Assert.Equal("[ReapDeep] Revenue <drop> is resolved", json.GetProperty("subject").GetString());
+        var body = json.GetProperty("text").GetString()!;
+        Assert.Contains("Previous window: 120", body);
+        Assert.Contains("Checked: 2026-11-06 12:30 UTC", body);
+    }
+
+    [Fact]
+    public void Webhook_payload_keeps_the_signed_json_contract()
+    {
+        var json = System.Text.Json.JsonDocument.Parse(AlertMessages.Render(AlertChannels.Webhook, Payload())).RootElement;
+        Assert.Equal(7, json.GetProperty("alert_id").GetInt64());
+        Assert.Equal("Revenue & orders", json.GetProperty("insight").GetProperty("name").GetString());
+    }
+
+    [Fact]
+    public void Email_recipients_are_validated_and_deduplicated()
+    {
+        Assert.Equal(["ops@example.com", "team@example.org"], EmailSender.ParseRecipients([" ops@example.com", "team@example.org", "OPS@example.com"]));
+        Assert.Throws<ValidationException>(() => EmailSender.ParseRecipients([]));
+        Assert.Throws<ValidationException>(() => EmailSender.ParseRecipients(["not an address"]));
+        Assert.Throws<ValidationException>(() => EmailSender.ParseRecipients(Enumerable.Range(0, 11).Select(i => $"u{i}@example.com").ToList()));
+    }
+
     [Theory]
     [InlineData(null, true)]
     [InlineData(408, true)]

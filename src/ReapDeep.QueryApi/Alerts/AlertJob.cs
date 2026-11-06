@@ -16,8 +16,8 @@ public sealed class AlertJob(AlertRepository alerts, AlertService service, IConf
                 foreach (var alert in await alerts.ClaimDueAsync(BatchSize, DateTime.UtcNow + Lease, stoppingToken))
                     await service.EvaluateAsync(alert, stoppingToken);
                 foreach (var delivery in await alerts.ClaimRetriesAsync(BatchSize, DateTime.UtcNow + Lease, stoppingToken))
-                    await service.DeliverAsync(delivery.EventId, delivery.AlertId, delivery.WebhookUrl, delivery.Secret, delivery.Payload,
-                        delivery.Attempts + 1, stoppingToken);
+                    await service.DeliverAsync(delivery.EventId, delivery.AlertId, delivery.Channel, delivery.WebhookUrl, delivery.EmailTo, delivery.Secret,
+                        delivery.Payload, delivery.Attempts + 1, stoppingToken);
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {
