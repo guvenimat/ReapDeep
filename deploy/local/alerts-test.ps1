@@ -38,7 +38,7 @@ function WaitFor([scriptblock]$cond, [int]$seconds) {
     do { if (& $cond) { return $true }; Start-Sleep 2 } until ((Get-Date) -gt $deadline)
     return [bool](& $cond)
 }
-function Hooks { if (Test-Path $hookLog) { @(Get-Content $hookLog | ForEach-Object { $_ | ConvertFrom-Json }) } else { @() } }
+function Hooks([string]$path = "/hook") { if (Test-Path $hookLog) { @(Get-Content $hookLog | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object { $_.path -eq $path }) } else { @() } }
 function Hmac([string]$secret, [string]$body) {
     $h = New-Object System.Security.Cryptography.HMACSHA256 (, [Text.Encoding]::UTF8.GetBytes($secret))
     -join ($h.ComputeHash([Text.Encoding]::UTF8.GetBytes($body)) | ForEach-Object { $_.ToString("x2") })
@@ -71,8 +71,13 @@ $receiver = Start-Job -ArgumentList $port, $hookLog {
             while ($total - $bodyStart -lt $length) { $total += $stream.Read($buf, $total, $buf.Length - $total) }
             $body = [Text.Encoding]::UTF8.GetString($buf, $bodyStart, $length)
             $signature = [regex]::Match($headers, "(?im)^x-reapdeep-signature:\s*(\S+)").Groups[1].Value
-            Add-Content -Path $log -Value (@{ signature = $signature; body = $body } | ConvertTo-Json -Compress)
-            $resp = [Text.Encoding]::ASCII.GetBytes("HTTP/1.1 200 OK`r`nContent-Length: 2`r`nConnection: close`r`n`r`nok")
+            $delivery = [regex]::Match($headers, "(?im)^x-reapdeep-delivery:\s*(\S+)").Groups[1].Value
+            $attempt = [regex]::Match($headers, "(?im)^x-reapdeep-attempt:\s*(\S+)").Groups[1].Value
+            $path = [regex]::Match($headers, "^POST (\S+)").Groups[1].Value
+            $seen = if (Test-Path $log) { @(Get-Content $log | Where-Object { $_ -match [regex]::Escape("`"path`":`"$path`"") }).Count } else { 0 }
+            Add-Content -Path $log -Value (@{ signature = $signature; body = $body; path = $path; delivery = $delivery; attempt = $attempt } | ConvertTo-Json -Compress)
+            $status = if ($path -eq "/flaky" -and $seen -lt 2) { "503 Service Unavailable" } elseif ($path -eq "/gone") { "410 Gone" } else { "200 OK" }
+            $resp = [Text.Encoding]::ASCII.GetBytes("HTTP/1.1 $status`r`nContent-Length: 2`r`nConnection: close`r`n`r`nok")
             $stream.Write($resp, 0, $resp.Length)
         }
         finally { $client.Close() }
@@ -126,7 +131,22 @@ try {
     $ok = WaitFor { @(Hooks).Count -ge 2 } 20
     Check "3 is not above 10 -> ok, and a resolved webhook is sent" ($resolved -and $ok -and (@(Hooks)[1].body | ConvertFrom-Json).state -eq "resolved")
     $events = (S GET "/alerts/$($alert.id)/events").Json.events
-    Check "history: resolved then fired, both delivered with HTTP 200" (@($events).Count -eq 2 -and $events[0].kind -eq "resolved" -and $events[1].kind -eq "fired" -and $events[0].response_status -eq 200 -and $events[1].response_status -eq 200)
+    Check "history: resolved then fired, both delivered with HTTP 200 on the first attempt" (@($events).Count -eq 2 -and $events[0].kind -eq "resolved" -and $events[1].kind -eq "fired" -and $events[0].response_status -eq 200 -and $events[1].response_status -eq 200 -and $events[0].delivery_status -eq "delivered" -and $events[0].attempts -eq 1)
+
+    Write-Host "`n4b) Failed deliveries are retried"
+    $flaky = (S POST "/alerts" (With @{ name = "Flaky $tag"; webhook_url = "http://host.docker.internal:$port/flaky"; enabled = $false })).Json
+    $first = (S POST "/alerts/$($flaky.id)/check").Json.event
+    Check "first attempt gets 503 -> pending with a next attempt time" ($first.kind -eq "fired" -and $first.delivery_status -eq "pending" -and $first.attempts -eq 1 -and $first.response_status -eq 503 -and $null -ne $first.next_attempt_at)
+    $delivered = WaitFor { $e = @((S GET "/alerts/$($flaky.id)/events").Json.events)[0]; $e.delivery_status -eq "delivered" } 90
+    $e = @((S GET "/alerts/$($flaky.id)/events").Json.events)[0]
+    Check "the background job retries until the receiver accepts: delivered on attempt 3 -> $($e.delivery_status) / $($e.attempts)" ($delivered -and $e.attempts -eq 3 -and $e.response_status -eq 200 -and $null -eq $e.delivery_error -and $null -ne $e.delivered_at)
+    $tries = @(Hooks "/flaky")
+    Check "3 requests with the same delivery id, attempts 1-2-3 and the same signed body" ($tries.Count -eq 3 -and @($tries | Select-Object -ExpandProperty delivery -Unique).Count -eq 1 -and $tries[0].delivery -eq "$($first.id)" -and ($tries.attempt -join ",") -eq "1,2,3" -and @($tries | Select-Object -ExpandProperty body -Unique).Count -eq 1 -and $tries[2].signature -eq ("sha256=" + (Hmac $flaky.secret $tries[2].body)))
+    $gone = (S POST "/alerts" (With @{ name = "Gone $tag"; webhook_url = "http://host.docker.internal:$port/gone"; enabled = $false })).Json
+    $g = (S POST "/alerts/$($gone.id)/check").Json.event
+    Start-Sleep 12
+    Check "410 is not retried: failed after 1 attempt" ($g.delivery_status -eq "failed" -and $g.attempts -eq 1 -and @(Hooks "/gone").Count -eq 1 -and @((S GET "/alerts/$($gone.id)/events").Json.events)[0].attempts -eq 1)
+    foreach ($a in @($flaky, $gone)) { $null = S DELETE "/alerts/$($a.id)" }
 
     Write-Host "`n5) Change against the previous window and formulas"
     $inc = (S POST "/alerts" (With @{ name = "Growth $tag"; condition = "increase"; threshold = 50; enabled = $false })).Json

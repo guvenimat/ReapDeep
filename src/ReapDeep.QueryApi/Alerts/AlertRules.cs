@@ -65,6 +65,24 @@ public static class AlertRules
         return (hit, $"{v} is {(change >= 0 ? "+" : "")}{Format(Math.Round(change, 1))}% against {Format(before)} in the previous window (limit {(condition == Increase ? "+" : "-")}{Format(threshold)}%)");
     }
 
+    public const string DeliveryNone = "none";
+    public const string DeliveryPending = "pending";
+    public const string DeliveryDelivered = "delivered";
+    public const string DeliveryFailed = "failed";
+    public static readonly TimeSpan[] DefaultRetryDelays =
+        [TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(15), TimeSpan.FromHours(1), TimeSpan.FromHours(3)];
+
+    public static bool Retryable(int? status) => status is null or 408 or 429 or >= 500;
+
+    public static TimeSpan? RetryAfter(int attemptsMade, IReadOnlyList<TimeSpan> delays) =>
+        attemptsMade >= 1 && attemptsMade <= delays.Count ? delays[attemptsMade - 1] : null;
+
+    public static IReadOnlyList<TimeSpan> ParseDelays(string? seconds) =>
+        string.IsNullOrWhiteSpace(seconds)
+            ? DefaultRetryDelays
+            : seconds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(s => TimeSpan.FromSeconds(int.Parse(s, CultureInfo.InvariantCulture))).ToArray();
+
     public static string? Transition(string state, bool firing) => (state, firing) switch
     {
         (not Firing, true) => Fired,

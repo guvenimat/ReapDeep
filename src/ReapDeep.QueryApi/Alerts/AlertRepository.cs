@@ -15,10 +15,16 @@ public sealed class AlertRepository(NpgsqlDataSource db)
     }
 
     internal sealed record AlertEventRecord(long Id, string Kind, double? Value, double? PreviousValue, string Message, int? ResponseStatus,
-        string? DeliveryError, DateTime CreatedAt)
+        string? DeliveryError, string DeliveryStatus, int Attempts, DateTime? NextAttemptAt, DateTime? DeliveredAt, DateTime CreatedAt)
     {
-        public AlertEventRow ToContract() => new(Id, Kind, Value, PreviousValue, Message, ResponseStatus, DeliveryError, CreatedAt);
+        public AlertEventRow ToContract() => new(Id, Kind, Value, PreviousValue, Message, ResponseStatus, DeliveryError, DeliveryStatus, Attempts,
+            NextAttemptAt, DeliveredAt, CreatedAt);
     }
+
+    internal sealed record DeliveryRecord(long EventId, long AlertId, string WebhookUrl, string Secret, string Payload, int Attempts);
+
+    const string EventColumns =
+        "id, kind, value, previous_value, message, response_status, delivery_error, delivery_status, attempts, next_attempt_at, delivered_at, created_at";
 
     const string Select = """
         SELECT a.id, a.project_id, p.timezone AS time_zone, a.name, a.insight_id, i.name AS insight_name, a.condition, a.threshold,
@@ -75,8 +81,8 @@ public sealed class AlertRepository(NpgsqlDataSource db)
     public async Task<List<AlertEventRow>> EventsAsync(long projectId, long id, CancellationToken ct)
     {
         await using var conn = await db.OpenConnectionAsync(ct);
-        var rows = await conn.QueryAsync<AlertEventRecord>("""
-            SELECT id, kind, value, previous_value, message, response_status, delivery_error, created_at
+        var rows = await conn.QueryAsync<AlertEventRecord>($"""
+            SELECT {EventColumns}
             FROM alert_events WHERE alert_id = @Id AND project_id = @ProjectId ORDER BY created_at DESC, id DESC LIMIT 50
             """, new { Id = id, ProjectId = projectId });
         return rows.Select(r => r.ToContract()).ToList();
@@ -105,15 +111,47 @@ public sealed class AlertRepository(NpgsqlDataSource db)
     }
 
     public async Task<AlertEventRow> AddEventAsync(long alertId, long projectId, string kind, double? value, double? previous, string message,
-        int? responseStatus, string? deliveryError, CancellationToken ct)
+        string? payload, DateTime? sendUntil, CancellationToken ct)
     {
         await using var conn = await db.OpenConnectionAsync(ct);
-        var row = await conn.QuerySingleAsync<AlertEventRecord>("""
-            INSERT INTO alert_events (alert_id, project_id, kind, value, previous_value, message, response_status, delivery_error)
-            VALUES (@AlertId, @ProjectId, @Kind, @Value, @Previous, @Message, @ResponseStatus, @DeliveryError)
-            RETURNING id, kind, value, previous_value, message, response_status, delivery_error, created_at
+        var row = await conn.QuerySingleAsync<AlertEventRecord>($"""
+            INSERT INTO alert_events (alert_id, project_id, kind, value, previous_value, message, payload, delivery_status, next_attempt_at)
+            VALUES (@AlertId, @ProjectId, @Kind, @Value, @Previous, @Message, @Payload, @Status, @SendUntil)
+            RETURNING {EventColumns}
             """, new { AlertId = alertId, ProjectId = projectId, Kind = kind, Value = value, Previous = previous, Message = message,
-            ResponseStatus = responseStatus, DeliveryError = deliveryError });
+            Payload = payload, Status = payload is null ? AlertRules.DeliveryNone : AlertRules.DeliveryPending, SendUntil = sendUntil });
         return row.ToContract();
+    }
+
+    public async Task<AlertEventRow> RecordAttemptAsync(long eventId, int? responseStatus, string? deliveryError, string deliveryStatus,
+        DateTime? nextAttemptAt, CancellationToken ct)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        var row = await conn.QuerySingleAsync<AlertEventRecord>($"""
+            UPDATE alert_events SET attempts = attempts + 1, response_status = @ResponseStatus, delivery_error = @DeliveryError,
+                   delivery_status = @DeliveryStatus, next_attempt_at = @NextAttemptAt,
+                   delivered_at = CASE WHEN @DeliveryStatus = 'delivered' THEN now() ELSE delivered_at END
+            WHERE id = @Id
+            RETURNING {EventColumns}
+            """, new { Id = eventId, ResponseStatus = responseStatus, DeliveryError = deliveryError, DeliveryStatus = deliveryStatus,
+            NextAttemptAt = nextAttemptAt });
+        return row.ToContract();
+    }
+
+    internal async Task<List<DeliveryRecord>> ClaimRetriesAsync(int limit, DateTime leaseUntil, CancellationToken ct)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<DeliveryRecord>("""
+            WITH due AS (
+                SELECT id FROM alert_events
+                WHERE delivery_status = 'pending' AND next_attempt_at <= now()
+                ORDER BY next_attempt_at LIMIT @Limit FOR UPDATE SKIP LOCKED
+            )
+            UPDATE alert_events e SET next_attempt_at = @LeaseUntil
+            FROM due, alerts a
+            WHERE e.id = due.id AND a.id = e.alert_id
+            RETURNING e.id AS event_id, e.alert_id, a.webhook_url, a.secret, e.payload, e.attempts
+            """, new { Limit = limit, LeaseUntil = leaseUntil });
+        return rows.AsList();
     }
 }

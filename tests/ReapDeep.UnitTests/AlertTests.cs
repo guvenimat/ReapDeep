@@ -8,6 +8,29 @@ namespace ReapDeep.UnitTests;
 public class AlertTests
 {
     [Theory]
+    [InlineData(null, true)]
+    [InlineData(408, true)]
+    [InlineData(429, true)]
+    [InlineData(500, true)]
+    [InlineData(503, true)]
+    [InlineData(400, false)]
+    [InlineData(404, false)]
+    [InlineData(410, false)]
+    public void Only_network_errors_timeouts_throttling_and_server_errors_are_retried(int? status, bool retry) =>
+        Assert.Equal(retry, AlertRules.Retryable(status));
+
+    [Fact]
+    public void Retries_back_off_and_stop_after_the_last_delay()
+    {
+        var delays = AlertRules.DefaultRetryDelays;
+        Assert.Equal(TimeSpan.FromMinutes(1), AlertRules.RetryAfter(1, delays));
+        Assert.Equal(TimeSpan.FromHours(3), AlertRules.RetryAfter(delays.Length, delays));
+        Assert.Null(AlertRules.RetryAfter(delays.Length + 1, delays));
+        Assert.Equal([TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(4)], AlertRules.ParseDelays("2, 4"));
+        Assert.Same(AlertRules.DefaultRetryDelays, AlertRules.ParseDelays(null));
+    }
+
+    [Theory]
     [InlineData("above", 2, 3, null, true)]
     [InlineData("above", 3, 3, null, false)]
     [InlineData("below", 25, 20, null, true)]

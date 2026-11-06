@@ -8,8 +8,11 @@ using ReapDeep.QueryApi.Insights;
 
 namespace ReapDeep.QueryApi.Alerts;
 
-public sealed class AlertService(AlertRepository alerts, InsightRepository insights, TrendService trends, WebhookSender webhooks, ILogger<AlertService> log)
+public sealed class AlertService(AlertRepository alerts, InsightRepository insights, TrendService trends, WebhookSender webhooks, IConfiguration cfg,
+    ILogger<AlertService> log)
 {
+    readonly IReadOnlyList<TimeSpan> _retryDelays = AlertRules.ParseDelays(cfg["Alerts:RetryDelaysSeconds"]);
+
     public const int MaxAlertsPerProject = 50;
 
     public async Task<AlertRow> CreateAsync(ProjectContext project, AlertBody req, CancellationToken ct)
@@ -63,11 +66,25 @@ public sealed class AlertService(AlertRepository alerts, InsightRepository insig
         {
             var payload = new AlertWebhookPayload(alert.Id, alert.Name, alert.ProjectId, firing ? AlertRules.Firing : AlertRules.Resolved,
                 alert.Condition, alert.Threshold, alert.WindowUnit, value, previous, text, new AlertWebhookInsight(alert.InsightId, alert.InsightName), DateTime.UtcNow);
-            var (status, error) = await webhooks.SendAsync(new Uri(alert.WebhookUrl), alert.Secret, payload, ct);
-            evt = await alerts.AddEventAsync(alert.Id, alert.ProjectId, kind, value, previous, text, status, error, ct);
+            var body = WebhookSender.Serialize(payload);
+            var pending = await alerts.AddEventAsync(alert.Id, alert.ProjectId, kind, value, previous, text, body, DateTime.UtcNow + AlertJob.Lease, ct);
+            evt = await DeliverAsync(pending.Id, alert.Id, alert.WebhookUrl, alert.Secret, body, 1, ct);
         }
         await alerts.SaveResultAsync(alert.Id, state, value, previous, null, next, ct);
         return new AlertCheckResponse(state, value, previous, text, evt);
+    }
+
+    internal async Task<AlertEventRow> DeliverAsync(long eventId, long alertId, string url, string secret, string payload, int attempt,
+        CancellationToken ct)
+    {
+        var result = await webhooks.SendAsync(new Uri(url), secret, payload, alertId, eventId, attempt, ct);
+        if (result.Error is null)
+            return await alerts.RecordAttemptAsync(eventId, result.Status, null, AlertRules.DeliveryDelivered, null, ct);
+        var retryIn = result.Retryable ? AlertRules.RetryAfter(attempt, _retryDelays) : null;
+        if (retryIn is null)
+            log.LogWarning("Webhook delivery {Delivery} of alert {Alert} failed for good after {Attempts} attempts: {Error}", eventId, alertId, attempt, result.Error);
+        return await alerts.RecordAttemptAsync(eventId, result.Status, result.Error,
+            retryIn is null ? AlertRules.DeliveryFailed : AlertRules.DeliveryPending, DateTime.UtcNow + retryIn, ct);
     }
 
     async Task<(double Value, double? Previous)> MeasureAsync(AlertRepository.AlertRecord alert, CancellationToken ct)

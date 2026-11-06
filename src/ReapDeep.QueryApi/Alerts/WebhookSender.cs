@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Sockets;
 using System.Security.Cryptography;
@@ -66,22 +67,27 @@ public sealed class WebhookSender : IDisposable
         }
     }
 
-    public async Task<(int? Status, string? Error)> SendAsync(Uri uri, string secret, AlertWebhookPayload payload, CancellationToken ct)
+    public static string Serialize(AlertWebhookPayload payload) => JsonSerializer.Serialize(payload, AppJsonContext.Default.AlertWebhookPayload);
+
+    public async Task<WebhookResult> SendAsync(Uri uri, string secret, string payload, long alertId, long deliveryId, int attempt, CancellationToken ct)
     {
-        var body = JsonSerializer.SerializeToUtf8Bytes(payload, AppJsonContext.Default.AlertWebhookPayload);
+        var body = Encoding.UTF8.GetBytes(payload);
         using var req = new HttpRequestMessage(HttpMethod.Post, uri) { Content = new ByteArrayContent(body) };
         req.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/json");
         req.Headers.TryAddWithoutValidation("X-ReapDeep-Signature", "sha256=" + Sign(secret, body));
-        req.Headers.TryAddWithoutValidation("X-ReapDeep-Alert", payload.AlertId.ToString());
+        req.Headers.TryAddWithoutValidation("X-ReapDeep-Alert", alertId.ToString(CultureInfo.InvariantCulture));
+        req.Headers.TryAddWithoutValidation("X-ReapDeep-Delivery", deliveryId.ToString(CultureInfo.InvariantCulture));
+        req.Headers.TryAddWithoutValidation("X-ReapDeep-Attempt", attempt.ToString(CultureInfo.InvariantCulture));
         try
         {
             using var res = await _http.SendAsync(req, ct);
             var status = (int)res.StatusCode;
-            return (status, res.IsSuccessStatusCode ? null : $"HTTP {status}");
+            return res.IsSuccessStatusCode ? new(status, null, false) : new(status, $"HTTP {status}", AlertRules.Retryable(status));
         }
         catch (Exception e) when (e is HttpRequestException or TaskCanceledException or WebhookBlockedException)
         {
-            return (null, (e.InnerException as WebhookBlockedException)?.Message ?? e.Message);
+            var blocked = e as WebhookBlockedException ?? e.InnerException as WebhookBlockedException;
+            return blocked is not null ? new(null, blocked.Message, false) : new(null, e.Message, true);
         }
     }
 
@@ -118,5 +124,7 @@ public sealed class WebhookSender : IDisposable
 
     public void Dispose() => _http.Dispose();
 }
+
+public sealed record WebhookResult(int? Status, string? Error, bool Retryable);
 
 public sealed class WebhookBlockedException(string message) : Exception(message);
