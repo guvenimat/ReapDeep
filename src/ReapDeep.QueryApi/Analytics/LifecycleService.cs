@@ -52,18 +52,11 @@ public sealed class LifecycleService(StarRocksClient starRocks, CohortService co
 
         var previous = LifecycleSql.Start(period, first - 1);
         var lookbackStart = firstLocal.AddDays(-lookback);
-        var scanFromUtc = LocalToUtc(previous < lookbackStart ? previous : lookbackStart, project.TimeZone);
+        var scanFromUtc = TimeRange.LocalToUtc(previous < lookbackStart ? previous : lookbackStart, project.TimeZone);
         var scanned = TimeRange.Between(scanFromUtc, range.ToUtc, project.TimeZone);
 
         var b = new SqlBuilder(project.ProjectId, scanned.FromUtc, scanned.ToUtc);
         b.AddFilters(req.Filters, await cohorts.ResolveAsync(project, req.Filters, null, ct));
         return new Plan(eventName, period, lookback, first, last, LifecycleSql.Build(b, eventName, period, scanned, project.TimeZoneId, first, last));
-    }
-
-    static DateTime LocalToUtc(DateTime local, TimeZoneInfo tz)
-    {
-        var unspecified = DateTime.SpecifyKind(local, DateTimeKind.Unspecified);
-        while (tz.IsInvalidTime(unspecified)) unspecified = unspecified.AddHours(1);
-        return TimeZoneInfo.ConvertTimeToUtc(unspecified, tz);
     }
 }
