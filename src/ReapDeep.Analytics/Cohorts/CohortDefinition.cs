@@ -17,7 +17,11 @@ public sealed record CohortCondition(
     string? Property = null,
     string? Op = null,
     JsonElement? Value = null,
-    List<string>? Segments = null);
+    List<string>? Segments = null,
+    List<string>? Steps = null,
+    int? Step = null,
+    string? Outcome = null,
+    long? WindowSeconds = null);
 
 public static class ConditionTypes
 {
@@ -25,8 +29,10 @@ public static class ConditionTypes
     public const string NotPerformed = "not_performed_event";
     public const string PersonProperty = "person_property";
     public const string RfmSegment = "rfm_segment";
+    public const string Funnel = "funnel";
 
-    public static readonly string[] All = [Performed, NotPerformed, PersonProperty, RfmSegment];
+    public static readonly string[] All = [Performed, NotPerformed, PersonProperty, RfmSegment, Funnel];
+    public static bool DefinesPopulation(string type) => type is Performed or PersonProperty or RfmSegment or Funnel;
 }
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]

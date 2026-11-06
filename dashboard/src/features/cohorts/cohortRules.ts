@@ -20,13 +20,18 @@ export const newCondition = (type: CohortCondition['type']): CohortCondition =>
       ? { type, event: '', within_days: 30 }
       : type === 'rfm_segment'
         ? { type, segments: [], within_days: 365 }
-        : { type, property: '', op: 'eq', value: '' }
+        : type === 'funnel'
+          ? { type, steps: ['', ''], outcome: 'dropped', step: 1, window_seconds: 86400, within_days: 30 }
+          : { type, property: '', op: 'eq', value: '' }
 
 export const emptyDefinition = (): CohortDefinition => ({ groups: [{ conditions: [newCondition('performed_event')] }] })
 
 const conditionComplete = (c: CohortCondition) => {
   if (c.type === 'person_property') return c.property.trim() !== '' && (c.op === 'is_set' || (c.value ?? '').trim() !== '')
   if (c.type === 'rfm_segment') return c.segments.length > 0 && RFM_WINDOWS.includes(c.within_days)
+  if (c.type === 'funnel')
+    return c.steps.length >= 2 && c.steps.every((s) => s.trim() !== '') && c.within_days >= 1 && c.within_days <= MAX_WITHIN_DAYS &&
+      (c.outcome === 'dropped' ? c.step >= 1 && c.step < c.steps.length : c.step >= 2 && c.step <= c.steps.length)
   const days = c.within_days >= 1 && c.within_days <= MAX_WITHIN_DAYS
   return c.event.trim() !== '' && days && (c.type === 'not_performed_event' || c.count >= 1)
 }
@@ -37,7 +42,7 @@ export function definitionProblem(def: CohortDefinition): string | undefined {
   if (def.groups.length === 0) return 'Add at least one group'
   if (def.groups.reduce((n, g) => n + g.conditions.length, 0) > MAX_CONDITIONS) return `At most ${MAX_CONDITIONS} conditions`
   if (def.groups.some((g) => g.conditions.length === 0)) return 'Every group needs a condition'
-  if (def.groups.some((g) => !hasPositive(g.conditions))) return 'Each group needs a "did", person property or RFM condition, not only "did not"'
+  if (def.groups.some((g) => !hasPositive(g.conditions))) return 'Each group needs a "did", person property, RFM or funnel condition, not only "did not"'
   if (def.groups.some((g) => g.conditions.some((c) => !conditionComplete(c)))) return 'Fill in every condition'
   return undefined
 }
@@ -49,6 +54,7 @@ export function cleanDefinition(def: CohortDefinition): CohortDefinition {
         if (c.type === 'person_property') return { ...c, property: c.property.trim(), value: c.op === 'is_set' ? undefined : c.value?.trim() }
         if (c.type === 'not_performed_event') return { ...c, event: c.event.trim() }
         if (c.type === 'rfm_segment') return { ...c, event: c.event?.trim() || undefined }
+        if (c.type === 'funnel') return { ...c, steps: c.steps.map((s) => s.trim()) }
         const filters = (c.filters ?? []).filter((f) => f.property.trim() && (f.op === 'is_set' || (f.value ?? '').trim() !== ''))
         return { ...c, event: c.event.trim(), filters: filters.length ? filters : undefined }
       }),
@@ -64,6 +70,11 @@ export function describeCondition(c: CohortCondition): string {
   if (c.type === 'rfm_segment')
     return `RFM segment is ${c.segments.map((k) => RFM_SEGMENT_NAMES[k]).join(' or ')} (last ${days(c.within_days)}${c.event && c.event !== 'purchase' ? `, ${c.event}` : ''})`
   if (c.type === 'not_performed_event') return `did not do ${c.event} in the last ${days(c.within_days)}`
+  if (c.type === 'funnel') {
+    const at = c.steps[c.step - 1]
+    const what = c.outcome === 'dropped' ? `dropped after ${at}` : `reached ${at}`
+    return `${what} in the funnel ${c.steps.join(' > ')} (last ${days(c.within_days)})`
+  }
   const label = COUNT_OPS.find((o) => o.id === c.count_op)?.label ?? 'at least'
   const where = (c.filters ?? []).map((f) => ` where ${f.property} ${OP_TEXT[f.op] ?? f.op}${f.op === 'is_set' ? '' : ` "${f.value ?? ''}"`}`).join('')
   return `did ${c.event} ${label} ${times(c.count)} in the last ${days(c.within_days)}${where}`

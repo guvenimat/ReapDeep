@@ -88,6 +88,12 @@ Check "preview: OR group (bought) or (property plan) -> 2" ((S POST "/cohorts/pr
 Check "only a negative condition in a group -> 400" ((S POST "/cohorts/preview" @{ definition = (Definition @(, @(NotPerformed $buy))) }).Status -eq 400)
 $tooLong = Definition @(, @(@{ type = "performed_event"; event = $view; count = 1; within_days = 91 }))
 Check "within_days above 90 -> 400" ((S POST "/cohorts/preview" @{ definition = $tooLong }).Status -eq 400)
+function FunnelCond([string]$outcome, [int]$step) { @{ type = "funnel"; steps = @($view, $buy); outcome = $outcome; step = $step; window_seconds = 3600; within_days = 1 } }
+$fd = S POST "/cohorts/preview" @{ definition = (Definition @(, @(FunnelCond "dropped" 1))) }
+Check "preview: funnel view > buy, dropped after view -> 2 (A across both ids, C) -> $($fd.Json.persons)" ($fd.Status -eq 200 -and $fd.Json.persons -eq 2)
+Check "preview: funnel view > buy, reached buy -> 1 (B)" ((S POST "/cohorts/preview" @{ definition = (Definition @(, @(FunnelCond "converted" 2))) }).Json.persons -eq 1)
+Check "preview: dropped after view and viewed 3+ times -> 1 (A)" ((S POST "/cohorts/preview" @{ definition = (Definition @(, @((FunnelCond "dropped" 1), (Performed $view 3)))) }).Json.persons -eq 1)
+Check "funnel condition with step outside the funnel -> 400" ((S POST "/cohorts/preview" @{ definition = (Definition @(, @(FunnelCond "dropped" 2))) }).Status -eq 400)
 Check "read API key cannot create cohorts -> 403" ((K POST "/cohorts" @{ name = "x"; definition = $windowShoppers }).Status -eq 403)
 
 Write-Host "`n3) Dynamic, property and static cohorts"
@@ -114,6 +120,12 @@ Check "person cohorts by identified distinct_id: same three" ((MemberOf $userA) 
 Check "person cohorts by the earlier anonymous distinct_id: same three" ((MemberOf $anonA) -join "," -eq $expectA)
 Check "person cohorts: C only in the static list" ((MemberOf $casualC) -join "," -eq "$($stat.id)")
 Check "person cohorts: B in none of them" (@(MemberOf $buyerB).Count -eq 0)
+$fun = (S POST "/cohorts" @{ name = "Dropped funnel $tag"; definition = (Definition @(, @(FunnelCond "dropped" 1))) }).Json
+$fun = WaitReady $fun.id
+$funMembers = @((S GET "/cohorts/$($fun.id)/persons").Json.persons | ForEach-Object { $_.id } | Sort-Object)
+Check "dynamic funnel cohort calculated by the worker: A and C -> $($funMembers -join ', ')" ($fun.member_count -eq 2 -and ($funMembers -join ",") -eq ((@($personId, $casualC) | Sort-Object) -join ","))
+Check "the earlier anonymous id of A is in the funnel cohort" (@((K GET "/persons/$anonA/cohorts").Json.cohorts | Where-Object { $_.id -eq $fun.id }).Count -eq 1)
+$null = S DELETE "/cohorts/$($fun.id)"
 $unknown = K GET "/persons/nobody-$tag/cohorts"
 Check "person cohorts: unknown id -> 200 with an empty list" ($unknown.Status -eq 200 -and @($unknown.Json.cohorts).Count -eq 0)
 

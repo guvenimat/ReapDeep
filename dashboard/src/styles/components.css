@@ -85,6 +85,7 @@
 .suggest-type { color: var(--muted); font-size: 11.5px; font-weight: 400; }
 .row select.scope { width: 92px; }
 .row select.op { width: 112px; }
+.row select.op.fit { width: auto; max-width: 240px; }
 .inline { display: inline-flex; align-items: center; gap: 8px; color: var(--text-2); }
 .narrow { width: 64px; height: 30px; }
 .series-key { width: 10px; height: 10px; border-radius: 3px; flex: none; box-shadow: 0 0 10px currentColor; }

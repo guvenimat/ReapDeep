@@ -460,6 +460,8 @@ static class Demo
                 """{"groups":[{"conditions":[{"type":"rfm_segment","segments":["at_risk","cant_lose"],"within_days":365}]}]}"""),
             ("Window shoppers", "Viewed 3+ products in the last 30 days without buying",
                 """{"groups":[{"conditions":[{"type":"performed_event","event":"product_viewed","count_op":"gte","count":3,"within_days":30},{"type":"not_performed_event","event":"purchase","within_days":30}]}]}"""),
+            ("Abandoned carts", "Added to cart but did not buy within a day, in the last 30 days (funnel)",
+                """{"groups":[{"conditions":[{"type":"funnel","steps":["product_viewed","add_to_cart","purchase"],"outcome":"dropped","step":2,"window_seconds":86400,"within_days":30}]}]}"""),
             ("Pro plan", "Persons on the pro plan",
                 """{"groups":[{"conditions":[{"type":"person_property","property":"plan","op":"eq","value":"pro"}]}]}"""),
         ];

@@ -168,6 +168,32 @@ function DroppedPersons({ body, step, from, to, onClose }: {
   const q = useQuery((signal) => api.funnelPersons({ ...request, limit: 100 }, signal), [JSON.stringify(request)])
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<{ text: string; id?: number; error?: boolean }>()
+  const filtered = body.filters.length > 0
+
+  const saveDynamic = async () => {
+    const rangeEnd = body.date_to ? new Date(body.date_to).getTime() + (body.date_to.length === 10 ? 86400000 : 0) : Date.now()
+    const rangeDays = Math.ceil((rangeEnd - (body.date_from ? new Date(body.date_from).getTime() : rangeEnd - 30 * 86400000)) / 86400000)
+    setBusy(true)
+    setMessage(undefined)
+    try {
+      const steps = body.steps.map((s) => s.event)
+      const cohort = await api.createCohort({
+        name: `Dropped after ${from} (dynamic)`,
+        description: `Reached ${from} but not ${to} in the funnel ${steps.join(' > ')}; recalculated with the cohorts`,
+        kind: 'dynamic',
+        definition: { groups: [{ conditions: [{
+          type: 'funnel', steps, outcome: 'dropped', step,
+          window_seconds: Math.min(90 * 86400, Math.max(60, body.window_seconds)),
+          within_days: Math.min(90, Math.max(1, rangeDays || 30)),
+        }] }] },
+      })
+      setMessage({ text: `Saved "${cohort.name}"; it follows the funnel over the last ${Math.min(90, Math.max(1, rangeDays || 30))} days`, id: cohort.id })
+    } catch (err) {
+      setMessage({ text: errorMessage(err), error: true })
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const saveCohort = async () => {
     setBusy(true)
@@ -195,6 +221,10 @@ function DroppedPersons({ body, step, from, to, onClose }: {
         <button type="button" className="small" onClick={saveCohort} disabled={busy || !q.data?.total} data-testid="save-dropped-cohort">
           {busy ? 'Saving…' : 'Save as cohort'}
         </button>
+        <button type="button" className="small" onClick={saveDynamic} disabled={busy || filtered} data-action="save-dynamic-cohort"
+          title={filtered ? 'A dynamic funnel cohort cannot keep filters; save a fixed list instead' : 'Keeps following this funnel as new events arrive'}>
+          Save as dynamic cohort
+        </button>
         <IconButton icon="close" label="Close" onClick={onClose} />
       </>}>
       <FormMessage error={message?.error ? message.text : undefined} />
@@ -214,7 +244,7 @@ function DroppedPersons({ body, step, from, to, onClose }: {
             </tbody>
           </table>
         </div>
-        {q.data && q.data.total > q.data.persons.length && <p className="footnote">Showing the first {q.data.persons.length}; the cohort takes up to 10,000. A saved cohort is a fixed list.</p>}
+        {q.data && q.data.total > q.data.persons.length && <p className="footnote">Showing the first {q.data.persons.length}; a fixed list takes up to 10,000, a dynamic cohort keeps following the funnel.</p>}
       </Status>
     </Card>
   )

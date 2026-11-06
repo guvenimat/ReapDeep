@@ -120,6 +120,55 @@ public class CohortSqlTests
         Assert.Throws<ValidationException>(() => CohortRules.Normalize(Def([Performed("a", days: days)])));
     }
 
+    static CohortCondition Funnel(string outcome, int step, params string[] steps) =>
+        new(ConditionTypes.Funnel, WithinDays: 30, Steps: steps.ToList(), Step: step, Outcome: outcome, WindowSeconds: 3600);
+
+    [Fact]
+    public void Funnel_condition_selects_persons_by_their_furthest_step()
+    {
+        var dropped = CohortSql.Count(Project, Def([Funnel("dropped", 2, "view", "cart", "buy")]), Now);
+        Assert.Contains("window_funnel(3600, e.timestamp, 0, [", dropped.Sql);
+        Assert.Contains("f.lvl = 2", dropped.Sql);
+        Assert.Contains("e.project_id = @p", dropped.Sql);
+        Assert.Contains("LEFT JOIN analytics.person_distinct_ids pdi", dropped.Sql);
+        Assert.DoesNotContain("INNER JOIN", dropped.Sql);
+        Assert.DoesNotContain("'view'", dropped.Sql);
+        Assert.Contains(dropped.Parameters, x => x.Value is DateTime d && d == Now.AddDays(-30));
+
+        var converted = CohortSql.Count(Project, Def([Funnel("converted", 3, "view", "cart", "buy")]), Now);
+        Assert.Contains("f.lvl >= 3", converted.Sql);
+    }
+
+    [Fact]
+    public void Funnel_condition_combines_with_other_conditions_in_its_group()
+    {
+        var q = CohortSql.Count(Project, Def([Funnel("dropped", 1, "view", "buy"), NotPerformed("support_ticket"), Property("plan", "pro")]), Now);
+        Assert.Contains("window_funnel", q.Sql);
+        Assert.Contains("COALESCE(x.c0, 0) = 0", q.Sql);
+        Assert.Contains("JOIN analytics.persons p", q.Sql);
+    }
+
+    [Theory]
+    [InlineData("dropped", 3)]
+    [InlineData("dropped", 0)]
+    [InlineData("converted", 1)]
+    [InlineData("converted", 4)]
+    [InlineData("left", 1)]
+    public void Funnel_condition_rejects_steps_outside_the_funnel(string outcome, int step) =>
+        Assert.Throws<ValidationException>(() => CohortRules.Normalize(Def([Funnel(outcome, step, "view", "cart", "buy")])));
+
+    [Fact]
+    public void Funnel_condition_needs_two_to_eight_steps_and_a_sane_window()
+    {
+        Assert.Throws<ValidationException>(() => CohortRules.Normalize(Def([Funnel("dropped", 1, "view")])));
+        Assert.Throws<ValidationException>(() => CohortRules.Normalize(Def([Funnel("dropped", 1, Enumerable.Range(0, 9).Select(i => $"e{i}").ToArray())])));
+        var tooLong = Funnel("dropped", 1, "view", "buy") with { WindowSeconds = 91L * 86400 };
+        Assert.Throws<ValidationException>(() => CohortRules.Normalize(Def([tooLong])));
+        var defaults = CohortRules.Normalize(Def([new CohortCondition(ConditionTypes.Funnel, WithinDays: 7, Steps: ["view", "buy"])]));
+        var c = defaults.Groups![0].Conditions![0];
+        Assert.Equal(("dropped", 1, 86400L), (c.Outcome, c.Step, c.WindowSeconds));
+    }
+
     [Fact]
     public void Group_with_only_negative_conditions_is_rejected()
     {

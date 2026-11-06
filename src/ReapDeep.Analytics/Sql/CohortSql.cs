@@ -114,11 +114,11 @@ public static class CohortSql
             .Select(c => b.Condition(new Filter("person", c.Property!, c.Op!, c.Value)))
             .ToList();
         var behavioral = conditions.Where(c => c.Type is ConditionTypes.Performed or ConditionTypes.NotPerformed).ToList();
-        var rfm = conditions.Where(c => c.Type == ConditionTypes.RfmSegment).ToList();
+        var populations = conditions.Where(c => c.Type is ConditionTypes.RfmSegment or ConditionTypes.Funnel).ToList();
         const string alivePerson = "p.is_deleted = 0";
 
-        if (rfm.Count > 0)
-            return RfmGroup(b, project, now, nowUtc, rfm, behavioral, props);
+        if (populations.Count > 0)
+            return PopulationGroup(b, project, now, nowUtc, populations, behavioral, props);
 
         if (behavioral.Count == 0)
             return $"SELECT p.person_id AS person FROM analytics.persons p WHERE p.project_id = {project} AND {alivePerson} AND {string.Join(" AND ", props)}";
@@ -136,10 +136,25 @@ public static class CohortSql
                $"WHERE p.project_id = {project} AND {alivePerson} AND {string.Join(" AND ", props.Concat(absent))}";
     }
 
-    static string RfmGroup(SqlBuilder b, string project, string now, DateTime nowUtc, List<CohortCondition> rfm,
+    static string FunnelMembers(SqlBuilder b, string project, string now, DateTime nowUtc, CohortCondition c)
+    {
+        var steps = c.Steps!;
+        var conds = steps.Select(s => $"e.event = {b.P(s)}");
+        var events = string.Join(", ", steps.Distinct().Select(s => b.P(s)));
+        var match = c.Outcome == CohortRules.Dropped ? $"f.lvl = {c.Step!.Value}" : $"f.lvl >= {c.Step!.Value}";
+        return $"SELECT f.person FROM (SELECT COALESCE(pdi.person_id, e.distinct_id) AS person, " +
+               $"window_funnel({c.WindowSeconds!.Value}, e.timestamp, 0, [{string.Join(", ", conds)}]) AS lvl FROM analytics.events e " +
+               $"LEFT JOIN {Pdi} pdi ON e.project_id = pdi.project_id AND e.distinct_id = pdi.distinct_id AND pdi.is_deleted = 0 " +
+               $"WHERE e.project_id = {project} AND e.timestamp >= {b.P(nowUtc.AddDays(-c.WithinDays!.Value))} AND e.timestamp < {now} " +
+               $"AND e.event IN ({events}) GROUP BY 1) f WHERE {match}";
+    }
+
+    static string PopulationGroup(SqlBuilder b, string project, string now, DateTime nowUtc, List<CohortCondition> sources,
         List<CohortCondition> behavioral, List<string> props)
     {
-        var population = rfm.Select(c => RfmSql.Members(b, project, c.Event!, c.WithinDays!.Value, c.Segments!, nowUtc))
+        var population = sources.Select(c => c.Type == ConditionTypes.Funnel
+                ? FunnelMembers(b, project, now, nowUtc, c)
+                : RfmSql.Members(b, project, c.Event!, c.WithinDays!.Value, c.Segments!, nowUtc))
             .Aggregate((acc, next) => $"SELECT g.person FROM ({acc}) g LEFT SEMI JOIN ({next}) n ON n.person = g.person");
         if (behavioral.Count == 0 && props.Count == 0) return population;
 
