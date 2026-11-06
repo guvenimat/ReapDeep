@@ -72,6 +72,11 @@ Check "and logs a warning with the StarRocks error log" (WaitFor { @((Get "$graf
 Check "the row is indeed not in StarRocks" ((Sr "SELECT count(*) FROM analytics.events WHERE project_id = 1 AND distinct_id = 'filtered_$t'") -eq "0")
 Check "the overview dashboard shows filtered rows" (@((Get "http://127.0.0.1:3005/api/dashboards/uid/reapdeep-overview").dashboard.panels | Where-Object { $_.title -like "Rows filtered out*" }).Count -eq 1)
 Check "the events job keeps running" ((Sr "SHOW ROUTINE LOAD FOR analytics.events_from_kafka\G") -match "(?m)^(RUNNING|NEED_SCHEDULE)")
+Write-Host "`n5) Person worker backlog"
+Check "the person worker exports its consumer lag on the events topic" (WaitFor { @(Prom "reapdeep_identity_consumer_lag").Count -ge 1 } 120)
+Check "and the number of outbox rows waiting for Kafka" (WaitFor { @(Prom "reapdeep_outbox_pending").Count -ge 1 } 120)
+Check "the outbox drains to 0 when nothing is pending" (WaitFor { $r = @(Prom "max(reapdeep_outbox_pending)"); $r.Count -ge 1 -and [double]$r[0].value[1] -eq 0 } 120)
+Check "the overview dashboard shows the backlog" (@((Get "http://127.0.0.1:3005/api/dashboards/uid/reapdeep-overview").dashboard.panels | Where-Object { $_.title -eq "Person worker backlog" }).Count -eq 1)
 
 Write-Host ""
 if ($script:failed -gt 0) { Write-Host "$($script:failed) check(s) failed." -ForegroundColor Red; exit 1 }

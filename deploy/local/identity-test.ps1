@@ -137,5 +137,40 @@ WaitFor "$pairs persons after the backlog" { (Pg $countSql) -eq "$pairs" } 60
 $plans = Pg "SELECT string_agg(plan || '=' || n, ',' ORDER BY plan) FROM (SELECT p.properties->>'plan' AS plan, count(*) AS n FROM person_distinct_ids d JOIN persons p ON p.id = d.person_id WHERE d.project_id = 1 AND d.distinct_id LIKE '${ord}_%' GROUP BY 1) x"
 Check "every person ends with the last value sent (plan=v2 for $pairs, got $plans)" ($plans -eq "v2=$pairs")
 
+Write-Host "`n12) Properties follow event time across identities (anonymous `$set, then identify, processed after a backlog)"
+$x = "cross_$t"
+$prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+docker compose --profile app stop person-worker 2>&1 | Out-Null
+$ErrorActionPreference = $prev
+try {
+    for ($i = 1; $i -le 30; $i++) {
+        Send @((Ev '$set' "${x}_anon_$i" @{ '$set' = @{ plan = "free"; theme = "dark" } }))
+        Send @((Identify "${x}_user_$i" "${x}_anon_$i" @{ plan = "pro" }))
+    }
+} finally {
+    $ErrorActionPreference = "Continue"
+    docker compose --profile app start person-worker 2>&1 | Out-Null
+    $ErrorActionPreference = $prev
+}
+$merged = "SELECT count(*) FROM person_distinct_ids a JOIN person_distinct_ids u ON a.person_id = u.person_id WHERE a.project_id = 1 AND u.project_id = 1 AND a.distinct_id LIKE '${x}_anon_%' AND u.distinct_id = replace(a.distinct_id, '_anon_', '_user_')"
+WaitFor "30 anonymous ids merged into their users" { (Pg $merged) -eq "30" } 60
+$props = Pg "SELECT string_agg(k || '=' || n, ',' ORDER BY k) FROM (SELECT (p.properties->>'plan') || '/' || (p.properties->>'theme') AS k, count(*) AS n FROM person_distinct_ids d JOIN persons p ON p.id = d.person_id WHERE d.project_id = 1 AND d.distinct_id LIKE '${x}_user_%' GROUP BY 1) s"
+Check "the newer plan wins and the older theme is kept for all 30 (got $props)" ($props -eq "pro/dark=30")
+
+$old = [DateTime]::UtcNow.AddDays(-2).ToString("yyyy-MM-ddTHH:mm:ssZ")
+Send @(@{ event = '$set'; distinct_id = "backfill_$t"; timestamp = $old; properties = @{ '$set' = @{ plan = "old" } } })
+WaitFor "person for backfill_$t" { (PersonOf "backfill_$t") -ne "" } 30
+$created = Pg "SELECT p.created_at::date = (now() - interval '2 days')::date FROM person_distinct_ids d JOIN persons p ON p.id = d.person_id WHERE d.project_id = 1 AND d.distinct_id = 'backfill_$t'"
+Check "a person's created_at is the time of its first event, not of processing" ($created -eq "t")
+Send @((Ev '$set' "backfill_$t" @{ '$set' = @{ plan = "new" } }))
+Send @(@{ event = '$set'; distinct_id = "backfill_$t"; timestamp = $old; properties = @{ '$set' = @{ plan = "stale"; region = "eu" } } })
+WaitFor "late region arrives" { (PersonOf "backfill_$t") -like "*region*" } 30
+Check "a late event cannot overwrite a newer value but adds properties it does not know yet" ((PersonOf "backfill_$t") -like "*""plan"": ""new""*" -and (PersonOf "backfill_$t") -like "*""region"": ""eu""*")
+
+function J($a, $b) { "jsonb_build_object('a', $a, 'b', $b)" }
+Check "person_props_set keeps a newer value" ((Pg "SELECT person_props_set($(J 1 1), $(J 5 5), $(J 2 2), 3)->>'a'") -eq "1")
+Check "person_props_set applies a newer value" ((Pg "SELECT person_props_set($(J 1 1), $(J 5 5), $(J 2 2), 6)->>'a'") -eq "2")
+Check "person_times_merge keeps the identified person's times and adds the anonymous person's missing ones" ((Pg "SELECT (person_times_merge($(J 9 9), jsonb_build_object('a', 1), jsonb_build_object('a', 5))->>'a') || '/' || (person_times_merge($(J 9 9), jsonb_build_object('a', 1), jsonb_build_object('a', 5))->>'b')") -eq "5/9")
+
 if ($script:failed -eq 0) { Write-Host "`nPASSED: all identity scenarios" -ForegroundColor Green }
 else { Write-Host "`nFAILED: $script:failed checks failed" -ForegroundColor Red; exit 1 }

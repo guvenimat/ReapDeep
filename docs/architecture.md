@@ -188,10 +188,22 @@ transaction with advisory locks on the involved distinct IDs. The rules:
 | user new, anon's person anonymous | the user takes over that person |
 | user new, anon's person already identified | create a new person for the user; do not move anon |
 | both on the same person | apply `$set` only |
-| different persons, anon's is anonymous | merge: move all of anon's IDs, properties `P_anon || P_user || $set` |
+| different persons, anon's is anonymous | merge: move all of anon's IDs, properties `P_anon || P_user`, then apply `$set` |
 | different persons, both identified | reject the merge |
 
 Two identified persons are never merged; that is how shared devices stay correct.
+
+**Properties follow event time, not processing order.** The Kafka key keeps the events of one
+distinct ID in order, but an anonymous ID and the user it merges into have different keys, so after a
+backlog the worker can see the user's `$identify` before an older anonymous `$set`. Applied in
+processing order, the older value won for 16 of 30 visitors in a test. Each person therefore stores
+the event time of every property in `property_times` (microseconds), and the SQL functions
+`person_props_set`, `person_times_set` and `person_times_merge` only let a value
+replace another one with an older or equal time. A merge keeps the identified person's value where
+both have one, with its time, and takes the anonymous person's other properties with theirs. A late
+event still adds properties the person does not have yet. Properties written before this change
+have no time and lose to any timed value. A person's `created_at` is the time of its first identity
+event, so backfilled data gets its real date.
 
 **Transactional outbox.** The naive "write PostgreSQL, then publish to Kafka" loses updates if the
 process dies between the two steps: on replay the state has already changed, so no update is produced

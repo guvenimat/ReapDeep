@@ -16,7 +16,7 @@ public static class PersonLocks
     }
 }
 
-public sealed class PersonTransaction(NpgsqlConnection conn, NpgsqlTransaction tx, long projectId)
+public sealed class PersonTransaction(NpgsqlConnection conn, NpgsqlTransaction tx, long projectId, long eventMicros)
 {
     readonly HashSet<Guid> _changedPersons = [];
     readonly HashSet<string> _changedDistinctIds = [];
@@ -34,9 +34,10 @@ public sealed class PersonTransaction(NpgsqlConnection conn, NpgsqlTransaction t
     {
         var id = Guid.CreateVersion7();
         await conn.ExecuteAsync("""
-            INSERT INTO persons (id, project_id, properties, is_identified, version)
-            VALUES (@Id, @ProjectId, COALESCE(@Set::jsonb, '{}'), @Identified, 1)
-            """, new { Id = id, ProjectId = projectId, Set = set, Identified = identified }, tx);
+            INSERT INTO persons (id, project_id, properties, property_times, is_identified, version, created_at)
+            VALUES (@Id, @ProjectId, person_props_set('{}', '{}', @Set::jsonb, @Ts), person_times_set('{}', @Set::jsonb, @Ts), @Identified, 1,
+                    to_timestamp(@Ts / 1000000.0))
+            """, new { Id = id, ProjectId = projectId, Set = set, Identified = identified, Ts = eventMicros }, tx);
         _changedPersons.Add(id);
         return id;
     }
@@ -57,11 +58,16 @@ public sealed class PersonTransaction(NpgsqlConnection conn, NpgsqlTransaction t
     {
         if (set is null && !identify) return;
         var changed = await conn.ExecuteAsync("""
-            UPDATE persons SET properties = properties || COALESCE(@Set::jsonb, '{}'),
+            UPDATE persons SET properties = person_props_set(properties, property_times, @Set::jsonb, @Ts),
+                               property_times = person_times_set(property_times, @Set::jsonb, @Ts),
                                is_identified = is_identified OR @Identify,
+                               created_at = LEAST(created_at, to_timestamp(@Ts / 1000000.0)),
                                version = version + 1, updated_at = now()
-            WHERE id = @Id AND (properties || COALESCE(@Set::jsonb, '{}') <> properties OR (@Identify AND NOT is_identified))
-            """, new { Id = personId, Set = set, Identify = identify }, tx);
+            WHERE id = @Id AND (person_props_set(properties, property_times, @Set::jsonb, @Ts) <> properties
+                                OR person_times_set(property_times, @Set::jsonb, @Ts) <> property_times
+                                OR (@Identify AND NOT is_identified)
+                                OR created_at > to_timestamp(@Ts / 1000000.0))
+            """, new { Id = personId, Set = set, Identify = identify, Ts = eventMicros }, tx);
         if (changed > 0) _changedPersons.Add(personId);
     }
 
@@ -74,11 +80,15 @@ public sealed class PersonTransaction(NpgsqlConnection conn, NpgsqlTransaction t
         _changedDistinctIds.UnionWith(moved);
 
         await conn.ExecuteAsync("""
-            UPDATE persons SET properties = (SELECT properties FROM persons WHERE id = @From) || properties || COALESCE(@Set::jsonb, '{}'),
-                               is_identified = true, version = version + 1, updated_at = now()
-            WHERE id = @Into;
-            UPDATE persons SET is_deleted = true, properties = '{}', version = version + 1, updated_at = now() WHERE id = @From;
-            """, new { From = from, Into = into, Set = set }, tx);
+            UPDATE persons u SET
+                properties = person_props_set(f.properties || u.properties,
+                                              person_times_merge(f.property_times, u.properties, u.property_times), @Set::jsonb, @Ts),
+                property_times = person_times_set(person_times_merge(f.property_times, u.properties, u.property_times), @Set::jsonb, @Ts),
+                created_at = LEAST(u.created_at, f.created_at, to_timestamp(@Ts / 1000000.0)),
+                is_identified = true, version = u.version + 1, updated_at = now()
+            FROM persons f WHERE u.id = @Into AND f.id = @From;
+            UPDATE persons SET is_deleted = true, properties = '{}', property_times = '{}', version = version + 1, updated_at = now() WHERE id = @From;
+            """, new { From = from, Into = into, Set = set, Ts = eventMicros }, tx);
         _changedPersons.Add(from);
         _changedPersons.Add(into);
     }

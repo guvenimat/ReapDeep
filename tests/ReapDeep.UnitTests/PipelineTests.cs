@@ -44,6 +44,27 @@ public class IdentityEventTests
     static byte[] Message(string json) => Encoding.UTF8.GetBytes(json);
 
     [Fact]
+    public void Event_time_is_read_from_the_message_in_utc_microseconds()
+    {
+        var e = IdentityEvent.Parse(Message("""{"project_id":1,"event":"$set","distinct_id":"u","timestamp":"2026-11-06 10:00:00.123456","properties":{"$set":{"a":1}}}"""));
+        Assert.Equal(IdentityEvent.ToMicros(new DateTime(2026, 11, 6, 10, 0, 0, DateTimeKind.Utc)) + 123456, e!.TimestampMicros);
+    }
+
+    [Fact]
+    public void Missing_event_time_falls_back_to_processing_time()
+    {
+        var before = IdentityEvent.ToMicros(DateTime.UtcNow);
+        var e = IdentityEvent.Parse(Message("""{"project_id":1,"event":"$set","distinct_id":"u","properties":{"$set":{"a":1}}}"""));
+        Assert.InRange(e!.TimestampMicros, before, IdentityEvent.ToMicros(DateTime.UtcNow));
+    }
+
+    [Fact]
+    public void Consumer_lag_sums_known_partitions_only()
+    {
+        Assert.Equal(15, ReapDeep.PersonWorker.Identity.IdentityMetrics.Lag([(100, 90), (50, 45), (-1001, 3), (20, -1001), (7, 9)]));
+    }
+
+    [Fact]
     public void Identify_with_anonymous_id_and_properties_is_parsed()
     {
         var e = IdentityEvent.Parse(Message("""
