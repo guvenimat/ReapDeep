@@ -19,7 +19,8 @@ static class Setup
             INSERT INTO projects (id, organization_id, name, public_key) VALUES
                 (2, 1, 'Benchmark Project', 'pk_benchmark'),
                 (3, 1, 'Load Test Project', 'pk_load_test')
-            ON CONFLICT (id) DO NOTHING
+            ON CONFLICT (id) DO NOTHING;
+            UPDATE projects SET ingest_events_per_second = 0 WHERE id IN (2, 3);
             """);
         await Exec(db, "SELECT setval('projects_id_seq', GREATEST((SELECT max(id) FROM projects), 1))");
         await Exec(db, "DELETE FROM api_keys WHERE project_id = 2");

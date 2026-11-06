@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
@@ -370,11 +371,16 @@ static class Demo
             w.WriteEndArray();
             w.WriteEndObject();
         }
-        using var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = new ByteArrayContent(buffer.ToArray()) };
-        req.Content.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
-        if (userAgent is not null) req.Headers.TryAddWithoutValidation("User-Agent", userAgent);
-        using var res = await http.SendAsync(req);
-        return (int)res.StatusCode;
+        var body = buffer.ToArray();
+        for (var attempt = 1; ; attempt++)
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, url) { Content = new ByteArrayContent(body) };
+            req.Content.Headers.ContentType = new MediaTypeHeaderValue("text/plain");
+            if (userAgent is not null) req.Headers.TryAddWithoutValidation("User-Agent", userAgent);
+            using var res = await http.SendAsync(req);
+            if (res.StatusCode != HttpStatusCode.TooManyRequests || attempt >= 30) return (int)res.StatusCode;
+            await Task.Delay(res.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(1));
+        }
     }
 
     static async Task Reset(NpgsqlDataSource db, string sr)

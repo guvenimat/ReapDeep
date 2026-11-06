@@ -14,6 +14,7 @@ public static class ProjectEndpoints
     public static void MapProjects(this RouteGroupBuilder api)
     {
         api.MapGet("/project", Current);
+        api.MapPatch("/project", UpdateSettings).RequireManager();
         api.MapPost("/projects", Create).RequireOwner();
         api.MapPost("/project/recommendation-secret", RotateRecommendationSecret).RequireManager();
     }
@@ -22,6 +23,13 @@ public static class ProjectEndpoints
         await projects.GetAsync(project.ProjectId, ct) is { } detail
             ? ApiResults.Ok(project.CanManage && project.UserId is not null ? detail : detail with { RecommendationSecret = null }, AppJsonContext.Default.ProjectDetail)
             : ApiResults.NotFound("Project not found");
+
+    static async Task<IResult> UpdateSettings(ProjectSettingsRequest req, ProjectContext project, ProjectRepository projects, CancellationToken ct)
+    {
+        Ensure.That(req.AnonymizeIp is not null, "anonymize_ip is required");
+        await projects.SetAnonymizeIpAsync(project.ProjectId, req.AnonymizeIp!.Value, ct);
+        return await Current(project, projects, ct);
+    }
 
     static async Task<IResult> RotateRecommendationSecret(ProjectContext project, ProjectRepository projects, CancellationToken ct)
     {

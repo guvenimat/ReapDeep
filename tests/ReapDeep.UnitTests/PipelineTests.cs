@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using ReapDeep.Ingestion.Capture;
+using ReapDeep.Ingestion.Kafka;
 using ReapDeep.PersonWorker.Identity;
 
 namespace ReapDeep.UnitTests;
@@ -114,5 +115,76 @@ public class EventMessageTests
     {
         Assert.Equal("42", Build("""{"item_id":42}""").GetProperty("item_id").GetString());
         Assert.Equal(JsonValueKind.Null, Build("""{"order_id":"o-1"}""").GetProperty("item_id").ValueKind);
+    }
+
+    [Fact]
+    public void Values_that_do_not_fit_their_column_stay_in_properties()
+    {
+        var msg = Build("""{"item_id":{"sku":"a"},"utm_source":["x","y"],"$screen_width":"1920","$screen_height":1080}""");
+        var props = msg.GetProperty("properties");
+
+        Assert.Equal(JsonValueKind.Null, msg.GetProperty("item_id").ValueKind);
+        Assert.Equal("a", props.GetProperty("item_id").GetProperty("sku").GetString());
+        Assert.Equal(2, props.GetProperty("utm_source").GetArrayLength());
+        Assert.Equal("1920", props.GetProperty("$screen_width").GetString());
+        Assert.Equal(JsonValueKind.Null, msg.GetProperty("screen_width").ValueKind);
+        Assert.Equal(1080, msg.GetProperty("screen_height").GetInt32());
+        Assert.False(props.TryGetProperty("$screen_height", out _));
+    }
+}
+
+public class IngestionHardeningTests
+{
+    [Fact]
+    public void Kafka_key_keeps_the_events_of_one_distinct_id_on_one_partition()
+    {
+        Assert.Equal("7:user-1", EventProducer.Key(7, "user-1"));
+        Assert.NotEqual(EventProducer.Key(7, "user-1"), EventProducer.Key(8, "user-1"));
+    }
+
+    [Theory]
+    [InlineData("203.0.113.77", true, "203.0.113.0")]
+    [InlineData("203.0.113.77", false, "203.0.113.77")]
+    [InlineData("::ffff:198.51.100.9", true, "198.51.100.0")]
+    [InlineData("2001:db8:85a3:8d3:1319:8a2e:370:7348", true, "2001:db8:85a3::")]
+    [InlineData("2001:db8:85a3:8d3:1319:8a2e:370:7348", false, "2001:db8:85a3:8d3:1319:8a2e:370:7348")]
+    public void Ip_addresses_are_anonymized_when_the_project_asks_for_it(string address, bool anonymize, string expected)
+    {
+        Assert.Equal(expected, IpAnonymizer.Format(System.Net.IPAddress.Parse(address), anonymize));
+    }
+
+    [Fact]
+    public void Missing_ip_stays_missing()
+    {
+        Assert.Null(IpAnonymizer.Format(null, true));
+    }
+
+    [Theory]
+    [InlineData(null, 2000, 2000)]
+    [InlineData(5000, 2000, 5000)]
+    [InlineData(0, 2000, null)]
+    [InlineData(null, 0, null)]
+    [InlineData(10, 2000, IngestionQuota.MinimumLimit)]
+    public void Quota_uses_the_project_limit_then_the_server_default(int? projectLimit, int defaultLimit, int? expected)
+    {
+        Assert.Equal(expected, IngestionQuota.EffectiveLimit(projectLimit, defaultLimit));
+    }
+
+    [Fact]
+    public void Quota_windows_are_per_project_and_per_second()
+    {
+        var t = new DateTime(2026, 11, 6, 12, 0, 0, DateTimeKind.Utc);
+        Assert.Equal(IngestionQuota.WindowKey(1, t), IngestionQuota.WindowKey(1, t.AddMilliseconds(999)));
+        Assert.NotEqual(IngestionQuota.WindowKey(1, t), IngestionQuota.WindowKey(1, t.AddSeconds(1)));
+        Assert.NotEqual(IngestionQuota.WindowKey(1, t), IngestionQuota.WindowKey(2, t));
+    }
+
+    [Fact]
+    public void Only_events_kafka_did_not_acknowledge_release_their_dedup_claim()
+    {
+        var failed = Task.FromException(new InvalidOperationException("broker down"));
+        var deliveries = new List<(Task, string?)> { (Task.CompletedTask, "ok-1"), (failed, "lost-1"), (failed, null), (Task.CompletedTask, "ok-2") };
+
+        Assert.Equal(["lost-1"], CaptureEndpoint.FailedClaims(deliveries));
     }
 }

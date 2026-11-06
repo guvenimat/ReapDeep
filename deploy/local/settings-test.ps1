@@ -119,6 +119,36 @@ while (-not $accepted -and (Get-Date) -lt $deadline) {
 }
 Check "ingestion accepts the new public key within 45 s" $accepted
 
+Write-Host "`n8) Visitor IP privacy"
+function Sr($sql) {
+    $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+    $out = (& docker compose exec -T starrocks mysql "-h127.0.0.1" -P9030 -uroot -N -e $sql 2>&1 | Out-String).Trim()
+    $ErrorActionPreference = $prev
+    $out
+}
+function IpsOf([string]$distinctId) { Sr "SELECT DISTINCT ip FROM analytics.events WHERE project_id = $($newProject.id) AND distinct_id = '$distinctId'" }
+$np = @{ "X-Project-Id" = "$($newProject.id)" }
+$detail = (Send $owner GET "/project" -headers $np).Json
+Check "a new project anonymizes IP addresses by default and uses the server's ingestion limit" ($detail.anonymize_ip -eq $true -and $null -eq $detail.ingest_events_per_second)
+$deadline = (Get-Date).AddSeconds(60)
+while (-not (IpsOf "settings-$tag") -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 2 }
+$anonIp = IpsOf "settings-$tag"
+Check "the stored IP ends in .0 ($anonIp)" ($anonIp -match '^\d+\.\d+\.\d+\.0$')
+Check "read API key cannot change project settings -> 403" ((Send $keyClient PATCH "/project" '{"anonymize_ip":false}' -headers @{ Authorization = "Bearer $readKey" }).Status -eq 403)
+Check "anonymize_ip is required -> 400" ((Send $owner PATCH "/project" '{}' -headers $np).Status -eq 400)
+$r = Send $owner PATCH "/project" '{"anonymize_ip":false}' -headers $np
+Check "owner turns anonymization off -> 200" ($r.Status -eq 200 -and $r.Json.anonymize_ip -eq $false)
+Check "the setting is stored" ((Send $owner GET "/project" -headers $np).Json.anonymize_ip -eq $false)
+$fullBody = '{"api_key":"' + $newProject.public_key + '","batch":[{"event":"settings_test","distinct_id":"settings-full-' + $tag + '"}]}'
+$fullIp = ""
+$deadline = (Get-Date).AddSeconds(75)
+while ($fullIp -notmatch '^\d+\.\d+\.\d+\.[1-9]\d*$' -and (Get-Date) -lt $deadline) {
+    $null = $ingest.PostAsync("http://localhost:8000/capture", (New-Object System.Net.Http.StringContent($fullBody, [Text.Encoding]::UTF8, "text/plain"))).Result
+    Start-Sleep -Seconds 5
+    $fullIp = [string](@((IpsOf "settings-full-$tag") -split "`r?`n" | Where-Object { $_ -match '\.[1-9]\d*$' }) -join '')
+}
+Check "ingestion stores the full IP once the setting is picked up ($fullIp)" ($fullIp -match '^\d+\.\d+\.\d+\.[1-9]\d*$')
+
 $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
 & docker compose exec -T postgres psql -U reapdeep -d reapdeep -tAc "DELETE FROM api_keys WHERE name = 'key $tag'; DELETE FROM users WHERE email = '$memberEmail'; DELETE FROM projects WHERE name = 'Project $tag';" 2>&1 | Out-Null
 $ErrorActionPreference = $prev

@@ -62,8 +62,9 @@ flowchart LR
 
 ### How it works
 
-- **Ingestion.** The API validates the project key, parses the user agent, corrects client clock skew using `sent_at`, and promotes common properties (URL, UTM, browser, OS, device) to columns. It returns `202` only after Kafka acknowledges every event in the batch, and `503` otherwise. The SDK retries with the same `event_id`.
-- **Duplicates.** Retries are dropped at the door: each client `event_id` is claimed in Redis (`SET NX`, per project, 10 minutes by default, `Ingestion__DedupSeconds`) before it is written to Kafka, and the claims are released again when Kafka refuses the batch, so the retry after a `503` is not mistaken for a duplicate. The response counts them as `duplicates`. If Redis is down, ingestion keeps accepting and the query-time `deduplicate` option still applies; the event list never shows an `event_id` twice.
+- **Ingestion.** The API validates the project key, parses the user agent, corrects client clock skew using `sent_at`, and promotes common properties (URL, UTM, browser, OS, device) to columns. It returns `202` only after Kafka acknowledges every event in the batch, and `503` otherwise. The SDK retries with the same `event_id`. Messages are keyed by `{project_id}:{distinct_id}`, so the events of one visitor stay in order on one partition and person properties are applied in the order they were sent, even after the person worker falls behind.
+- **Quota and privacy.** Each project may send 2,000 events per second by default (`Ingestion__EventsPerSecondPerProject`, or `projects.ingest_events_per_second` per project, `0` for unlimited); past it the batch is refused with `429` and `Retry-After: 1`, which the SDK retries. Visitor IP addresses are anonymized before they are stored (the last octet of IPv4, everything after the first 48 bits of IPv6); owners and admins can turn this off per project in Settings.
+- **Duplicates.** Retries are dropped at the door: each client `event_id` is claimed in Redis (`SET NX`, per project, 10 minutes by default, `Ingestion__DedupSeconds`) before it is written to Kafka, and the claims of the events Kafka did not acknowledge are released again, so the retry after a `503` is not mistaken for a duplicate. The response counts them as `duplicates`. If Redis is down, ingestion keeps accepting and the query-time `deduplicate` option still applies; the event list never shows an `event_id` twice.
 - **Dead letters.** An identity event the person worker cannot parse, or that fails in PostgreSQL with a non-transient error, goes to the `events_dead_letter` topic (30-day retention) with its stage, error and source offset in the headers, instead of being skipped silently. Transient database errors are retried with backoff.
 - **Storage.** `events` is a Duplicate Key table partitioned by day. `persons` and `person_distinct_ids` are Primary Key tables. `events` and `person_distinct_ids` share a colocate group distributed by `HASH(project_id, distinct_id)`, so the person join runs locally on each node.
 - **Identity.** PostgreSQL is the source of truth for persons. The worker applies merge rules (two identified persons are never merged) and writes changes to an outbox in the same transaction. A publisher forwards them to Kafka, and StarRocks applies them in version order.
@@ -75,7 +76,7 @@ flowchart LR
 ### Operations
 
 - **Telemetry.** Ingestion, the Query API, the person worker and the Recommender share `ReapDeep.ServiceDefaults`, which exports traces, metrics and logs over OTLP when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. The local stack sends them to `grafana/otel-lgtm` (Tempo, Prometheus, Loki, Grafana) at http://localhost:3005, where the provisioned *ReapDeep overview* dashboard shows events per second, duplicates, rejections and Kafka refusals, capture latency against the 50 ms target, the routine load jobs, query latency per route against the 1 s and 3 s targets, database latency, memory and recent warnings. MySqlConnector and Npgsql spans show each SQL statement.
-- **Health checks.** Every service container has a Docker health check: the HTTP services answer `/healthz` (the Query API also checks PostgreSQL and StarRocks, the Recommender waits for its caches), and the person worker writes a heartbeat file from its Kafka loop.
+- **Health checks.** Every service container has a Docker health check: the HTTP services answer `/healthz` (ingestion reports `503` until it has loaded the project keys, the Query API also checks PostgreSQL and StarRocks, the Recommender waits for its caches), and the person worker writes a heartbeat file from its Kafka loop.
 - **Routine load watchdog.** The person worker reads `SHOW ROUTINE LOAD` every 30 s with its own `reapdeep_ops` user. A job that StarRocks paused after an outage (for example a backend that was briefly unavailable) is resumed automatically, at most once a minute. A job stopped by a message it cannot parse is never skipped automatically: it is reported in the logs and on the dashboard so an operator can inspect the message. Jobs paused by an operator are left alone.
 - **Several Query API instances.** Sessions and API keys are cached in Redis, not in process memory (`auth:session:*` for 30 s, `auth:key:*` for 60 s, 10 s for unknown keys), and every change that affects access (role change, removed member, password change, revoked key) deletes the cached entries, so a second instance never accepts a revoked session or key. Without Redis every request reads PostgreSQL. `docker compose --profile scale up -d query-api-2` starts a second instance on port 8003.
 - **Alerts run apart from user queries.** The alert job runs in its own process (`alert-runner`, the Query API image with `Alerts__RunJob=true`); the API instances leave it off. It connects to StarRocks as `reapdeep_alerts` in the `rg_alerts` resource group (CPU weight 1, 20% memory, 2 concurrent queries), so a burst of alert checks cannot slow down the dashboard. Alerts are claimed with a lease, so several runners never check the same alert twice.
@@ -261,7 +262,7 @@ Any trend or funnel can be saved by name from its tab (`/api/v1/insights`). A da
 - Passwords are hashed with PBKDF2-SHA256 (600K iterations), and sign-in is rate limited to 10 attempts per minute per client IP.
 - On first start, the Query API creates the `ADMIN_EMAIL` user as owner of every organization when the `users` table is empty.
 - **Settings** (dashboard tab and `/api/v1/members`, `/api/v1/api-keys`, `/api/v1/auth/password`): owners and admins add members with a temporary password, change roles and remove members; anyone can change their own password, which signs out their other sessions. Admins cannot create or change owners, and the last owner cannot be demoted or leave. API keys are shown once at creation and stored only as a SHA-256 hash; revoking one takes effect immediately.
-- **Projects** (`/api/v1/project`, `/api/v1/projects`): the settings tab shows the current project's public key for the JS SDK and the ingestion API. Owners can create more projects in their organization; ingestion and the recommender pick up a new key within 30 seconds.
+- **Projects** (`/api/v1/project`, `/api/v1/projects`): the settings tab shows the current project's public key for the JS SDK and the ingestion API, its ingestion limit and whether visitor IP addresses are anonymized (`PATCH /api/v1/project` with `{"anonymize_ip": false}`, owners and admins). Owners can create more projects in their organization; ingestion and the recommender pick up a new key or setting within 30 seconds.
 
 ### Add the SDK to a page
 
@@ -377,17 +378,17 @@ The 1.1 s runs of the filtered RFM query overlapped with the person worker's 30 
 dotnet test tests/ReapDeep.UnitTests   # SQL builder tenancy and parameters, cohort, RFM, lifecycle and recommendation SQL, recommender selection, time ranges, passwords, user agents, migrations, and contract tests (below)
 
 cd deploy/local
-.\identity-test.ps1     # identity resolution, 10 end-to-end scenarios
+.\identity-test.ps1     # identity resolution, 11 end-to-end scenarios including property order after a worker backlog
 .\auth-test.ps1         # sign-in, sessions, project access, CORS, X-Forwarded-For, StarRocks grants
 .\deletion-test.ps1     # deletion requests and the batch job, end to end
-.\settings-test.ps1     # members, roles, password change, API keys, projects
+.\settings-test.ps1     # members, roles, password change, API keys, projects, IP anonymization
 .\insights-test.ps1     # saved insights and dashboards, API and browser
 .\cohort-test.ps1       # cohorts: rules, identity merge, static lists, filters and breakdowns, recalculation, deletion
 .\rfm-lifecycle-test.ps1  # RFM scores and segments with known answers, rfm_segment cohorts, lifecycle states and look-back
 .\alerts-test.ps1       # alerts: validation, firing and resolving, signed webhooks to a local receiver, change and formula conditions, errors
 .\recommender-test.ps1  # catalog, key scopes, models from real events, the public Recommender, stock changes, signed for_you requests
 .\query-test.ps1        # Query API: trends, funnels, retention, paths, events, persons, EXPLAIN, latency
-.\durability-test.ps1   # duplicate retries, Redis and Kafka outages without loss, dead letters, de-duplicated event list
+.\durability-test.ps1   # duplicate retries, Redis and Kafka outages without loss, dead letters, de-duplicated event list, ingestion quota, health check
 .\observability-test.ps1  # health checks, metrics, traces and logs in Grafana, the routine load watchdog
 .\scale-test.ps1        # two Query API instances: shared sessions, revocations seen at once, a shared request quota, Redis outage (needs --profile scale)
 .\dashboard-test.ps1    # headless Chrome against the dashboard (Chrome DevTools Protocol)

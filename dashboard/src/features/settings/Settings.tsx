@@ -3,7 +3,7 @@ import { api } from '../../api/client'
 import type { KeyScope, Me, Project, Role } from '../../api/types'
 import { Icon } from '../../components/icons'
 import { Badge, Card, FormMessage, Status } from '../../components/ui'
-import { dateTime, initials } from '../../lib/format'
+import { dateTime, initials, num } from '../../lib/format'
 import { useAction, useQuery } from '../../lib/hooks'
 
 const ROLES: Role[] = ['owner', 'admin', 'member']
@@ -30,6 +30,7 @@ function ProjectInfo({ project, onAccessChanged }: { project: Project; onAccessC
   const [copied, setCopied] = useState(false)
   const [secretCopied, setSecretCopied] = useState(false)
   const secretAction = useAction()
+  const privacyAction = useAction()
   const isOwner = project.role === 'owner'
   const canManage = isOwner || project.role === 'admin'
 
@@ -51,6 +52,11 @@ function ProjectInfo({ project, onAccessChanged }: { project: Project; onAccessC
       setVersion((v) => v + 1)
     }
   }
+  const setAnonymizeIp = async (anonymize: boolean) => {
+    if (await privacyAction.run(() => api.updateProject({ anonymize_ip: anonymize }))) setVersion((v) => v + 1)
+  }
+  const limit = detail.data?.ingest_events_per_second
+  const limitText = limit === 0 ? 'Unlimited' : limit ? `${num(limit)} events/s` : 'Server default'
 
   return (
     <Card title={<><Icon name="settings" />Project</>} meta="The public key goes into the JS SDK and the ingestion API; it is safe to ship in web pages. The recommendation secret stays on your server: it signs personalized recommendation requests">
@@ -67,6 +73,20 @@ function ProjectInfo({ project, onAccessChanged }: { project: Project; onAccessC
                 <button type="button" onClick={() => copy(detail.data!.public_key)}><Icon name="copy" />{copied ? 'Copied' : 'Copy'}</button>
               </dd>
             </div>
+            <div className="full" data-field="ip-privacy">
+              <dt>Ingestion</dt>
+              <dd className="ingestion-facts">
+                <span>Limit: <span className="strong" data-field="ingestion-limit">{limitText}</span></span>
+                {canManage
+                  ? <label className="switch">
+                      <input type="checkbox" checked={detail.data.anonymize_ip} disabled={privacyAction.busy}
+                        onChange={(e) => void setAnonymizeIp(e.target.checked)} />
+                      <span className="switch-track" aria-hidden />
+                      Anonymize visitor IP addresses before storing (IPv4 keeps the first three parts, IPv6 the first 48 bits)
+                    </label>
+                  : <span>Visitor IP addresses: {detail.data.anonymize_ip ? 'anonymized before storing' : 'stored in full'}</span>}
+              </dd>
+            </div>
             {canManage && (
               <div className="full" data-testid="recommendation-secret">
                 <dt>Recommendation secret</dt>
@@ -81,7 +101,7 @@ function ProjectInfo({ project, onAccessChanged }: { project: Project; onAccessC
             )}
           </dl>
         )}
-        <FormMessage error={secretAction.error} />
+        <FormMessage error={secretAction.error ?? privacyAction.error} />
       </Status>
       {isOwner && (
         <form className="inline-form" onSubmit={create} data-testid="create-project">

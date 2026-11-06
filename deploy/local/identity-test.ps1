@@ -116,5 +116,26 @@ $plan = Sr "EXPLAIN SELECT count(*) FROM analytics.events e LEFT JOIN analytics.
 Check "LEFT JOIN runs colocated" ($plan -match "COLOCATE")
 Check "outbox drained" ((Pg "SELECT count(*) FROM person_outbox") -eq "0")
 
+Write-Host "`n11) Person properties keep their order after a backlog (events keyed by distinct_id in Kafka)"
+$ord = "ord_$t"
+$pairs = 40
+$prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+docker compose --profile app stop person-worker 2>&1 | Out-Null
+$ErrorActionPreference = $prev
+try {
+    for ($i = 1; $i -le $pairs; $i++) {
+        Send @((Ev '$set' "${ord}_$i" @{ '$set' = @{ plan = "v1" } }))
+        Send @((Ev '$set' "${ord}_$i" @{ '$set' = @{ plan = "v2" } }))
+    }
+} finally {
+    $ErrorActionPreference = "Continue"
+    docker compose --profile app start person-worker 2>&1 | Out-Null
+    $ErrorActionPreference = $prev
+}
+$countSql = "SELECT count(*) FROM person_distinct_ids WHERE project_id = 1 AND distinct_id LIKE '${ord}_%'"
+WaitFor "$pairs persons after the backlog" { (Pg $countSql) -eq "$pairs" } 60
+$plans = Pg "SELECT string_agg(plan || '=' || n, ',' ORDER BY plan) FROM (SELECT p.properties->>'plan' AS plan, count(*) AS n FROM person_distinct_ids d JOIN persons p ON p.id = d.person_id WHERE d.project_id = 1 AND d.distinct_id LIKE '${ord}_%' GROUP BY 1) x"
+Check "every person ends with the last value sent (plan=v2 for $pairs, got $plans)" ($plans -eq "v2=$pairs")
+
 if ($script:failed -eq 0) { Write-Host "`nPASSED: all identity scenarios" -ForegroundColor Green }
 else { Write-Host "`nFAILED: $script:failed checks failed" -ForegroundColor Red; exit 1 }
