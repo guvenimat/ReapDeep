@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { api, errorMessage } from '../../api/client'
-import type { Alert, AlertCondition, AlertWindow } from '../../api/types'
+import type { Alert, AlertCondition, AlertEvent, AlertWindow } from '../../api/types'
 import { Badge, Card, FormMessage, IconButton, Status } from '../../components/ui'
 import { ago, dateTime, num } from '../../lib/format'
 import { useQuery } from '../../lib/hooks'
@@ -112,6 +112,15 @@ export function Alerts({ canManage }: { canManage: boolean }) {
   )
 }
 
+function Delivery({ e }: { e: AlertEvent }) {
+  const tries = e.attempts > 1 ? ` · ${e.attempts} attempts` : ''
+  if (e.delivery_status === 'none') return <>—</>
+  if (e.delivery_status === 'delivered') return <>{e.response_status ? `HTTP ${e.response_status}` : 'Delivered'}<span className="muted small">{tries}</span></>
+  const error = <span className="form-message error">{e.delivery_error ?? 'Not delivered'}</span>
+  if (e.delivery_status === 'failed') return <>{error}<span className="muted small"> · gave up{tries}</span></>
+  return <>{error}<span className="muted small"> · retrying{e.next_attempt_at ? ` at ${dateTime(e.next_attempt_at)}` : ''}{tries}</span></>
+}
+
 function AlertHistory({ alert }: { alert: Alert }) {
   const events = useQuery((signal) => api.alertEvents(alert.id, signal), [alert.id])
   return (
@@ -126,7 +135,7 @@ function AlertHistory({ alert }: { alert: Alert }) {
                   <td className="nowrap muted">{dateTime(e.created_at)}</td>
                   <td><Badge tone={e.kind === 'resolved' ? 'good' : 'danger'}>{e.kind}</Badge></td>
                   <td>{e.message}</td>
-                  <td className="nowrap">{e.kind === 'error' ? '—' : e.response_status ? `HTTP ${e.response_status}` : <span className="form-message error">{e.delivery_error}</span>}</td>
+                  <td className="nowrap"><Delivery e={e} /></td>
                 </tr>
               ))}
             </tbody>

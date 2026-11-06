@@ -3,7 +3,7 @@ namespace ReapDeep.QueryApi.Alerts;
 public sealed class AlertJob(AlertRepository alerts, AlertService service, IConfiguration cfg, ILogger<AlertJob> log) : BackgroundService
 {
     const int BatchSize = 5;
-    static readonly TimeSpan Lease = TimeSpan.FromMinutes(5);
+    public static readonly TimeSpan Lease = TimeSpan.FromMinutes(5);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -15,6 +15,9 @@ public sealed class AlertJob(AlertRepository alerts, AlertService service, IConf
             {
                 foreach (var alert in await alerts.ClaimDueAsync(BatchSize, DateTime.UtcNow + Lease, stoppingToken))
                     await service.EvaluateAsync(alert, stoppingToken);
+                foreach (var delivery in await alerts.ClaimRetriesAsync(BatchSize, DateTime.UtcNow + Lease, stoppingToken))
+                    await service.DeliverAsync(delivery.EventId, delivery.AlertId, delivery.WebhookUrl, delivery.Secret, delivery.Payload,
+                        delivery.Attempts + 1, stoppingToken);
             }
             catch (Exception e) when (e is not OperationCanceledException)
             {

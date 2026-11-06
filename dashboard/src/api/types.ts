@@ -158,7 +158,8 @@ export interface Alert {
 }
 export interface AlertEvent {
   id: number; kind: 'fired' | 'resolved' | 'error'; value: number | null; previous_value: number | null; message: string
-  response_status: number | null; delivery_error: string | null; created_at: string
+  response_status: number | null; delivery_error: string | null
+  delivery_status: 'none' | 'pending' | 'delivered' | 'failed'; attempts: number; next_attempt_at: string | null; delivered_at: string | null; created_at: string
 }
 export interface AlertInput { name: string; insight_id: number; condition: AlertCondition; threshold: number; window: AlertWindow; webhook_url: string; enabled: boolean }
 

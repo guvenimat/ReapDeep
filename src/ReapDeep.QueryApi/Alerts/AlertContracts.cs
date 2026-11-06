@@ -9,7 +9,8 @@ public sealed record AlertRow(
 
 public sealed record AlertsResponse(List<AlertRow> Alerts);
 
-public sealed record AlertEventRow(long Id, string Kind, double? Value, double? PreviousValue, string Message, int? ResponseStatus, string? DeliveryError, DateTime CreatedAt);
+public sealed record AlertEventRow(long Id, string Kind, double? Value, double? PreviousValue, string Message, int? ResponseStatus, string? DeliveryError,
+    string DeliveryStatus, int Attempts, DateTime? NextAttemptAt, DateTime? DeliveredAt, DateTime CreatedAt);
 
 public sealed record AlertEventsResponse(List<AlertEventRow> Events);
 

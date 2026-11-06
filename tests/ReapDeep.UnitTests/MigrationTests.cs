@@ -9,7 +9,7 @@ public class MigrationTests
     [Fact]
     public void Migrations_are_embedded_and_ordered_per_target()
     {
-        Assert.Equal(["0001", "0002", "0003", "0004"], All.Where(m => m.Target == MigrationCatalog.Postgres).Select(m => m.Version));
+        Assert.Equal(["0001", "0002", "0003", "0004", "0005"], All.Where(m => m.Target == MigrationCatalog.Postgres).Select(m => m.Version));
         Assert.Equal(["0001", "0002"], All.Where(m => m.Target == MigrationCatalog.StarRocks).Select(m => m.Version));
         Assert.All(All, m => Assert.False(string.IsNullOrWhiteSpace(m.Sql)));
     }
