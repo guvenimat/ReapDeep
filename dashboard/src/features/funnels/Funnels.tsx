@@ -169,10 +169,10 @@ function DroppedPersons({ body, step, from, to, onClose }: {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<{ text: string; id?: number; error?: boolean }>()
   const filtered = body.filters.length > 0
-  const rangeEnd = body.date_to ? new Date(body.date_to).getTime() + (body.date_to.length === 10 ? 86400000 : 0) : Date.now()
-  const rangeDays = Math.ceil((rangeEnd - (body.date_from ? new Date(body.date_from).getTime() : rangeEnd - 30 * 86400000)) / 86400000)
 
   const saveDynamic = async () => {
+    const rangeEnd = body.date_to ? new Date(body.date_to).getTime() + (body.date_to.length === 10 ? 86400000 : 0) : Date.now()
+    const rangeDays = Math.ceil((rangeEnd - (body.date_from ? new Date(body.date_from).getTime() : rangeEnd - 30 * 86400000)) / 86400000)
     setBusy(true)
     setMessage(undefined)
     try {
