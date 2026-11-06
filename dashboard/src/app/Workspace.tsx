@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { api, setProject, storedProjectId } from '../api/client'
 import type { Me } from '../api/types'
-import { CohortsContext, MetaContext, MetaDatalists } from '../components/editors'
+import { CohortsContext, MetaContext } from '../components/editors'
 import { EmptyState } from '../components/ui'
 import { Alerts } from '../features/alerts/Alerts'
 import { Catalog } from '../features/catalog/Catalog'
@@ -68,7 +68,6 @@ export function Workspace({ me, onLogout, onAccessChanged }: { me: Me; onLogout:
   return (
     <MetaContext.Provider value={meta.data}>
       <CohortsContext.Provider value={cohorts.data?.cohorts ?? []}>
-        <MetaDatalists />
         <div className="shell">
           <Sidebar me={me} project={project} active={route.tab} status={status} statusError={err}
             onNavigate={(t) => navigate(t)} onProjectChange={changeProject} onLogout={onLogout} />

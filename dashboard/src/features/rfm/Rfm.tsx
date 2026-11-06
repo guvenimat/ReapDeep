@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { api, errorMessage } from '../../api/client'
 import type { Filter, RfmMigrationResponse, RfmResponse, RfmSegmentKey } from '../../api/types'
 import { readState } from '../../app/route'
-import { completeFilters, EditorSection, FilterEditor } from '../../components/editors'
+import { completeFilters, EditorSection, FilterEditor, SuggestInput } from '../../components/editors'
 import { Icon } from '../../components/icons'
 import { Card, FormMessage, Segmented, StatTile, Status } from '../../components/ui'
 import { compact, ms, num, pct } from '../../lib/format'
@@ -108,11 +108,11 @@ export function Rfm({ params, onChange, onInsight, onCohortCreated }: {
     <div className="layout">
       <aside className="panel">
         <EditorSection title="Purchases" hint="Each purchase event is one item; orders are counted by order_id, or one per event when it is missing.">
-          <label className="field"><span>Purchase event</span>
-            <input list="dl-events" value={state.purchase_event} onChange={(e) => set({ purchase_event: e.target.value })} aria-label="Purchase event" />
+          <label className="field" htmlFor="rfm-purchase-event"><span>Purchase event</span>
+            <SuggestInput id="rfm-purchase-event" list="events" value={state.purchase_event} onChange={(v) => set({ purchase_event: v })} aria-label="Purchase event" />
           </label>
-          <label className="field"><span>Amount property</span>
-            <input list="dl-event-props" value={state.amount_property} onChange={(e) => set({ amount_property: e.target.value })} aria-label="Amount property" />
+          <label className="field" htmlFor="rfm-amount-property"><span>Amount property</span>
+            <SuggestInput id="rfm-amount-property" list="event-props" value={state.amount_property} onChange={(v) => set({ amount_property: v })} aria-label="Amount property" />
           </label>
         </EditorSection>
         <EditorSection title="Window" hint="Scores compare customers who bought in this window with each other.">

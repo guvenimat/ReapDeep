@@ -1,7 +1,7 @@
 import { useState, type ChangeEvent, type FormEvent } from 'react'
 import { api, errorMessage } from '../../api/client'
 import type { Cohort, CohortCondition, CohortDefinition, CohortKind, CountOp, Filter, RfmSegmentKey } from '../../api/types'
-import { AddButton, needsValue, OpSelect, propList } from '../../components/editors'
+import { AddButton, needsValue, OpSelect, propList, SuggestInput } from '../../components/editors'
 import { Icon } from '../../components/icons'
 import { Card, FormMessage, IconButton, Segmented } from '../../components/ui'
 import { num } from '../../lib/format'
@@ -164,10 +164,10 @@ function ConditionRow({ condition: c, onChange, onRemove }: {
           {CONDITION_TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
         </select>
         {c.type === 'person_property'
-          ? <input list={propList('person')} placeholder="property" value={c.property} onChange={(e) => onChange({ ...c, property: e.target.value })} aria-label="Person property" />
+          ? <SuggestInput list={propList('person')} placeholder="property" value={c.property} onChange={(v) => onChange({ ...c, property: v })} aria-label="Person property" />
           : c.type === 'rfm_segment'
             ? <span className="editor-hint">customers scored on their purchases</span>
-            : <input list="dl-events" placeholder="event" value={c.event} onChange={(e) => onChange({ ...c, event: e.target.value })} aria-label="Event" />}
+            : <SuggestInput list="events" placeholder="event" value={c.event} onChange={(v) => onChange({ ...c, event: v })} aria-label="Event" />}
         {onRemove && <IconButton icon="close" label="Remove condition" onClick={onRemove} />}
       </div>
       {c.type === 'person_property' && (
@@ -218,8 +218,8 @@ function RfmConditionEditor({ condition: c, onChange }: {
       </div>
       <div className="row sentence">
         <span>scored on</span>
-        <input list="dl-events" placeholder="purchase" value={c.event ?? ''} className="narrow-event" aria-label="Purchase event"
-          onChange={(e) => onChange({ ...c, event: e.target.value })} />
+        <SuggestInput list="events" placeholder="purchase" value={c.event ?? ''} className="narrow-event" aria-label="Purchase event"
+          onChange={(v) => onChange({ ...c, event: v })} />
         <span>in the last</span>
         <select value={c.within_days} onChange={(e) => onChange({ ...c, within_days: Number(e.target.value) })} aria-label="RFM window" className="op">
           {RFM_WINDOWS.map((d) => <option key={d} value={d}>{d} days</option>)}
@@ -246,7 +246,7 @@ function EventFilters({ filters, onChange }: { filters: Filter[]; onChange: (f: 
       {filters.map((f, i) => (
         <div className="row" key={i}>
           <span className="where">where</span>
-          <input list={propList('event')} placeholder="event property" value={f.property} onChange={(e) => update(i, { property: e.target.value })} aria-label="Event property" />
+          <SuggestInput list={propList('event')} placeholder="event property" value={f.property} onChange={(v) => update(i, { property: v })} aria-label="Event property" />
           <OpSelect value={f.op} onChange={(op) => update(i, { op })} />
           {needsValue(f.op) && <input placeholder="value" value={f.value ?? ''} onChange={(e) => update(i, { value: e.target.value })} aria-label="Event property value" />}
           <IconButton icon="close" label="Remove event filter" onClick={() => onChange(filters.filter((_, k) => k !== i))} />

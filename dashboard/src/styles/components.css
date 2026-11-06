@@ -72,6 +72,17 @@
 .editor-item input, .editor-item select { background: var(--surface); }
 .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .row input:not([type="checkbox"]):not(.narrow) { flex: 1; min-width: 90px; }
+.suggest { position: relative; display: flex; align-items: center; min-width: 0; }
+.row > .suggest { flex: 1; min-width: 90px; }
+.suggest > input { width: 100%; padding-right: 30px; }
+.suggest-toggle { position: absolute; right: 3px; top: 50%; transform: translateY(-50%); width: 26px; height: 26px; padding: 0; display: grid; place-items: center; background: transparent; border: 0; color: var(--muted); box-shadow: none; }
+.suggest-toggle:hover { color: var(--text); background: var(--surface-3); }
+.suggest-list { position: absolute; z-index: 40; top: calc(100% + 4px); left: 0; min-width: 100%; max-width: 360px; max-height: 260px; overflow-y: auto; margin: 0; padding: 4px; list-style: none; background: var(--surface); border-radius: var(--radius-sm); box-shadow: var(--shadow-pop); }
+.suggest-option { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; padding: 6px 9px; border-radius: 4px; cursor: pointer; white-space: nowrap; font-size: 13px; color: var(--text-2); }
+.suggest-option.active { background: var(--surface-3); color: var(--text); }
+.suggest-option[aria-selected="true"] { color: var(--accent-strong); font-weight: 600; }
+.suggest-value { overflow: hidden; text-overflow: ellipsis; }
+.suggest-type { color: var(--muted); font-size: 11.5px; font-weight: 400; }
 .row select.scope { width: 92px; }
 .row select.op { width: 112px; }
 .inline { display: inline-flex; align-items: center; gap: 8px; color: var(--text-2); }

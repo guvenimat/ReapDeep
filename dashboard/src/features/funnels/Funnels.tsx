@@ -4,7 +4,7 @@ import type { Breakdown, Filter, FunnelResponse } from '../../api/types'
 import { readState, toDateRange, type Range } from '../../app/route'
 import { Legend, MAX_SERIES, seriesColor } from '../../components/charts/common'
 import { FunnelChart, type FunnelGroup } from '../../components/charts/FunnelChart'
-import { AddButton, BreakdownEditor, completeBreakdown, completeFilters, EditorSection, FilterEditor } from '../../components/editors'
+import { AddButton, BreakdownEditor, completeBreakdown, completeFilters, EditorSection, FilterEditor, SuggestInput } from '../../components/editors'
 import { Card, FormMessage, IconButton, Segmented, StatTile, Status } from '../../components/ui'
 import { duration, ms, num, pct, shortId } from '../../lib/format'
 import { useDebounced, useQuery } from '../../lib/hooks'
@@ -67,8 +67,8 @@ export function Funnels({ params, range, onChange, onInsight }: {
           {state.steps.map((s, i) => (
             <div className="row step-row" key={i}>
               <span className="step-no">{i + 1}</span>
-              <input list="dl-events" placeholder="event" value={s} aria-label={`Step ${i + 1}`}
-                onChange={(e) => set({ steps: state.steps.map((x, k) => (k === i ? e.target.value : x)) })} />
+              <SuggestInput list="events" placeholder="event" value={s} aria-label={`Step ${i + 1}`}
+                onChange={(v) => set({ steps: state.steps.map((x, k) => (k === i ? v : x)) })} />
               {state.steps.length > 2 && (
                 <IconButton icon="close" label="Remove step" onClick={() => set({ steps: state.steps.filter((_, k) => k !== i) })} />
               )}
