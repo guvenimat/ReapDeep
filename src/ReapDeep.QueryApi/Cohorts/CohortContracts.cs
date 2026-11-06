@@ -25,5 +25,8 @@ public sealed record CohortPreviewResponse(long Persons, double TookMs);
 public sealed record CohortPerson(string Id, bool IsIdentified, string[] DistinctIds, JsonElement Properties);
 public sealed record CohortPersonsResponse(List<CohortPerson> Persons, string? NextCursor);
 
+public sealed record PersonCohort(long Id, string Name, string Kind, DateTime? CalculatedAt);
+public sealed record PersonCohortsResponse(List<PersonCohort> Cohorts);
+
 public sealed record CohortUsage(long Id, string Name, string Kind);
 public sealed record CohortUsageResponse(List<CohortUsage> Insights);

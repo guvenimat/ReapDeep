@@ -17,6 +17,7 @@ public static class CohortEndpoints
         api.MapGet("/cohorts/{id:long}", Get);
         api.MapGet("/cohorts/{id:long}/persons", Persons);
         api.MapGet("/cohorts/{id:long}/usage", Usage);
+        api.MapGet("/persons/{personId}/cohorts", PersonCohorts);
         api.MapPost("/cohorts", Create).RequireUser();
         api.MapPost("/cohorts/preview", Preview).RequireUser();
         api.MapPut("/cohorts/{id:long}", Update).RequireUser();
@@ -37,6 +38,9 @@ public static class CohortEndpoints
         await service.PersonsAsync(project, id, cursor, Math.Clamp(limit ?? DefaultPersonsLimit, 1, MaxPersonsLimit), ct) is { } page
             ? ApiResults.Ok(page, AppJsonContext.Default.CohortPersonsResponse)
             : ApiResults.NotFound("Cohort not found");
+
+    static async Task<IResult> PersonCohorts(string personId, ProjectContext project, CohortService service, CancellationToken ct) =>
+        ApiResults.Ok(await service.OfPersonAsync(project, personId, ct), AppJsonContext.Default.PersonCohortsResponse);
 
     static async Task<IResult> Usage(long id, ProjectContext project, CohortRepository cohorts, CancellationToken ct) =>
         await cohorts.GetAsync(project.ProjectId, id, ct) is null

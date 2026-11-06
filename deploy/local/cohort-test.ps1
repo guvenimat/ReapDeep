@@ -106,6 +106,16 @@ $members = (S GET "/cohorts/$($dyn.id)/persons").Json.persons
 Check "members list: person A with both distinct_ids" (@($members).Count -eq 1 -and $members[0].id -eq $personId -and @($members[0].distinct_ids).Count -eq 2)
 Check "StarRocks: membership stored per distinct_id (2 rows for A)" ((StarRocks "SELECT count(*) FROM analytics.cohort_members WHERE cohort_id = $($dyn.id) AND version = (SELECT max(version) FROM analytics.cohort_members WHERE cohort_id = $($dyn.id))") -eq "2")
 Check "read API key can list cohorts" (@((K GET "/cohorts").Json.cohorts | Where-Object { $_.id -eq $dyn.id }).Count -eq 1)
+$ours = @($dyn.id, $prop.id, $stat.id)
+function MemberOf([string]$key) { @((K GET "/persons/$([uri]::EscapeDataString($key))/cohorts").Json.cohorts | Where-Object { $ours -contains $_.id } | ForEach-Object { $_.id } | Sort-Object) }
+$expectA = ($ours | Sort-Object) -join ","
+Check "person cohorts by person id: A is in all three" ((MemberOf $personId) -join "," -eq $expectA)
+Check "person cohorts by identified distinct_id: same three" ((MemberOf $userA) -join "," -eq $expectA)
+Check "person cohorts by the earlier anonymous distinct_id: same three" ((MemberOf $anonA) -join "," -eq $expectA)
+Check "person cohorts: C only in the static list" ((MemberOf $casualC) -join "," -eq "$($stat.id)")
+Check "person cohorts: B in none of them" (@(MemberOf $buyerB).Count -eq 0)
+$unknown = K GET "/persons/nobody-$tag/cohorts"
+Check "person cohorts: unknown id -> 200 with an empty list" ($unknown.Status -eq 200 -and @($unknown.Json.cohorts).Count -eq 0)
 
 Write-Host "`n4) Cohorts in analyses"
 $in = (Trend @(@{ scope = "cohort"; property = "$($dyn.id)"; op = "in" })).Json.results[0].total

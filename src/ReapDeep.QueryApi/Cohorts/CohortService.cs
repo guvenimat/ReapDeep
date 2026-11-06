@@ -13,6 +13,7 @@ public sealed class CohortService(CohortRepository cohorts, PersonRepository per
 {
     public const int MaxBreakdownCohorts = 5;
     public const int MaxStaticMembers = 100_000;
+    const int MaxPersonDistinctIds = 1000;
     static readonly JsonElement EmptyObject = JsonText.Parse("{}");
 
     public async Task<CohortPreviewResponse> PreviewAsync(ProjectContext project, CohortDefinition? definition, CancellationToken ct)
@@ -30,6 +31,22 @@ public sealed class CohortService(CohortRepository cohorts, PersonRepository per
 
         var keys = await starRocks.QueryAsync(CohortSql.PersonsPage(project.ProjectId, id, version, after, limit), r => r.GetString(0), ct);
         return new CohortPersonsResponse(await DescribeAsync(project, keys, ct), keys.Count == limit ? keys[^1] : null);
+    }
+
+    public async Task<PersonCohortsResponse> OfPersonAsync(ProjectContext project, string key, CancellationToken ct)
+    {
+        var person = Ensure.NotBlank(key, "person_id");
+        Ensure.That(person.Length <= 200, "person_id can be at most 200 characters");
+        var active = await cohorts.ActiveAsync(project.ProjectId, ct);
+        if (active.Count == 0) return new PersonCohortsResponse([]);
+
+        var ids = await cohorts.PersonDistinctIdsAsync(project.ProjectId, person, MaxPersonDistinctIds, ct);
+        var hits = (await starRocks.QueryAsync(CohortSql.MembershipsOf(project.ProjectId, ids),
+            r => (Cohort: Convert.ToInt64(r.GetValue(0)), Version: Convert.ToInt64(r.GetValue(1))), ct)).ToHashSet();
+        return new PersonCohortsResponse(active
+            .Where(c => hits.Contains((c.Id, c.ActiveVersion)))
+            .OrderBy(c => c.Name, StringComparer.OrdinalIgnoreCase)
+            .Select(c => new PersonCohort(c.Id, c.Name, c.Kind, c.CalculatedAt)).ToList());
     }
 
     public async Task<List<CohortPerson>> DescribeAsync(ProjectContext project, IReadOnlyList<string> keys, CancellationToken ct)

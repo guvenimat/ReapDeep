@@ -97,6 +97,7 @@ function PersonDetail({ id, onClose, canManage, onDeletionRequested }: {
   const [from] = useState(() => new Date(Date.now() - 365 * 86400_000).toISOString())
   const events = useQuery((signal) => api.events({ person_id: id, limit: 200, date_from: from }, signal), [id])
   const rfm = useQuery((signal) => api.personRfm(id, signal), [id])
+  const cohorts = useQuery((signal) => api.personCohorts(id, signal), [id])
 
   const requestDeletion = async () => {
     if (!window.confirm('Delete this person, all of their distinct_ids and all of their events? This cannot be undone.')) return
@@ -143,6 +144,13 @@ function PersonDetail({ id, onClose, canManage, onDeletionRequested }: {
                     <span className="small muted">last purchase {num(rfm.data.recency_days ?? 0)} days ago · {num(rfm.data.orders ?? 0)} order{rfm.data.orders === 1 ? '' : 's'} · {num(rfm.data.monetary ?? 0)} spent</span>
                   </>
                 )}
+            </div>
+            <div className="editor-title">Cohorts</div>
+            <div className="person-rfm" data-testid="person-cohorts">
+              {cohorts.error ? <span className="muted small">{cohorts.error}</span>
+                : !cohorts.data ? <span className="muted small">Loading…</span>
+                : cohorts.data.cohorts.length === 0 ? <span className="muted small">Not in any cohort.</span>
+                : cohorts.data.cohorts.map((c) => <a key={c.id} className="cohort-chip" href={`#/cohorts/${c.id}`}><Badge>{c.name}</Badge></a>)}
             </div>
             {canManage && (
               <div className="danger-zone" data-testid="person-deletion">

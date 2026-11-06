@@ -466,6 +466,7 @@ tr.muted-row td { color: var(--muted); }
 td.actions { text-align: right; white-space: nowrap; }
 button.link.active { text-decoration: underline; }
 .person-rfm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 16px; }
+.cohort-chip { text-decoration: none; }
 .movement { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; }
 .movement-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .movement-list li { display: grid; grid-template-columns: minmax(120px, 1.2fr) minmax(60px, 1fr) 52px 52px; align-items: center; gap: 10px; font-size: 13px; }
