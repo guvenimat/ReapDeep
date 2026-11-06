@@ -104,9 +104,9 @@ Write-Host "  Waiting for StarRocks ingestion and identity sync..."
 $deadline = (Get-Date).AddSeconds(60)
 do {
     Start-Sleep 2
-    $t = Api "/api/v1/query/trends" '{"series":[{"event":"page___TAG__","metric":"unique_users"},{"event":"step3___TAG__"}]}'
+    $t = Api "/api/v1/query/trends" '{"series":[{"event":"page___TAG__","metric":"unique_users"},{"event":"step3___TAG__"},{"event":"step1___TAG__","metric":"unique_users"}]}'
     $p = Api "/api/v1/persons?search=__U__&identified=true"
-    $ready = $t.results[0].total -eq 1 -and $t.results[1].total -eq 1 -and @($p.persons).Count -eq 1
+    $ready = $t.results[0].total -eq 1 -and $t.results[1].total -eq 1 -and $t.results[2].total -eq 2 -and @($p.persons).Count -eq 1
 } until ($ready -or (Get-Date) -gt $deadline)
 Check "data ready" $ready
 $personId = $p.persons[0].id

@@ -8,6 +8,7 @@ namespace ReapDeep.PersonWorker.Identity;
 public sealed class EventConsumer(IConfiguration cfg, IdentityResolver resolver, DeadLetterProducer deadLetters, ILogger<EventConsumer> log) : BackgroundService
 {
     const int MaxRetryDelaySeconds = 30;
+    const long LagIntervalMs = 10_000;
 
     protected override Task ExecuteAsync(CancellationToken ct) =>
         Task.Factory.StartNew(() => Run(ct), ct, TaskCreationOptions.LongRunning, TaskScheduler.Default);
@@ -26,11 +27,17 @@ public sealed class EventConsumer(IConfiguration cfg, IdentityResolver resolver,
         .Build();
 
         consumer.Subscribe(cfg["Kafka:EventsTopic"] ?? "events");
+        var lagDueAt = 0L;
         try
         {
             while (!ct.IsCancellationRequested)
             {
                 Heartbeat.Beat();
+                if (Environment.TickCount64 >= lagDueAt)
+                {
+                    lagDueAt = Environment.TickCount64 + LagIntervalMs;
+                    IdentityMetrics.SetConsumerLag(IdentityMetrics.ConsumerLag(consumer));
+                }
                 if (consumer.Consume(TimeSpan.FromSeconds(1)) is not { } result) continue;
                 Handle(result, ct);
                 consumer.StoreOffset(result);

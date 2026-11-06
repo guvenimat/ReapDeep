@@ -1,8 +1,9 @@
+using System.Globalization;
 using System.Text.Json;
 
 namespace ReapDeep.PersonWorker.Identity;
 
-public sealed record IdentityEvent(long ProjectId, string Event, string DistinctId, string? AnonId, string? SetJson)
+public sealed record IdentityEvent(long ProjectId, string Event, string DistinctId, string? AnonId, string? SetJson, long TimestampMicros)
 {
     public const string Identify = "$identify";
     public const string Set = "$set";
@@ -33,11 +34,20 @@ public sealed record IdentityEvent(long ProjectId, string Event, string Distinct
             if (string.IsNullOrEmpty(eventName) || string.IsNullOrEmpty(distinctId)) return null;
 
             return new IdentityEvent(root.GetProperty("project_id").GetInt64(), eventName, distinctId,
-                string.IsNullOrEmpty(anon) || anon == distinctId ? null : anon, set);
+                string.IsNullOrEmpty(anon) || anon == distinctId ? null : anon, set, TimestampMicrosOf(root));
         }
         catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException or FormatException)
         {
             return null;
         }
     }
+
+    public static long ToMicros(DateTime utc) => (utc.Ticks - DateTime.UnixEpoch.Ticks) / 10;
+
+    static long TimestampMicrosOf(JsonElement root) =>
+        root.TryGetProperty("timestamp", out var ts) && ts.ValueKind == JsonValueKind.String &&
+        DateTime.TryParseExact(ts.GetString(), "yyyy-MM-dd HH:mm:ss.FFFFFF", CultureInfo.InvariantCulture,
+            DateTimeStyles.AdjustToUniversal | DateTimeStyles.AssumeUniversal, out var parsed)
+            ? ToMicros(parsed)
+            : ToMicros(DateTime.UtcNow);
 }

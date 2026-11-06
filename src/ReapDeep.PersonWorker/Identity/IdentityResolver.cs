@@ -8,7 +8,7 @@ public sealed class IdentityResolver(NpgsqlDataSource db, ILogger<IdentityResolv
     {
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
-        var persons = new PersonTransaction(conn, tx, e.ProjectId);
+        var persons = new PersonTransaction(conn, tx, e.ProjectId, e.TimestampMicros);
 
         await persons.LockAsync(e.DistinctId, e.AnonId);
         if (e.IsIdentify) await IdentifyAsync(persons, e.DistinctId, e.AnonId, e.SetJson);

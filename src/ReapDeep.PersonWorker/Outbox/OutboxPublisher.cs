@@ -12,6 +12,10 @@ public sealed class OutboxPublisher(NpgsqlDataSource db, IConfiguration cfg, ILo
 
     internal sealed record OutboxRecord(long Id, string Topic, string Key, string Payload);
 
+    internal sealed record OutboxStatsRecord(long Pending, double OldestSeconds);
+
+    static readonly TimeSpan StatsInterval = TimeSpan.FromSeconds(10);
+
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
         using var producer = new ProducerBuilder<string, string>(new ProducerConfig
@@ -25,10 +29,16 @@ public sealed class OutboxPublisher(NpgsqlDataSource db, IConfiguration cfg, ILo
         .SetErrorHandler((_, e) => log.LogWarning("Kafka: {Reason}", e.Reason))
         .Build();
 
+        var statsAt = DateTime.MinValue;
         while (!ct.IsCancellationRequested)
         {
             try
             {
+                if (DateTime.UtcNow - statsAt >= StatsInterval)
+                {
+                    statsAt = DateTime.UtcNow;
+                    await MeasureAsync(ct);
+                }
                 if (await PublishBatchAsync(producer, ct) == 0) await Task.Delay(IdleDelay, ct);
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -40,6 +50,14 @@ public sealed class OutboxPublisher(NpgsqlDataSource db, IConfiguration cfg, ILo
                 await Task.Delay(ErrorDelay, ct);
             }
         }
+    }
+
+    async Task MeasureAsync(CancellationToken ct)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        var stats = await conn.QuerySingleAsync<OutboxStatsRecord>(
+            "SELECT count(*) AS pending, COALESCE(extract(epoch FROM now() - min(created_at)), 0)::float8 AS oldest_seconds FROM person_outbox");
+        Identity.IdentityMetrics.SetOutbox(stats.Pending, stats.OldestSeconds);
     }
 
     async Task<int> PublishBatchAsync(IProducer<string, string> producer, CancellationToken ct)
