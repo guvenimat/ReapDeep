@@ -44,7 +44,7 @@ rd.capture('search_result_clicked', { query: 'linen dress', item_id: 'linen-shir
 rd.capture('search_suggestion_clicked', { query: 'lin', type: 'product', value: 'linen-shirt' })
 ```
 
-Models: `popular`, `trending`, `co_viewed` and `bought_together` (the last two need `itemId`). Only items that are in the catalog and in stock are returned; each item has a `source`, which is `popular` when a short item-based list was filled with popular items.
+Models: `popular`, `trending`, `co_viewed` and `bought_together` (the last two need `itemId`). Only items that are in the catalog and in stock are returned; each item has a `source`, which is `popular` when a short item-based list was filled with popular items. Personalized `for_you` lists are not available through `recommend()`: they need a request signed with the project's recommendation secret, so the store's server calls the Recommender directly (see [Personalized recommendations](../../README.md#personalized-recommendations)).
 
 | Option | Default | |
 |---|---|---|

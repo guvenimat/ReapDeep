@@ -3,7 +3,7 @@
 [![CI](https://github.com/guvenimat/ReapDeep/actions/workflows/ci.yml/badge.svg)](https://github.com/guvenimat/ReapDeep/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](LICENSE)
 
-Multi-tenant, high-performance web product analytics, in the spirit of PostHog and Mixpanel.
+Multi-tenant, high-performance web product analytics with built-in recommendations.
 A tiny JavaScript SDK captures events, a Native AOT .NET ingestion API writes them to Kafka,
 StarRocks makes them queryable within seconds, and a React dashboard answers trend, funnel,
 retention, path and person questions over hundreds of millions of events.
@@ -92,14 +92,16 @@ Requirements: Docker with at least **8 GB of RAM**. The .NET 10 SDK and Node.js 
 ```powershell
 cd deploy/local
 .\run-local.ps1                               # creates .env, starts the data stack, runs a smoke test
-docker compose --profile app up -d --build    # ingestion, person worker, query API, dashboard
+docker compose --profile app up -d --build    # ingestion, person worker, query API, recommender, alert runner, dashboard, Grafana
 ```
 
 **Linux / macOS:**
 
 ```bash
 cd deploy/local
-./smoke-test.sh                               # creates .env if missing (run after the stack is up)
+cp .env.example .env                          # then replace the placeholder passwords
+docker compose up -d                          # data stack; wait until the migrate container has exited
+./smoke-test.sh                               # writes one event to Kafka and reads it back from StarRocks
 docker compose --profile app up -d --build
 ```
 
@@ -110,10 +112,11 @@ On first start, `.env` is created with random local credentials: the PostgreSQL 
 | Dashboard | http://localhost:3000 (sign in with `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env`) |
 | Ingestion API | `POST http://localhost:8000/capture` (local project key `pk_dev_local`) |
 | Query API | http://localhost:8001 (`Authorization: Bearer <READ_API_KEY>`, or a dashboard session) |
+| Recommender | `GET http://localhost:8002/recommend` |
 | StarRocks (MySQL protocol) | `localhost:9030`, user `root` |
 | PostgreSQL | `localhost:5432`, user `reapdeep`, password in `.env` |
 | Grafana (traces, metrics, logs) | http://localhost:3005 |
-| Kafka | `localhost:9092` |
+| Kafka | `localhost:9092` (optional web UI at http://localhost:8080 with `--profile tools`) |
 
 ### Send an event
 
@@ -441,7 +444,7 @@ ReapDeep is an early v1. It runs end to end locally but has not been operated in
 - Members are added with a temporary password; there are no invitation emails or password reset by email.
 - A person's `created_at` is the time the person worker processed their first `$identify` or `$set`, not the event's own timestamp; it only differs for backfilled data such as the demo seed.
 - Retention and paths read raw events and join persons on every query; they are fast on the demo and test data but were not part of the 100M-event benchmark.
-- RFM scores are relative to the customers in the report: a filter re-ranks only the matching customers. Amounts are summed without currency conversion (the report warns when it sees several currencies), and there is no refund event yet.
+- RFM scores are relative to the customers in the report: a filter re-ranks only the matching customers. Amounts are summed without currency conversion (the report warns when it sees several currencies).
 - Cohort membership is the current membership: a 90-day trend filtered by a cohort uses who is in the cohort now, not who was in it on each day. Behavioral windows are limited to 90 days.
 - Not in v1: session replay, mobile SDKs, autocapture, feature flags.
 - Behind a load balancer, set `ForwardedHeaders__TrustedNetworks` (CIDR list) on the ingestion and Query APIs; `X-Forwarded-For` is ignored otherwise. The Query API sends no CORS headers unless `QueryApi__CorsOrigins` is set.
