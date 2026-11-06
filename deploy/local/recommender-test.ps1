@@ -118,6 +118,40 @@ $q = S POST "/recommendations/evaluate?k=10"
 Check "hit rate endpoint answers with counts and rates" ($q.Status -eq 200 -and $null -ne $q.Json.cases -and $q.Json.k -eq 10)
 Check "read key cannot run the evaluation -> 403" ((K $readKey POST "/recommendations/evaluate").Status -eq 403)
 
+Write-Host "`n4b) Live performance from recommendation events"
+$place = "pdp-$tag"
+function At([int]$minutesAgo) { [DateTime]::UtcNow.AddMinutes(-$minutesAgo).ToString("o") }
+function Rec([string]$distinctId, [string]$event, [string]$model, [int]$minutesAgo, [string]$item = $null) {
+    $props = "`"model`":`"$model`",`"placement`":`"$place`""
+    $props += if ($item) { ",`"item_id`":`"$item`",`"position`":1" } else { ",`"item_ids`":[`"$A`",`"$B`"]" }
+    "{`"event`":`"$event`",`"distinct_id`":`"$distinctId`",`"timestamp`":`"$(At $minutesAgo)`",`"properties`":{$props}}"
+}
+function Buy([string]$distinctId, [string]$item, [int]$minutesAgo) {
+    "{`"event`":`"purchase`",`"distinct_id`":`"$distinctId`",`"timestamp`":`"$(At $minutesAgo)`",`"properties`":{`"item_id`":`"$item`"}}"
+}
+$recEvents = @(
+    (Rec "ra-$tag" "recommendation_shown" "co_viewed" 30), (Rec "ra-$tag" "recommendation_clicked" "co_viewed" 29 $A),
+    (Rec "rb-$tag" "recommendation_shown" "co_viewed" 30), (Rec "rb-$tag" "recommendation_clicked" "co_viewed" 29 $B), (Buy "rb-$tag" $B 60),
+    (Rec "rc-$tag" "recommendation_shown" "co_viewed" 30), (Rec "rc-$tag" "recommendation_clicked" "co_viewed" 29 $C), (Buy "rx-$tag" $C 20),
+    (Rec "rd-$tag" "recommendation_shown" "popular" 30)
+)
+Capture ("[" + ($recEvents -join ",") + "]")
+Capture "[{`"event`":`"`$identify`",`"distinct_id`":`"ru-$tag`",`"properties`":{`"`$anon_distinct_id`":`"ra-$tag`"}}]"
+Capture ("[" + (Buy "ru-$tag" $A 10) + "]")
+$perfRows = $null
+$perfReady = WaitFor {
+    $script:perfRows = @((K $readKey GET "/recommendations/performance?days=7").Json.rows | Where-Object { $_.placement -eq $place })
+    $cv = @($script:perfRows | Where-Object { $_.model -eq "co_viewed" })[0]
+    $cv -and $cv.purchases -eq 1 -and @($script:perfRows).Count -eq 2
+} 90
+$cv = @($perfRows | Where-Object { $_.model -eq "co_viewed" })[0]
+$pop = @($perfRows | Where-Object { $_.model -eq "popular" })[0]
+Check "read key: performance per model and placement (2 rows for this run)" $perfReady
+Check "co_viewed: 3 impressions, 3 clicks, click rate 1" ($cv.impressions -eq 3 -and $cv.clicks -eq 3 -and $cv.click_rate -eq 1)
+Check "co_viewed: 1 purchase (anonymous click, bought after sign-in; earlier or someone else's purchase not counted) -> $($cv.purchases)" ($cv.purchases -eq 1 -and [math]::Abs($cv.purchase_rate - 0.3333) -lt 0.001)
+Check "popular: 1 impression, no clicks, purchase rate empty" ($pop.impressions -eq 1 -and $pop.clicks -eq 0 -and $pop.click_rate -eq 0 -and $null -eq $pop.purchase_rate)
+Check "days outside 7 | 30 | 90 -> 400" ((K $readKey GET "/recommendations/performance?days=14").Status -eq 400)
+
 Write-Host "`n5) Personalized recommendations"
 Check "a read key cannot create the recommendation secret -> 403" ((K $readKey POST "/project/recommendation-secret").Status -eq 403)
 $secret = (S POST "/project/recommendation-secret").Json.recommendation_secret

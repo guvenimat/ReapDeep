@@ -19,5 +19,8 @@ public sealed record ItemDetail(ItemRow Item, List<RecommendedItem> CoViewed, Li
 public sealed record ModelRun(string Model, DateTime CalculatedAt, int CalculationMs, int SourceItems);
 public sealed record ModelRunsResponse(List<ModelRun> Models);
 
+public sealed record RecommendationPerformance(string Model, string Placement, long Impressions, long Clicks, long Purchases,
+    double? ClickRate, double? PurchaseRate);
+public sealed record RecommendationPerformanceResponse(int Days, int AttributionDays, List<RecommendationPerformance> Rows, double TookMs);
 public sealed record HitRateResponse(int K, long Cases, long Covered, long CoViewedHits, double CoViewedHitRate, long PopularHits, double PopularHitRate,
     string TrainFrom, string TestFrom, string TestTo, double TookMs);

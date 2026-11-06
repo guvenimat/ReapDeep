@@ -38,6 +38,20 @@ public sealed class CatalogService(StarRocksClient starRocks)
         }).ToList();
     }
 
+    public async Task<RecommendationPerformanceResponse> PerformanceAsync(ProjectContext project, int? days, CancellationToken ct)
+    {
+        var window = days ?? 30;
+        Ensure.That(RecommendationSql.PerformanceDays.Contains(window), $"days: {string.Join(" | ", RecommendationSql.PerformanceDays)}");
+        var sw = Stopwatch.StartNew();
+        var rows = await starRocks.QueryAsync(RecommendationSql.Performance(project.ProjectId, DateTime.UtcNow, window), r =>
+        {
+            var (shown, clicks, purchases) = (Convert.ToInt64(r.GetValue(2)), Convert.ToInt64(r.GetValue(3)), Convert.ToInt64(r.GetValue(4)));
+            return new RecommendationPerformance(r.GetString(0), r.GetString(1), shown, clicks, purchases,
+                shown == 0 ? null : Math.Round((double)clicks / shown, 4), clicks == 0 ? null : Math.Round((double)purchases / clicks, 4));
+        }, ct);
+        return new RecommendationPerformanceResponse(window, RecommendationSql.AttributionDays, rows, sw.Elapsed.TotalMilliseconds);
+    }
+
     public async Task<HitRateResponse> HitRateAsync(ProjectContext project, int k, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();

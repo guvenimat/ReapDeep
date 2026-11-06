@@ -202,6 +202,22 @@ describe('commerce', () => {
     expect(purchases[0].properties.quantity).toBe(2)
   })
 
+  it('tracks recommendation impressions and clicks with model and placement', async () => {
+    const rd = client()
+    const context = { model: 'co_viewed', placement: 'product_page', sourceItemId: 'sku-1' }
+    rd.trackRecommendationShown(context, ['sku-2', 'sku-3'])
+    rd.trackRecommendationShown(context, [])
+    rd.trackRecommendationClicked(context, 'sku-3', 2, { campaign: 'spring' })
+    await vi.advanceTimersByTimeAsync(3000)
+
+    const shown = sentEvents().filter((e) => e.event === 'recommendation_shown')
+    expect(shown).toHaveLength(1)
+    expect(shown[0].properties).toMatchObject({ model: 'co_viewed', placement: 'product_page', source_item_id: 'sku-1', item_ids: ['sku-2', 'sku-3'] })
+    expect(shown[0].properties.item_id).toBeUndefined()
+    const clicked = sentEvents().filter((e) => e.event === 'recommendation_clicked')
+    expect(clicked.map((e) => e.properties)).toMatchObject([{ model: 'co_viewed', placement: 'product_page', item_id: 'sku-3', position: 2, campaign: 'spring' }])
+  })
+
   it('recommend calls the recommender with the public key and returns its items', async () => {
     const rd = client({ recommendHost: 'http://reco.local/' })
     fetchMock.mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ items: [{ item_id: 'sku-2', score: 0.4 }] }) })

@@ -38,6 +38,7 @@ function Overview({ version }: { version: number }) {
         {MODELS.map((m) => <ModelTile key={m.id} label={m.label} description={m.description} run={runs.get(m.id)} />)}
       </div>
       <Quality />
+      <LivePerformance />
     </>
   )
 }
@@ -84,6 +85,43 @@ function Quality() {
       ) : (
         <p className="editor-hint">Hit rate at 10: the share of next items that the model would have shown. Runs on demand in StarRocks.</p>
       )}
+    </Card>
+  )
+}
+
+function LivePerformance() {
+  const [days, setDays] = useState(30)
+  const perf = useQuery((signal) => api.recommendationPerformance(days, signal), [days])
+  const rows = perf.data?.rows ?? []
+  return (
+    <Card title={<><Icon name="sparkles" />Live performance</>}
+      meta={`From recommendation_shown and recommendation_clicked events · a purchase counts within ${perf.data?.attribution_days ?? 7} days of the click`}
+      actions={
+        <select aria-label="Period" value={days} onChange={(e) => setDays(Number(e.target.value))} data-testid="performance-days">
+          {[7, 30, 90].map((d) => <option key={d} value={d}>Last {d} days</option>)}
+        </select>
+      }>
+      {perf.error ? <FormMessage error={perf.error} />
+        : !perf.data ? <p className="editor-hint">Loading…</p>
+        : rows.length === 0 ? <p className="editor-hint">No recommendation events yet. Send them with the SDK's trackRecommendationShown and trackRecommendationClicked.</p>
+        : (
+          <table data-testid="recommendation-performance">
+            <thead><tr><th>Model</th><th>Placement</th><th className="num">Impressions</th><th className="num">Clicks</th><th className="num">Click rate</th><th className="num">Purchases</th><th className="num">Per click</th></tr></thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={`${r.model}|${r.placement}`}>
+                  <td>{r.model || <span className="muted">(none)</span>}</td>
+                  <td>{r.placement || <span className="muted">(none)</span>}</td>
+                  <td className="num">{num(r.impressions)}</td>
+                  <td className="num">{num(r.clicks)}</td>
+                  <td className="num">{r.click_rate === null ? '—' : pct(r.click_rate)}</td>
+                  <td className="num">{num(r.purchases)}</td>
+                  <td className="num">{r.purchase_rate === null ? '—' : pct(r.purchase_rate)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
     </Card>
   )
 }
