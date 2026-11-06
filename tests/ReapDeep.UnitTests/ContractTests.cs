@@ -60,6 +60,19 @@ public partial class ContractTests
         Assert.Equal(paths.Order(), written.Order());
     }
 
+    [Fact]
+    public void Ingestion_never_writes_more_bytes_than_a_StarRocks_column_holds()
+    {
+        var sql = string.Join('\n', Migrations.Where(m => m.Target == MigrationCatalog.StarRocks).Select(m => m.Sql));
+        var create = MigrationCatalog.Statements(sql).Single(s => s.StartsWith("CREATE TABLE IF NOT EXISTS events (", StringComparison.Ordinal));
+        var sizes = VarcharPattern().Matches(create).ToDictionary(m => m.Groups[1].Value, m => int.Parse(m.Groups[2].Value, System.Globalization.CultureInfo.InvariantCulture));
+
+        Assert.Equal(EventMessage.MaxIdBytes, sizes["event"]);
+        Assert.Equal(EventMessage.MaxIdBytes, sizes["distinct_id"]);
+        Assert.Equal(CaptureEndpoint.MaxEventIdBytes, sizes["event_id"]);
+        Assert.All(EventMessage.TextColumns, c => Assert.True(c.MaxBytes <= sizes[c.Column], $"{c.Column}: ingestion writes up to {c.MaxBytes} bytes, StarRocks holds {sizes[c.Column]}"));
+    }
+
     [Theory]
     [InlineData("persons_from_kafka", "persons", "person_updates")]
     [InlineData("person_distinct_ids_from_kafka", "person_distinct_ids", "person_distinct_id_updates")]
@@ -68,7 +81,8 @@ public partial class ContractTests
         var (columns, paths) = RoutineLoad(job);
         Assert.Equal(columns, paths);
         Assert.Subset(TableColumns(table).ToHashSet(), columns.ToHashSet());
-        foreach (var file in new[] { Source("src", "ReapDeep.PersonWorker", "Identity", "PersonTransaction.cs"), Source("src", "ReapDeep.PersonWorker", "Deletion", "DeletionBatch.cs") })
+        foreach (var file in new[] { Source("src", "ReapDeep.PersonWorker", "Identity", "PersonTransaction.cs"), Source("src", "ReapDeep.PersonWorker", "Deletion", "DeletionBatch.cs"),
+            Source("src", "ReapDeep.PersonWorker", "Identity", "PersonResync.cs") })
         {
             var keys = OutboxKeys(file, topic);
             Assert.NotEmpty(keys);
@@ -145,6 +159,9 @@ public partial class ContractTests
         }
         return fields;
     }
+
+    [GeneratedRegex(@"^\s{4}([a-z_]+)\s+VARCHAR\((\d+)\)", RegexOptions.Multiline)]
+    private static partial Regex VarcharPattern();
 
     [GeneratedRegex(@"COLUMNS \(([^)]*)\)")]
     private static partial Regex ColumnsPattern();

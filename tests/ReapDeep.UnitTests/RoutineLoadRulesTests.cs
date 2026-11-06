@@ -44,6 +44,16 @@ public class RoutineLoadRulesTests
     }
 
     [Fact]
+    public void Filtered_rows_are_counted_from_the_previous_check()
+    {
+        var before = Job("RUNNING") with { ErrorRows = 5 };
+        Assert.Equal(0, RoutineLoadRules.NewErrorRows(null, before));
+        Assert.Equal(0, RoutineLoadRules.NewErrorRows(before, before));
+        Assert.Equal(3, RoutineLoadRules.NewErrorRows(before, before with { ErrorRows = 8 }));
+        Assert.Equal(0, RoutineLoadRules.NewErrorRows(before, before with { ErrorRows = 0 }));
+    }
+
+    [Fact]
     public void Statistic_json_is_read_defensively()
     {
         Assert.Equal((1287L, 268L, 2189536L, 0L), RoutineLoadRules.ParseStatistic(

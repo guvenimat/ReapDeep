@@ -51,6 +51,28 @@ Check "a job paused by an operator is left paused" ((Sr "SHOW ROUTINE LOAD FOR a
 $null = Sr "RESUME ROUTINE LOAD FOR analytics.persons_from_kafka"
 Check "and runs again once the operator resumes it" (WaitFor { (Sr "SHOW ROUTINE LOAD FOR analytics.persons_from_kafka\G") -match "(?m)^(RUNNING|NEED_SCHEDULE)" } 30)
 
+Write-Host "`n4) Rows StarRocks cannot load are reported, not lost silently"
+function FilteredRows {
+    $r = @(Prom 'sum(reapdeep_routine_load_error_rows_total{load_job="events_from_kafka"})')
+    if ($r.Count -eq 0) { return [double]0 }
+    [double]$r[0].value[1]
+}
+$filteredBefore = FilteredRows
+$startNs = [DateTimeOffset]::UtcNow.AddSeconds(-5).ToUnixTimeMilliseconds() * 1000000
+$ts = [DateTime]::UtcNow.ToString("yyyy-MM-dd HH:mm:ss.ffffff")
+$tooLong = "x" * 100
+$row = '{"project_id":1,"event":"filtered_probe","timestamp":"' + $ts + '","distinct_id":"filtered_' + $t + '","event_id":"' + $tooLong + '","properties":{},"inserted_at":"' + $ts + '"}'
+$encoded = [Convert]::ToBase64String((New-Object Text.UTF8Encoding($false)).GetBytes($row + "`n"))
+$prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+$null = docker.exe exec reapdeep-kafka bash -c "echo $encoded | base64 -d | /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server kafka:29092 --topic events" 2>&1
+$ErrorActionPreference = $prev
+Check "the watchdog exports the filtered row as reapdeep_routine_load_error_rows" (WaitFor { (FilteredRows) -gt $filteredBefore } 150)
+$filteredQuery = [Uri]::EscapeDataString('{service_name="reapdeep-person-worker"} |= "filtered out"')
+Check "and logs a warning with the StarRocks error log" (WaitFor { @((Get "$grafana/loki/loki/api/v1/query_range?query=$filteredQuery&start=$startNs&limit=5").data.result).Count -ge 1 } 90)
+Check "the row is indeed not in StarRocks" ((Sr "SELECT count(*) FROM analytics.events WHERE project_id = 1 AND distinct_id = 'filtered_$t'") -eq "0")
+Check "the overview dashboard shows filtered rows" (@((Get "http://127.0.0.1:3005/api/dashboards/uid/reapdeep-overview").dashboard.panels | Where-Object { $_.title -like "Rows filtered out*" }).Count -eq 1)
+Check "the events job keeps running" ((Sr "SHOW ROUTINE LOAD FOR analytics.events_from_kafka\G") -match "(?m)^(RUNNING|NEED_SCHEDULE)")
+
 Write-Host ""
 if ($script:failed -gt 0) { Write-Host "$($script:failed) check(s) failed." -ForegroundColor Red; exit 1 }
 Write-Host "All checks passed." -ForegroundColor Green

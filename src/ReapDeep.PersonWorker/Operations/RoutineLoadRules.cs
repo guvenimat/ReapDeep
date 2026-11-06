@@ -2,7 +2,8 @@ using System.Text.Json;
 
 namespace ReapDeep.PersonWorker.Operations;
 
-public sealed record RoutineLoadSnapshot(string Name, string State, long CommittedTasks, long AbortedTasks, long LoadedRows, long ErrorRows, string Reason, string OtherMessage);
+public sealed record RoutineLoadSnapshot(string Name, string State, long CommittedTasks, long AbortedTasks, long LoadedRows, long ErrorRows, string Reason, string OtherMessage,
+    string ErrorLogUrls = "");
 
 public enum RoutineLoadAction { None, Resume, ReportBlocked }
 
@@ -27,6 +28,9 @@ public static class RoutineLoadRules
             return RoutineLoadAction.ReportBlocked;
         return RoutineLoadAction.None;
     }
+
+    public static long NewErrorRows(RoutineLoadSnapshot? previous, RoutineLoadSnapshot current) =>
+        previous is null ? 0 : Math.Max(0, current.ErrorRows - previous.ErrorRows);
 
     public static (long Committed, long Aborted, long Loaded, long Errors) ParseStatistic(string? json)
     {

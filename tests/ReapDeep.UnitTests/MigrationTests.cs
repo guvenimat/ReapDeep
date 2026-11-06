@@ -9,9 +9,32 @@ public class MigrationTests
     [Fact]
     public void Migrations_are_embedded_and_ordered_per_target()
     {
-        Assert.Equal(["0001", "0002"], All.Where(m => m.Target == MigrationCatalog.Postgres).Select(m => m.Version));
+        Assert.Equal(["0001", "0002", "0003"], All.Where(m => m.Target == MigrationCatalog.Postgres).Select(m => m.Version));
         Assert.Equal(["0001", "0002"], All.Where(m => m.Target == MigrationCatalog.StarRocks).Select(m => m.Version));
         Assert.All(All, m => Assert.False(string.IsNullOrWhiteSpace(m.Sql)));
+    }
+
+    [Theory]
+    [InlineData("CREATE ROUTINE LOAD analytics.events_from_kafka ON events\nCOLUMNS (a)", "analytics", "events_from_kafka")]
+    [InlineData("  create routine load persons_from_kafka on persons", "analytics", "persons_from_kafka")]
+    [InlineData("CREATE ROUTINE LOAD other.job_1 ON t", "other", "job_1")]
+    public void Routine_load_statements_are_recognized(string statement, string database, string name) =>
+        Assert.Equal((database, name), MigrationCatalog.RoutineLoadJob(statement, "analytics"));
+
+    [Fact]
+    public void Other_statements_are_not_routine_loads()
+    {
+        Assert.Null(MigrationCatalog.RoutineLoadJob("CREATE TABLE IF NOT EXISTS events (a INT)", "analytics"));
+        Assert.Null(MigrationCatalog.RoutineLoadJob("PAUSE ROUTINE LOAD FOR analytics.events_from_kafka", "analytics"));
+    }
+
+    [Fact]
+    public void Every_routine_load_in_the_migrations_can_be_skipped_when_it_exists()
+    {
+        var creates = All.Where(m => m.Target == MigrationCatalog.StarRocks).SelectMany(m => MigrationCatalog.Statements(m.Sql))
+            .Where(s => s.Contains("ROUTINE LOAD", StringComparison.OrdinalIgnoreCase)).ToList();
+        Assert.Equal(3, creates.Count);
+        Assert.All(creates, s => Assert.NotNull(MigrationCatalog.RoutineLoadJob(s, "analytics")));
     }
 
     [Theory]

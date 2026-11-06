@@ -35,6 +35,8 @@ public static class EventMessage
 
     public static string? ColumnFor(string property) => Extracted.TryGetValue(property, out var c) ? c.Column : null;
 
+    public static IEnumerable<(string Column, int MaxBytes)> TextColumns => Extracted.Values.Where(c => c.MaxBytes > 0);
+
     public static byte[] Build(
         long projectId, string eventName, string distinctId, string eventId,
         DateTime timestamp, DateTime insertedAt, string? ip, UserAgentParser.Result ua,

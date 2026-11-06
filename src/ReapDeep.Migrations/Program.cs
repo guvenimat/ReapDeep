@@ -4,6 +4,12 @@ using MySqlConnector;
 using Npgsql;
 using ReapDeep.Migrations;
 
+AppDomain.CurrentDomain.UnhandledException += (_, e) =>
+{
+    Console.Error.WriteLine($"Migration failed: {(e.ExceptionObject as Exception)?.Message ?? e.ExceptionObject}");
+    Environment.Exit(1);
+};
+
 var postgres = Environment.GetEnvironmentVariable("ConnectionStrings__Postgres") ?? throw new InvalidOperationException("ConnectionStrings__Postgres is not set");
 var starRocks = Environment.GetEnvironmentVariable("ConnectionStrings__StarRocksAdmin");
 var migrations = MigrationCatalog.Load(typeof(MigrationCatalog).Assembly);
@@ -47,7 +53,15 @@ if (!string.IsNullOrWhiteSpace(starRocks))
     foreach (var m in MigrationCatalog.Pending(migrations, await Applied(conn, MigrationCatalog.StarRocks), MigrationCatalog.StarRocks))
     {
         foreach (var statement in MigrationCatalog.Statements(m.Sql))
-            await using (var cmd = new MySqlCommand(statement, sr)) await cmd.ExecuteNonQueryAsync();
+        {
+            if (MigrationCatalog.RoutineLoadJob(statement, "analytics") is { } job && await RoutineLoadExists(sr, job.Database, job.Name))
+            {
+                Console.WriteLine($"starrocks: routine load {job.Database}.{job.Name} already exists, skipped");
+                continue;
+            }
+            await using var cmd = new MySqlCommand(statement, sr);
+            await cmd.ExecuteNonQueryAsync();
+        }
         await Record(conn, null, m);
         Console.WriteLine($"starrocks: applied {m.Version}_{m.Name}");
     }
@@ -70,6 +84,15 @@ static async Task<long> Scalar(MySqlConnection conn, string sql)
 {
     await using var cmd = new MySqlCommand(sql, conn);
     return Convert.ToInt64(await cmd.ExecuteScalarAsync());
+}
+
+static async Task<bool> RoutineLoadExists(MySqlConnection conn, string database, string name)
+{
+    await using var cmd = new MySqlCommand(
+        "SELECT count(*) FROM information_schema.routine_load_jobs WHERE DB_NAME = @db AND NAME = @name AND STATE NOT IN ('STOPPED', 'CANCELLED')", conn);
+    cmd.Parameters.AddWithValue("@db", database);
+    cmd.Parameters.AddWithValue("@name", name);
+    return Convert.ToInt64(await cmd.ExecuteScalarAsync()) > 0;
 }
 
 static async Task<HashSet<string>> Applied(NpgsqlConnection conn, string target)
