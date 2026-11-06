@@ -29,13 +29,19 @@ function Capture([string]$ua, [string]$batchJson) {
 }
 
 function Call([string]$method, [string]$path, [string]$body = $null, [string]$key = $readKey) {
-    $req = New-Object System.Net.Http.HttpRequestMessage((New-Object System.Net.Http.HttpMethod($method)), "$api$path")
-    if ($key) { $req.Headers.TryAddWithoutValidation("Authorization", "Bearer $key") | Out-Null }
-    if ($body) { $req.Content = New-Object System.Net.Http.StringContent((Fill $body), [Text.Encoding]::UTF8, "application/json") }
-    $sw = [Diagnostics.Stopwatch]::StartNew()
-    $r = $http.SendAsync($req).Result
-    $text = $r.Content.ReadAsStringAsync().Result
-    $sw.Stop()
+    for ($attempt = 1; ; $attempt++) {
+        $req = New-Object System.Net.Http.HttpRequestMessage((New-Object System.Net.Http.HttpMethod($method)), "$api$path")
+        if ($key) { $req.Headers.TryAddWithoutValidation("Authorization", "Bearer $key") | Out-Null }
+        if ($body) { $req.Content = New-Object System.Net.Http.StringContent((Fill $body), [Text.Encoding]::UTF8, "application/json") }
+        $sw = [Diagnostics.Stopwatch]::StartNew()
+        $r = $http.SendAsync($req).Result
+        $text = $r.Content.ReadAsStringAsync().Result
+        $sw.Stop()
+        if ([int]$r.StatusCode -ne 429 -or $attempt -ge 2) { break }
+        $wait = if ($r.Headers.RetryAfter -and $r.Headers.RetryAfter.Delta) { [int][Math]::Ceiling($r.Headers.RetryAfter.Delta.TotalSeconds) } else { 60 }
+        Write-Host "  (request quota reached, waiting $wait s)" -ForegroundColor DarkGray
+        Start-Sleep -Seconds $wait
+    }
     [pscustomobject]@{ Status = [int]$r.StatusCode; Json = $(if ($text) { $text | ConvertFrom-Json } else { $null }); Ms = $sw.Elapsed.TotalMilliseconds; Raw = $text }
 }
 
@@ -220,8 +226,9 @@ Check "project_id filter present" ($e1.sql[0] -match "e\.project_id = @p0")
 Write-Host "`n7) Latency (30 runs per query after warm-up)"
 function Bench([string]$name, [string]$method, [string]$path, [string]$body) {
     1..3 | ForEach-Object { Call $method $path $body | Out-Null }
-    $client = @(); $server = @()
-    1..30 | ForEach-Object { $c = Call $method $path $body; $client += $c.Ms; if ($c.Json.took_ms) { $server += $c.Json.took_ms } }
+    $client = @(); $server = @(); $bad = 0
+    1..30 | ForEach-Object { $c = Call $method $path $body; if ($c.Status -ne 200) { $bad++ }; $client += $c.Ms; if ($c.Json.took_ms) { $server += $c.Json.took_ms } }
+    Check "latency runs of '$name' all returned 200 ($bad of 30 failed)" ($bad -eq 0)
     $client = $client | Sort-Object; $server = $server | Sort-Object
     $p = { param($a, $q) $a[[Math]::Min($a.Count - 1, [int][Math]::Ceiling($a.Count * $q) - 1)] }
     $line = "  {0,-36} client p50 {1,6:N1} ms  p95 {2,6:N1} ms" -f $name, (& $p $client 0.5), (& $p $client 0.95)
