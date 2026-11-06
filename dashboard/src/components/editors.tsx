@@ -1,4 +1,4 @@
-import { createContext, useContext, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useId, useMemo, useRef, useState, type InputHTMLAttributes, type KeyboardEvent, type ReactNode } from 'react'
 import type { Breakdown, Cohort, Filter, Metadata, Op, Scope } from '../api/types'
 import { Icon } from './icons'
 import { IconButton, Segmented } from './ui'
@@ -8,17 +8,117 @@ export const CohortsContext = createContext<Cohort[]>([])
 
 export const MAX_BREAKDOWN_COHORTS = 5
 
-export function MetaDatalists() {
+export type SuggestList = 'events' | 'event-props' | 'person-props'
+
+export interface SuggestOption { value: string; type?: string }
+
+const MAX_SUGGESTIONS = 200
+
+export function suggestOptions(meta: Metadata | undefined, list: SuggestList): SuggestOption[] {
+  if (!meta) return []
+  if (list === 'events') return meta.events.map((e) => ({ value: e.name }))
+  if (list === 'person-props') return meta.person_properties.map((p) => ({ value: p.name, type: p.type ?? undefined }))
+  return [
+    ...meta.event_columns.map((c) => ({ value: c })),
+    ...meta.event_properties.filter((p) => !meta.event_columns.includes(p.name)).map((p) => ({ value: p.name, type: p.type ?? undefined })),
+  ]
+}
+
+export function filterSuggestions(options: SuggestOption[], query: string | null): SuggestOption[] {
+  const q = query?.trim().toLowerCase()
+  return (q ? options.filter((o) => o.value.toLowerCase().includes(q)) : options).slice(0, MAX_SUGGESTIONS)
+}
+
+type SuggestInputProps = {
+  list: SuggestList
+  value: string
+  onChange: (value: string) => void
+  className?: string
+} & Omit<InputHTMLAttributes<HTMLInputElement>, 'list' | 'value' | 'onChange' | 'className'>
+
+export function SuggestInput({ list, value, onChange, className, ...inputProps }: SuggestInputProps) {
   const meta = useContext(MetaContext)
+  const options = useMemo(() => suggestOptions(meta, list), [meta, list])
+  const [open, setOpen] = useState(false)
+  const [query, setQuery] = useState<string | null>(null)
+  const [active, setActive] = useState(-1)
+  const input = useRef<HTMLInputElement>(null)
+  const listRef = useRef<HTMLDivElement>(null)
+  const id = useId()
+  const shown = useMemo(() => filterSuggestions(options, query), [options, query])
+  const expanded = open && shown.length > 0
+
+  useEffect(() => {
+    if (expanded && active >= 0) listRef.current?.children[active]?.scrollIntoView?.({ block: 'nearest' })
+  }, [expanded, active])
+
+  const showAll = () => {
+    setQuery(null)
+    setActive(-1)
+    setOpen(true)
+  }
+  const close = () => {
+    setOpen(false)
+    setActive(-1)
+  }
+  const choose = (v: string) => {
+    onChange(v)
+    setQuery(null)
+    close()
+  }
+  const onKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      e.preventDefault()
+      if (!expanded) return showAll()
+      const step = e.key === 'ArrowDown' ? 1 : -1
+      setActive((a) => (a + step + shown.length) % shown.length)
+    } else if (e.key === 'Enter' && expanded && active >= 0) {
+      e.preventDefault()
+      choose(shown[active].value)
+    } else if (e.key === 'Escape' && open) {
+      e.preventDefault()
+      close()
+    }
+  }
+
   return (
-    <>
-      <datalist id="dl-events">{meta?.events.map((e) => <option key={e.name} value={e.name} />)}</datalist>
-      <datalist id="dl-event-props">
-        {meta?.event_columns.map((c) => <option key={c} value={c} />)}
-        {meta?.event_properties.filter((p) => !meta.event_columns.includes(p.name)).map((p) => <option key={p.name} value={p.name} label={p.type ?? undefined} />)}
-      </datalist>
-      <datalist id="dl-person-props">{meta?.person_properties.map((p) => <option key={p.name} value={p.name} label={p.type ?? undefined} />)}</datalist>
-    </>
+    <div className={className ? `suggest ${className}` : 'suggest'}>
+      <input {...inputProps} ref={input} value={value} role="combobox" autoComplete="off"
+        aria-autocomplete="list" aria-expanded={expanded} aria-controls={`${id}-list`}
+        aria-activedescendant={expanded && active >= 0 ? `${id}-${active}` : undefined}
+        onChange={(e) => {
+          onChange(e.target.value)
+          setQuery(e.target.value)
+          setActive(-1)
+          setOpen(true)
+        }}
+        onFocus={showAll} onClick={() => !open && showAll()} onBlur={close} onKeyDown={onKeyDown} />
+      <button type="button" className="suggest-toggle" tabIndex={-1} aria-label="Show options"
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => {
+          if (expanded) return close()
+          input.current?.focus()
+          showAll()
+        }}>
+        <Icon name="chevron-down" size={14} />
+      </button>
+      {expanded && (
+        <div className="suggest-list" role="listbox" id={`${id}-list`} ref={listRef}>
+          {shown.map((o, i) => (
+            <div key={o.value} id={`${id}-${i}`} role="option" tabIndex={-1} aria-selected={o.value === value}
+              className={i === active ? 'suggest-option active' : 'suggest-option'}
+              onMouseDown={(e) => {
+                e.preventDefault()
+                choose(o.value)
+              }}
+              onMouseEnter={() => setActive(i)}>
+              <span className="suggest-value">{o.value}</span>
+              {o.type && <span className="suggest-type">{o.type}</span>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -40,7 +140,7 @@ export function AddButton({ children, onClick }: { children: ReactNode; onClick:
   )
 }
 
-export const propList = (scope: Scope) => (scope === 'person' ? 'dl-person-props' : 'dl-event-props')
+export const propList = (scope: Scope): SuggestList => (scope === 'person' ? 'person-props' : 'event-props')
 
 export const OPS: { id: Op; label: string; needsValue: boolean }[] = [
   { id: 'eq', label: '=', needsValue: true },
@@ -85,7 +185,7 @@ export function FilterEditor({ filters, onChange }: { filters: Filter[]; onChang
             <ScopeSelect value={f.scope} onChange={(scope) => changeScope(i, scope)} allowCohort />
             {f.scope === 'cohort'
               ? <CohortSelect value={f.property} onChange={(property) => update(i, { property })} />
-              : <input list={propList(f.scope)} placeholder="property" value={f.property} onChange={(e) => update(i, { property: e.target.value })} aria-label="Filter property" />}
+              : <SuggestInput list={propList(f.scope)} placeholder="property" value={f.property} onChange={(v) => update(i, { property: v })} aria-label="Filter property" />}
             <IconButton icon="close" label="Remove filter" onClick={() => onChange(filters.filter((_, k) => k !== i))} />
           </div>
           {f.scope === 'cohort' ? (
@@ -121,7 +221,7 @@ export function BreakdownEditor({ value, onChange, maxLimit = 8, allowCohort }: 
           <div className="row">
             <ScopeSelect value={value.scope} onChange={changeScope} allowCohort={allowCohort} />
             {value.scope !== 'cohort' && (
-              <input list={propList(value.scope)} placeholder="property" value={value.property} onChange={(e) => onChange({ ...value, property: e.target.value })} aria-label="Breakdown property" />
+              <SuggestInput list={propList(value.scope)} placeholder="property" value={value.property} onChange={(v) => onChange({ ...value, property: v })} aria-label="Breakdown property" />
             )}
             <span className="spacer" />
             <IconButton icon="close" label="Remove breakdown" onClick={() => onChange(undefined)} />

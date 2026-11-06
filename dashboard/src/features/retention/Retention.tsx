@@ -1,7 +1,7 @@
 import { api } from '../../api/client'
 import type { Filter, RetentionResponse } from '../../api/types'
 import { readState, toDateRange, type Range } from '../../app/route'
-import { completeFilters, EditorSection, FilterEditor } from '../../components/editors'
+import { completeFilters, EditorSection, FilterEditor, SuggestInput } from '../../components/editors'
 import { Card, Segmented, StatTile, Status } from '../../components/ui'
 import { dateTime, ms, num, pct } from '../../lib/format'
 import { useDebounced, useQuery } from '../../lib/hooks'
@@ -87,11 +87,11 @@ export function Retention({ params, range, onChange, onInsight }: {
     <div className="layout">
       <aside className="panel">
         <EditorSection title="Cohort">
-          <label className="field"><span>People who did</span>
-            <input list="dl-events" value={state.start_event} onChange={(e) => set({ start_event: e.target.value })} aria-label="Start event" />
+          <label className="field" htmlFor="retention-start-event"><span>People who did</span>
+            <SuggestInput id="retention-start-event" list="events" value={state.start_event} onChange={(v) => set({ start_event: v })} aria-label="Start event" />
           </label>
-          <label className="field"><span>and came back to do</span>
-            <input list="dl-events" value={state.return_event} placeholder="same event" onChange={(e) => set({ return_event: e.target.value })} aria-label="Return event" />
+          <label className="field" htmlFor="retention-return-event"><span>and came back to do</span>
+            <SuggestInput id="retention-return-event" list="events" value={state.return_event} placeholder="same event" onChange={(v) => set({ return_event: v })} aria-label="Return event" />
           </label>
         </EditorSection>
         <EditorSection title="Periods" hint="Cohorts are formed from the first time a person did the start event in the selected date range.">

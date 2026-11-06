@@ -6,6 +6,7 @@ import { Icon } from '../../components/icons'
 import { Card, JsonView, Status } from '../../components/ui'
 import { dateTime, ms, num, shortId } from '../../lib/format'
 import { useDebounced, useQuery } from '../../lib/hooks'
+import { SuggestInput } from '../../components/editors'
 
 interface EventsState { event: string; distinct_id: string; person_id: string; limit: number }
 const DEFAULT: EventsState = { event: '', distinct_id: '', person_id: '', limit: 50 }
@@ -28,7 +29,7 @@ export function Events({ params, range, onChange, openPerson }: {
       <div className="toolbar">
         <div className="search-input">
           <Icon name="search" />
-          <input list="dl-events" placeholder="Event name" value={state.event} onChange={(e) => set({ event: e.target.value })} aria-label="Event" />
+          <SuggestInput list="events" placeholder="Event name" value={state.event} onChange={(v) => set({ event: v })} aria-label="Event" />
         </div>
         <input placeholder="distinct_id" value={state.distinct_id} onChange={(e) => set({ distinct_id: e.target.value })} aria-label="distinct_id" />
         <input placeholder="person_id" value={state.person_id} onChange={(e) => set({ person_id: e.target.value })} aria-label="person_id" />

@@ -1,7 +1,7 @@
 import { api } from '../../api/client'
 import type { Filter, PathsResponse } from '../../api/types'
 import { readState, toDateRange, type Range } from '../../app/route'
-import { completeFilters, EditorSection, FilterEditor } from '../../components/editors'
+import { completeFilters, EditorSection, FilterEditor, SuggestInput } from '../../components/editors'
 import { Icon } from '../../components/icons'
 import { Card, Segmented, Status } from '../../components/ui'
 import { ms, num, pct } from '../../lib/format'
@@ -90,7 +90,7 @@ export function Paths({ params, range, onChange, onInsight }: {
     <div className="layout">
       <aside className="panel">
         <EditorSection title="Start">
-          <input list="dl-events" value={state.start_event} onChange={(e) => set({ start_event: e.target.value })} aria-label="Start event" />
+          <SuggestInput list="events" value={state.start_event} onChange={(v) => set({ start_event: v })} aria-label="Start event" />
           <label className="switch">
             <input type="checkbox" checked={state.pageview_paths} onChange={(e) => set({ pageview_paths: e.target.checked })} />
             <span className="switch-track" aria-hidden />
