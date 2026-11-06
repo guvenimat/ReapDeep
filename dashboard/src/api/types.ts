@@ -154,7 +154,7 @@ export type AlertCondition = 'above' | 'below' | 'increase' | 'decrease'
 export type AlertWindow = 'hour' | 'day' | 'week'
 export interface Alert {
   id: number; name: string; insight_id: number; insight_name: string; condition: AlertCondition; threshold: number; window: AlertWindow
-  webhook_url: string; secret: string | null; enabled: boolean; state: 'pending' | 'ok' | 'firing' | 'error'
+  channel: AlertChannel; webhook_url: string | null; email_to: string[] | null; secret: string | null; enabled: boolean; state: 'pending' | 'ok' | 'firing' | 'error'
   last_value: number | null; previous_value: number | null; last_error: string | null; last_checked_at: string | null
   next_check_at: string; created_by: string | null; created_at: string
 }
@@ -163,7 +163,11 @@ export interface AlertEvent {
   response_status: number | null; delivery_error: string | null
   delivery_status: 'none' | 'pending' | 'delivered' | 'failed'; attempts: number; next_attempt_at: string | null; delivered_at: string | null; created_at: string
 }
-export interface AlertInput { name: string; insight_id: number; condition: AlertCondition; threshold: number; window: AlertWindow; webhook_url: string; enabled: boolean }
+export type AlertChannel = 'webhook' | 'slack' | 'email'
+export interface AlertInput {
+  name: string; insight_id: number; condition: AlertCondition; threshold: number; window: AlertWindow; enabled: boolean
+  channel: AlertChannel; webhook_url?: string; email_to?: string[]
+}
 
 export type ProjectDetail = {
   id: number; name: string; organization_id: number; organization_name: string; timezone: string; public_key: string; created_at: string

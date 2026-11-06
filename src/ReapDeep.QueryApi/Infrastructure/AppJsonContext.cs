@@ -83,5 +83,7 @@ namespace ReapDeep.QueryApi.Infrastructure;
 [JsonSerializable(typeof(CohortPersonsResponse))]
 [JsonSerializable(typeof(PersonCohortsResponse))]
 [JsonSerializable(typeof(RecommendationPerformanceResponse))]
+[JsonSerializable(typeof(SlackMessage))]
+[JsonSerializable(typeof(EmailMessage))]
 [JsonSerializable(typeof(CohortUsageResponse))]
 internal partial class AppJsonContext : JsonSerializerContext;

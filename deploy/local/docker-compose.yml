@@ -9,6 +9,9 @@ x-query-api-environment: &query-api-environment
   Alerts__PollSeconds: "5"
   Alerts__AllowPrivateWebhooks: "true"
   Alerts__RetryDelaysSeconds: "3,3,3"
+  Alerts__Smtp__Host: mailpit
+  Alerts__Smtp__Port: "1025"
+  Alerts__Smtp__From: alerts@reapdeep.local
   Auth__BootstrapEmail: ${ADMIN_EMAIL:-admin@reapdeep.local}
   Auth__BootstrapPassword: ${ADMIN_PASSWORD:?Missing ADMIN_PASSWORD in .env - run run-local.ps1 or smoke-test.sh}
   Auth__SecureCookie: "false"
@@ -301,6 +304,17 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+
+  mailpit:
+    image: axllent/mailpit:v1.27
+    container_name: reapdeep-mailpit
+    mem_limit: 64m
+    profiles: ["app"]
+    ports:
+      - "127.0.0.1:8026:8025"
+    environment:
+      MP_MAX_MESSAGES: 500
+    restart: unless-stopped
 
   lgtm:
     image: grafana/otel-lgtm:0.37.0

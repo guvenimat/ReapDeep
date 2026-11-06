@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { api, errorMessage } from '../../api/client'
-import type { Alert, AlertCondition, AlertEvent, AlertWindow } from '../../api/types'
+import type { Alert, AlertChannel, AlertCondition, AlertEvent, AlertWindow } from '../../api/types'
 import { Badge, Card, FormMessage, IconButton, Status } from '../../components/ui'
 import { ago, dateTime, num } from '../../lib/format'
 import { useQuery } from '../../lib/hooks'
@@ -67,7 +67,7 @@ export function Alerts({ canManage }: { canManage: boolean }) {
             refresh()
           }} />
       )}
-      <Card testId="alerts-card" title="Alerts" meta="Checked automatically; a webhook is called when an alert starts or stops firing"
+      <Card testId="alerts-card" title="Alerts" meta="Checked automatically; a webhook, Slack or email notification goes out when an alert starts or stops firing"
         actions={canManage && !editing ? <button type="button" className="primary" onClick={() => setEditing('new')} data-testid="new-alert">New alert</button> : undefined}>
         <FormMessage error={message?.error ? message.text : undefined} success={message?.error ? undefined : message?.text} />
         <Status state={list} empty={alerts.length === 0} emptyTitle="No alerts yet"
@@ -82,7 +82,7 @@ export function Alerts({ canManage }: { canManage: boolean }) {
                   <tr key={a.id} className={`clickable${selected === a.id ? ' active' : ''}`} onClick={() => setSelected(selected === a.id ? undefined : a.id)}>
                     <td>
                       <span className="strong">{a.name}</span>{!a.enabled && <span className="muted small"> · paused</span>}
-                      <span className="cell-sub">{a.insight_name}: {describeAlert(a)}</span>
+                      <span className="cell-sub">{a.insight_name}: {describeAlert(a)} · {CHANNELS.find((c) => c.id === a.channel)?.label ?? a.channel}</span>
                     </td>
                     <td><Badge tone={STATE[a.state].tone}>{STATE[a.state].label}</Badge></td>
                     <td className="num">{a.last_value === null ? '—' : num(a.last_value)}</td>
@@ -121,10 +121,20 @@ function Delivery({ e }: { e: AlertEvent }) {
   return <>{error}<span className="muted small"> · retrying{e.next_attempt_at ? ` at ${dateTime(e.next_attempt_at)}` : ''}{tries}</span></>
 }
 
+const CHANNELS: { id: AlertChannel; label: string }[] = [
+  { id: 'webhook', label: 'Webhook' },
+  { id: 'slack', label: 'Slack' },
+  { id: 'email', label: 'Email' },
+]
+
+function destination(a: Alert) {
+  return a.channel === 'email' ? (a.email_to ?? []).join(', ') : a.webhook_url ?? ''
+}
+
 function AlertHistory({ alert }: { alert: Alert }) {
   const events = useQuery((signal) => api.alertEvents(alert.id, signal), [alert.id])
   return (
-    <Card testId="alert-history" title={`History of ${alert.name}`} meta={alert.webhook_url}>
+    <Card testId="alert-history" title={`History of ${alert.name}`} meta={destination(alert)}>
       <Status state={events} empty={events.data?.events.length === 0} emptyTitle="Nothing happened yet" emptyText="Events appear when the alert fires, resolves or fails.">
         <div className="table-wrap">
           <table>
@@ -155,6 +165,10 @@ function AlertEditor({ alert, onSaved, onCancel }: { alert?: Alert; onSaved: (a:
   const [threshold, setThreshold] = useState(String(alert?.threshold ?? ''))
   const [span, setSpan] = useState<AlertWindow>(alert?.window ?? 'day')
   const [url, setUrl] = useState(alert?.webhook_url ?? '')
+  const [channel, setChannel] = useState<AlertChannel>(alert?.channel ?? 'webhook')
+  const [emails, setEmails] = useState((alert?.email_to ?? []).join(', '))
+  const recipients = emails.split(/[\s,;]+/).map((e) => e.trim()).filter(Boolean)
+  const target = channel === 'email' ? recipients.length > 0 : url.trim() !== ''
   const [enabled, setEnabled] = useState(alert?.enabled ?? true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
@@ -165,7 +179,10 @@ function AlertEditor({ alert, onSaved, onCancel }: { alert?: Alert; onSaved: (a:
     setBusy(true)
     setError(undefined)
     try {
-      const body = { name: name.trim(), insight_id: Number(insightId), condition, threshold: Number(threshold), window: span, webhook_url: url.trim(), enabled }
+      const body = {
+        name: name.trim(), insight_id: Number(insightId), condition, threshold: Number(threshold), window: span, enabled, channel,
+        ...(channel === 'email' ? { email_to: recipients } : { webhook_url: url.trim() }),
+      }
       onSaved(alert ? await api.updateAlert(alert.id, body) : await api.createAlert(body), !alert)
     } catch (err) {
       setError(errorMessage(err))
@@ -178,7 +195,7 @@ function AlertEditor({ alert, onSaved, onCancel }: { alert?: Alert; onSaved: (a:
     <form onSubmit={submit} data-testid="alert-editor">
       <Card title={alert ? `Edit ${alert.name}` : 'New alert'} actions={<>
         <button type="button" onClick={onCancel}>Cancel</button>
-        <button type="submit" className="primary" disabled={busy || !name.trim() || insightId === '' || threshold === '' || !url.trim()}>
+        <button type="submit" className="primary" disabled={busy || !name.trim() || insightId === '' || threshold === '' || !target}>
           {busy ? 'Saving…' : alert ? 'Save changes' : 'Create alert'}
         </button>
       </>}>
@@ -204,9 +221,23 @@ function AlertEditor({ alert, onSaved, onCancel }: { alert?: Alert; onSaved: (a:
           <input type="number" step="any" className="narrow" value={threshold} onChange={(e) => setThreshold(e.target.value)} aria-label="Threshold" />
           {unit && <span>% compared with the window before</span>}
         </div>
-        <label className="field"><span>Webhook URL</span>
-          <input value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://hooks.example.com/reapdeep" aria-label="Webhook URL" />
-        </label>
+        <div className="field-pair">
+          <label className="field"><span>Send to</span>
+            <select value={channel} onChange={(e) => setChannel(e.target.value as AlertChannel)} aria-label="Channel">
+              {CHANNELS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+            </select>
+          </label>
+          {channel === 'email' ? (
+            <label className="field"><span>Email addresses</span>
+              <input value={emails} onChange={(e) => setEmails(e.target.value)} placeholder="ops@example.com, team@example.com" aria-label="Email addresses" />
+            </label>
+          ) : (
+            <label className="field"><span>{channel === 'slack' ? 'Slack incoming webhook URL' : 'Webhook URL'}</span>
+              <input value={url} onChange={(e) => setUrl(e.target.value)} aria-label="Webhook URL"
+                placeholder={channel === 'slack' ? 'https://hooks.slack.com/services/…' : 'https://hooks.example.com/reapdeep'} />
+            </label>
+          )}
+        </div>
         <label className="switch">
           <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} />
           <span className="switch-track" aria-hidden />
