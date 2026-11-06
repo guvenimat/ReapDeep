@@ -35,6 +35,8 @@ public sealed class RoutineLoadWatchdog : BackgroundService
             new Measurement<long>(s.LoadedRows, new KeyValuePair<string, object?>("load_job", s.Name))), "{row}", "Rows loaded from Kafka into StarRocks");
         Meter.CreateObservableCounter("reapdeep.routine_load.aborted_tasks", () => _last.Values.Select(s =>
             new Measurement<long>(s.AbortedTasks, new KeyValuePair<string, object?>("load_job", s.Name))), "{task}", "Aborted load tasks");
+        Meter.CreateObservableCounter("reapdeep.routine_load.error_rows", () => _last.Values.Select(s =>
+            new Measurement<long>(s.ErrorRows, new KeyValuePair<string, object?>("load_job", s.Name))), "{row}", "Rows StarRocks filtered out because it could not load them");
     }
 
     protected override async Task ExecuteAsync(CancellationToken ct)
@@ -65,7 +67,8 @@ public sealed class RoutineLoadWatchdog : BackgroundService
             while (await reader.ReadAsync(ct))
             {
                 var (committed, aborted, loaded, errors) = RoutineLoadRules.ParseStatistic(Text("Statistic"));
-                snapshots.Add(new RoutineLoadSnapshot(Text("Name"), Text("State"), committed, aborted, loaded, errors, Text("ReasonOfStateChanged"), Text("OtherMsg")));
+                snapshots.Add(new RoutineLoadSnapshot(Text("Name"), Text("State"), committed, aborted, loaded, errors, Text("ReasonOfStateChanged"), Text("OtherMsg"),
+                    Text("ErrorLogUrls")));
             }
         }
 
@@ -73,6 +76,9 @@ public sealed class RoutineLoadWatchdog : BackgroundService
         foreach (var current in snapshots)
         {
             var previous = _last.GetValueOrDefault(current.Name);
+            if (RoutineLoadRules.NewErrorRows(previous, current) is > 0 and var filtered)
+                _log.LogWarning("Routine load {Job} filtered out {Rows} rows it could not load ({Total} in total); they are not in StarRocks. Error log: {ErrorLog}",
+                    current.Name, filtered, current.ErrorRows, current.ErrorLogUrls);
             var action = RoutineLoadRules.Decide(previous, current, _resumedAt.TryGetValue(current.Name, out var at) ? at : null, now);
             switch (action)
             {

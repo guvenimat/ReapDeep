@@ -1,11 +1,12 @@
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 
 namespace ReapDeep.Migrations;
 
 public sealed record Migration(string Target, string Version, string Name, string Sql);
 
-public static class MigrationCatalog
+public static partial class MigrationCatalog
 {
     public const string Postgres = "postgres";
     public const string StarRocks = "starrocks";
@@ -58,6 +59,14 @@ public static class MigrationCatalog
         if (current.ToString().Trim() is { Length: > 0 } last) statements.Add(last);
         return statements;
     }
+
+    public static (string Database, string Name)? RoutineLoadJob(string statement, string defaultDatabase) =>
+        RoutineLoadPattern().Match(statement) is { Success: true } m
+            ? (m.Groups["db"].Success ? m.Groups["db"].Value : defaultDatabase, m.Groups["name"].Value)
+            : null;
+
+    [GeneratedRegex(@"^\s*CREATE\s+ROUTINE\s+LOAD\s+(?:(?<db>\w+)\.)?(?<name>\w+)\s+ON\s", RegexOptions.IgnoreCase)]
+    private static partial Regex RoutineLoadPattern();
 
     public static IReadOnlyList<Migration> Pending(IEnumerable<Migration> all, IReadOnlySet<string> applied, string target) =>
         [.. all.Where(m => m.Target == target && !applied.Contains(m.Version))];

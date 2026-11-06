@@ -10,7 +10,7 @@ namespace ReapDeep.Ingestion.Capture;
 public static class CaptureEndpoint
 {
     const int MaxBatchSize = 1000;
-    const int MaxEventIdLength = 64;
+    public const int MaxEventIdBytes = 64;
 
     public static void MapCapture(this IEndpointRouteBuilder app)
     {
@@ -40,7 +40,7 @@ public static class CaptureEndpoint
         foreach (var e in batch)
         {
             if (!IsValid(e) || timestamps.Resolve(e.Timestamp) is not { } ts) continue;
-            valid.Add((e, ts, e.EventId is { Length: > 0 and <= MaxEventIdLength } id ? id : null));
+            valid.Add((e, ts, ClientEventId(e.EventId)));
         }
 
         if (!await quota.TryReserveAsync(projectId, project.EventsPerSecond, valid.Count))
@@ -88,6 +88,9 @@ public static class CaptureEndpoint
         return Results.Json(new CaptureResponse(accepted.Count + duplicates, batch.Count - valid.Count, duplicates), AppJsonContext.Default.CaptureResponse,
             statusCode: StatusCodes.Status202Accepted);
     }
+
+    public static string? ClientEventId(string? eventId) =>
+        eventId is { Length: > 0 } id && Encoding.UTF8.GetByteCount(id) <= MaxEventIdBytes ? id : null;
 
     public static List<string> FailedClaims(IEnumerable<(Task Delivery, string? ClientId)> deliveries) =>
         deliveries.Where(d => d.ClientId is not null && !d.Delivery.IsCompletedSuccessfully).Select(d => d.ClientId!).ToList();

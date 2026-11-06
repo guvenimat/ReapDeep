@@ -133,6 +133,26 @@ public class EventMessageTests
     }
 }
 
+public class PersonResyncTests
+{
+    [Fact]
+    public void Resync_runs_for_all_projects_or_one()
+    {
+        Assert.True(PersonResync.TryParseArgs(["resync-persons"], out var all));
+        Assert.Null(all);
+        Assert.True(PersonResync.TryParseArgs(["resync-persons", "--project", "4"], out var one));
+        Assert.Equal(4, one);
+    }
+
+    [Fact]
+    public void Other_arguments_start_the_worker_and_bad_ones_are_refused()
+    {
+        Assert.False(PersonResync.TryParseArgs([], out _));
+        Assert.False(PersonResync.TryParseArgs(["--Kafka:GroupId=x"], out _));
+        Assert.Throws<ArgumentException>(() => PersonResync.TryParseArgs(["resync-persons", "--project", "abc"], out _));
+    }
+}
+
 public class IngestionHardeningTests
 {
     [Fact]
@@ -177,6 +197,22 @@ public class IngestionHardeningTests
         Assert.Equal(IngestionQuota.WindowKey(1, t), IngestionQuota.WindowKey(1, t.AddMilliseconds(999)));
         Assert.NotEqual(IngestionQuota.WindowKey(1, t), IngestionQuota.WindowKey(1, t.AddSeconds(1)));
         Assert.NotEqual(IngestionQuota.WindowKey(1, t), IngestionQuota.WindowKey(2, t));
+    }
+
+    [Theory]
+    [InlineData("evt-1", "evt-1")]
+    [InlineData("", null)]
+    [InlineData(null, null)]
+    public void Client_event_ids_are_kept_when_they_fit(string? eventId, string? expected) =>
+        Assert.Equal(expected, CaptureEndpoint.ClientEventId(eventId));
+
+    [Fact]
+    public void Event_id_limit_counts_utf8_bytes_not_characters()
+    {
+        Assert.Equal(new string('a', 64), CaptureEndpoint.ClientEventId(new string('a', 64)));
+        Assert.Null(CaptureEndpoint.ClientEventId(new string('a', 65)));
+        Assert.Equal(new string('\u011f', 32), CaptureEndpoint.ClientEventId(new string('\u011f', 32)));
+        Assert.Null(CaptureEndpoint.ClientEventId(new string('\u011f', 40)));
     }
 
     [Fact]
