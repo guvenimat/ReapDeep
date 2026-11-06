@@ -96,6 +96,7 @@ public sealed class FunnelService(StarRocksClient starRocks, CohortService cohor
         var steps = requested ?? [];
         Ensure.That(steps.Count is >= 2 and <= 8, "steps must contain 2-8 items");
         Ensure.That(steps.All(s => !string.IsNullOrEmpty(s.Event)), "Each step requires an event");
+        Ensure.That(steps.Sum(s => s.Filters?.Count ?? 0) <= SqlBuilder.MaxFilters, $"At most {SqlBuilder.MaxFilters} step filters per funnel");
         return steps;
     }
 

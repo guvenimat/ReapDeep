@@ -84,6 +84,26 @@ public class SqlBuilderTests
     }
 
     [Fact]
+    public void Filter_count_is_capped_across_calls()
+    {
+        static List<Filter> Many(int n) => Enumerable.Range(0, n).Select(i => new Filter("event", "pathname", "eq", Json($"\"/p{i}\""))).ToList();
+        var b = Builder();
+        b.AddFilters(Many(SqlBuilder.MaxFilters));
+        Assert.Throws<ValidationException>(() => b.AddFilters(Many(1)));
+        Assert.Throws<ValidationException>(() => Builder().AddFilters(Many(SqlBuilder.MaxFilters + 1)));
+    }
+
+    [Theory]
+    [InlineData("2026-09-06", "2026-09-06T04:00:00Z")]
+    [InlineData("2026-09-05", "2026-09-05T04:00:00Z")]
+    public void A_day_that_starts_in_a_daylight_saving_gap_starts_at_the_first_valid_local_time(string from, string expectedUtc)
+    {
+        var santiago = TimeZoneInfo.FindSystemTimeZoneById("America/Santiago");
+        var range = TimeRange.Parse(from, "2026-09-10", santiago, TimeSpan.FromDays(7));
+        Assert.Equal(DateTime.Parse(expectedUtc, null, System.Globalization.DateTimeStyles.AdjustToUniversal), range.FromUtc);
+    }
+
+    [Fact]
     public void Unknown_operator_is_rejected()
     {
         Assert.Throws<ValidationException>(() => Builder().AddFilters([new Filter("event", "plan", "regex", Json("\"x\""))]));

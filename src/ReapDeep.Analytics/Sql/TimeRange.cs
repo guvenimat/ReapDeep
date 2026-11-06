@@ -32,10 +32,17 @@ public readonly record struct TimeRange(DateTime FromUtc, DateTime ToUtc, DateTi
     static DateTime ParseBoundary(string s, TimeZoneInfo tz, bool isEnd, string name)
     {
         if (DateTime.TryParseExact(s, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day))
-            return TimeZoneInfo.ConvertTimeToUtc(isEnd ? day.AddDays(1) : day, tz);
+            return LocalToUtc(isEnd ? day.AddDays(1) : day, tz);
         if (DateTimeOffset.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var dto))
             return dto.UtcDateTime;
         throw new ValidationException($"Invalid date_{name}: '{s}' (expected YYYY-MM-DD or ISO-8601)");
+    }
+
+    public static DateTime LocalToUtc(DateTime local, TimeZoneInfo tz)
+    {
+        var unspecified = DateTime.SpecifyKind(local, DateTimeKind.Unspecified);
+        while (tz.IsInvalidTime(unspecified)) unspecified = unspecified.AddMinutes(30);
+        return TimeZoneInfo.ConvertTimeToUtc(unspecified, tz);
     }
 
     public List<DateTime> Buckets(string interval)

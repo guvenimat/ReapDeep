@@ -10,12 +10,14 @@ public sealed record CohortRef(long Id, string Name, long Version);
 
 public sealed class SqlBuilder
 {
+    public const int MaxFilters = 50;
     public const string PersonExpr = "COALESCE(pdi.person_id, e.distinct_id)";
 
     readonly List<(string Name, object Value)> _params = [];
     readonly List<string> _where = [];
     readonly List<string> _personWhere = [];
     readonly List<(string Id, string Version, bool Exclude)> _cohorts = [];
+    int _filterCount;
     bool _joinPdi;
     bool _joinPersons;
 
@@ -50,7 +52,10 @@ public sealed class SqlBuilder
     public void AddFilters(IEnumerable<Filter>? filters, IReadOnlyDictionary<long, CohortRef>? cohorts = null)
     {
         if (filters is null) return;
-        foreach (var f in filters)
+        var list = filters as IReadOnlyCollection<Filter> ?? filters.ToList();
+        _filterCount += list.Count;
+        Ensure.That(_filterCount <= MaxFilters, $"At most {MaxFilters} filters per query");
+        foreach (var f in list)
         {
             if (f.Scope == "cohort") InCohort(Cohort(f, cohorts), exclude: f.Op == "not_in");
             else (f.Scope == "person" ? _personWhere : _where).Add(Condition(f));
