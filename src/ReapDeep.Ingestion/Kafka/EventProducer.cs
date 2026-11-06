@@ -6,13 +6,13 @@ public sealed class EventProducer : IDisposable
 {
     static readonly TimeSpan FlushTimeout = TimeSpan.FromSeconds(10);
 
-    readonly IProducer<Null, byte[]> _producer;
+    readonly IProducer<string, byte[]> _producer;
     readonly string _topic;
 
     public EventProducer(IConfiguration cfg, ILogger<EventProducer> log)
     {
         _topic = cfg["Kafka:Topic"] ?? "events";
-        _producer = new ProducerBuilder<Null, byte[]>(new ProducerConfig
+        _producer = new ProducerBuilder<string, byte[]>(new ProducerConfig
         {
             BootstrapServers = cfg["Kafka:BootstrapServers"],
             Acks = Acks.All,
@@ -25,12 +25,14 @@ public sealed class EventProducer : IDisposable
         .Build();
     }
 
-    public Task ProduceAsync(byte[] value, CancellationToken ct) =>
-        _producer.ProduceAsync(_topic, new Message<Null, byte[]> { Value = value }, ct);
+    public static string Key(long projectId, string distinctId) => $"{projectId}:{distinctId}";
+
+    public Task ProduceAsync(string key, byte[] value) =>
+        _producer.ProduceAsync(_topic, new Message<string, byte[]> { Key = key, Value = value });
 
     public void Flush() => _producer.Flush(FlushTimeout);
 
     public void Dispose() => _producer.Dispose();
 
-    public static bool IsDeliveryFailure(Exception ex) => ex is ProduceException<Null, byte[]> or KafkaException;
+    public static bool IsDeliveryFailure(Exception ex) => ex is ProduceException<string, byte[]> or KafkaException;
 }

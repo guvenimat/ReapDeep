@@ -4,21 +4,23 @@ using Npgsql;
 
 namespace ReapDeep.Ingestion.Projects;
 
+public sealed record ProjectSettings(long Id, bool AnonymizeIp, int? EventsPerSecond);
+
 public sealed class ProjectCache(NpgsqlDataSource db, ILogger<ProjectCache> log) : BackgroundService
 {
     static readonly TimeSpan RefreshInterval = TimeSpan.FromSeconds(30);
     static readonly TimeSpan RetryInterval = TimeSpan.FromSeconds(2);
 
-    internal sealed record ProjectKeyRecord(string PublicKey, long Id);
+    internal sealed record ProjectKeyRecord(string PublicKey, long Id, bool AnonymizeIp, int? IngestEventsPerSecond);
 
-    volatile FrozenDictionary<string, long>? _projects;
+    volatile FrozenDictionary<string, ProjectSettings>? _projects;
 
     public bool IsLoaded => _projects is not null;
 
-    public bool TryGetProjectId(string publicKey, out long projectId)
+    public bool TryGetProject(string publicKey, out ProjectSettings project)
     {
-        projectId = 0;
-        return _projects?.TryGetValue(publicKey, out projectId) == true;
+        project = null!;
+        return _projects?.TryGetValue(publicKey, out project!) == true;
     }
 
     protected override async Task ExecuteAsync(CancellationToken ct)
@@ -28,8 +30,8 @@ public sealed class ProjectCache(NpgsqlDataSource db, ILogger<ProjectCache> log)
             try
             {
                 await using var conn = await db.OpenConnectionAsync(ct);
-                var rows = await conn.QueryAsync<ProjectKeyRecord>("SELECT public_key, id FROM projects");
-                _projects = rows.ToFrozenDictionary(r => r.PublicKey, r => r.Id);
+                var rows = await conn.QueryAsync<ProjectKeyRecord>("SELECT public_key, id, anonymize_ip, ingest_events_per_second FROM projects");
+                _projects = rows.ToFrozenDictionary(r => r.PublicKey, r => new ProjectSettings(r.Id, r.AnonymizeIp, r.IngestEventsPerSecond));
             }
             catch (Exception ex) when (!ct.IsCancellationRequested)
             {

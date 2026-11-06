@@ -12,5 +12,6 @@ public sealed record CreatedApiKey(ApiKeyRow ApiKey, string Key);
 
 public sealed record CreateProjectRequest(string? Name, string? Timezone);
 public sealed record ProjectDetail(long Id, string Name, long OrganizationId, string OrganizationName, string Timezone, string PublicKey, DateTime CreatedAt,
-    string? RecommendationSecret = null);
+    bool AnonymizeIp, int? IngestEventsPerSecond, string? RecommendationSecret = null);
+public sealed record ProjectSettingsRequest(bool? AnonymizeIp);
 public sealed record RecommendationSecretResponse(string RecommendationSecret);

@@ -95,13 +95,30 @@ do not use Dapper: their SQL and parameter lists are generated at run time by `S
   one hour) fall back to server time, and events older than 364 days are rejected;
 - user agent parsing into browser, OS and device type;
 - promotion of common properties (`$current_url`, `$pathname`, `utm_*`, screen size, ...) to their own
-  columns, removing them from the JSON blob.
+  columns, removing them from the JSON blob. A value that does not fit its column (an object, an
+  array, or a non-integer screen size) stays in the JSON blob instead of being dropped;
+- the client IP, with the last octet of IPv4 and everything after the first 48 bits of IPv6 zeroed
+  when the project anonymizes IP addresses (the default).
 
-**The 202 guarantee.** The response waits until Kafka has acknowledged every event in the batch.
+**Per-project quota.** Before anything is claimed or written, the batch reserves its events in a
+per-project, per-second counter in Redis (an atomic Lua script that only counts accepted events).
+The limit is `projects.ingest_events_per_second` or, when that is empty, `Ingestion__EventsPerSecondPerProject`
+(2,000 by default); `0` means unlimited and other values are at least 1,000 so the largest batch always
+fits. A batch over the limit gets `429` with `Retry-After: 1`, which the SDK retries. Without Redis
+the quota is not enforced.
+
+**The 202 guarantee.** The response waits until Kafka has acknowledged every event in the batch,
+independently of the client connection, so a client that disconnects never leaves a half-handled batch.
 The producer uses `acks=all`, idempotence, `linger.ms=5` and LZ4. Micro-batching across concurrent
 requests is what keeps p99 low despite `acks=all`. If Kafka does not acknowledge within 10 s, the
-client gets `503` and the SDK retries with the same `event_id`, so a retry can create a duplicate but
-never a loss. Duplicates are handled at query time (section 6).
+client gets `503`, the dedup claims of the events Kafka did not acknowledge are released, and the SDK
+retries with the same `event_id`, so a retry neither loses nor duplicates events.
+
+**Message key.** Each message is keyed by `{project_id}:{distinct_id}`, so all events of one distinct
+ID land on the same partition and are consumed in the order they were accepted. The person worker
+relies on this: two `$set` events for the same ID are applied in order even after a backlog. Without a
+key, a restarted worker read the partitions in a different order and kept the older value for about
+40% of the IDs in a test with 40 pairs.
 
 **Native AOT.** Confluent.Kafka sets up its native delegates through reflection, which the trimmer
 removes. The project roots the assembly (`TrimmerRootAssembly`); without it the service builds but

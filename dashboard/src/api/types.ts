@@ -148,5 +148,6 @@ export interface AlertInput { name: string; insight_id: number; condition: Alert
 
 export type ProjectDetail = {
   id: number; name: string; organization_id: number; organization_name: string; timezone: string; public_key: string; created_at: string
+  anonymize_ip: boolean; ingest_events_per_second: number | null
   recommendation_secret?: string | null
 }

@@ -76,7 +76,7 @@ do {
     Start-Sleep 2
     $ev = (Send (New-Client) GET "http://localhost:8001/api/v1/events?distinct_id=xff_$tag" -headers @{ Authorization = "Bearer $readKey" }).Json.events
 } until (@($ev).Count -gt 0 -or (Get-Date) -gt $deadline)
-Check "ingestion ignores X-Forwarded-For from an untrusted client (ip = $($ev[0].columns.ip))" (@($ev).Count -eq 1 -and $ev[0].columns.ip -and $ev[0].columns.ip -ne $spoofed)
+Check "ingestion ignores X-Forwarded-For from an untrusted client (ip = $($ev[0].columns.ip))" (@($ev).Count -eq 1 -and $ev[0].columns.ip -and $ev[0].columns.ip -notlike "203.0.113.*")
 
 $srPassword = $envValues.STARROCKS_QUERY_PASSWORD
 $ErrorActionPreference = "Continue"

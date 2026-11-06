@@ -41,9 +41,14 @@ public static class EventMessage
         Dictionary<string, JsonElement>? props)
     {
         var cols = new Dictionary<string, JsonElement>();
+        var promoted = new HashSet<string>();
         if (props is not null)
             foreach (var (name, value) in props)
-                if (Extracted.TryGetValue(name, out var c)) cols[c.Column] = value;
+                if (Extracted.TryGetValue(name, out var c) && FitsColumn(value, c.MaxBytes))
+                {
+                    cols[c.Column] = value;
+                    promoted.Add(name);
+                }
 
         var buffer = new ArrayBufferWriter<byte>(1024);
         using (var w = new Utf8JsonWriter(buffer))
@@ -79,7 +84,7 @@ public static class EventMessage
             w.WriteStartObject("properties");
             if (props is not null)
                 foreach (var (name, value) in props)
-                    if (!Extracted.ContainsKey(name))
+                    if (!promoted.Contains(name))
                     {
                         w.WritePropertyName(name);
                         value.WriteTo(w);
@@ -91,6 +96,14 @@ public static class EventMessage
         }
         return buffer.WrittenSpan.ToArray();
     }
+
+    static bool FitsColumn(JsonElement value, int maxBytes) => value.ValueKind switch
+    {
+        JsonValueKind.Null => true,
+        JsonValueKind.Number => maxBytes > 0 || value.TryGetInt16(out _),
+        JsonValueKind.String => maxBytes > 0,
+        _ => false,
+    };
 
     static string? Derive(string column, Dictionary<string, JsonElement> cols, UserAgentParser.Result ua) => column switch
     {

@@ -6,7 +6,7 @@ namespace ReapDeep.QueryApi.Organization;
 public sealed class ProjectRepository(NpgsqlDataSource db)
 {
     const string Select = """
-        SELECT p.id, p.name, p.organization_id, o.name AS organization_name, p.timezone, p.public_key, p.created_at, p.recommendation_secret
+        SELECT p.id, p.name, p.organization_id, o.name AS organization_name, p.timezone, p.public_key, p.created_at, p.anonymize_ip, p.ingest_events_per_second, p.recommendation_secret
         FROM projects p JOIN organizations o ON o.id = p.organization_id
         """;
 
@@ -27,6 +27,12 @@ public sealed class ProjectRepository(NpgsqlDataSource db)
             RETURNING id
             """, new { CurrentProjectId = currentProjectId, Name = name, PublicKey = publicKey, Timezone = timezone });
         return id is null ? null : await conn.QuerySingleAsync<ProjectDetail>(Select + " WHERE p.id = @Id", new { Id = id.Value });
+    }
+
+    public async Task SetAnonymizeIpAsync(long projectId, bool anonymize, CancellationToken ct)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        await conn.ExecuteAsync("UPDATE projects SET anonymize_ip = @Anonymize WHERE id = @Id", new { Id = projectId, Anonymize = anonymize });
     }
 
     public async Task SetRecommendationSecretAsync(long projectId, string secret, CancellationToken ct)

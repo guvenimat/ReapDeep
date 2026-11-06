@@ -90,6 +90,59 @@ $req.Headers.Add("Authorization", "Bearer $readKey")
 $list = ($http.SendAsync($req).Result.Content.ReadAsStringAsync().Result | ConvertFrom-Json).events
 Check "the event list shows each event id once" (@($list).Count -eq 6 -and @($list | Select-Object -ExpandProperty event_id -Unique).Count -eq 6)
 
+function Pg($sql) {
+    $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+    $out = (docker.exe exec reapdeep-postgres psql -U reapdeep -d reapdeep -tAc $sql 2>&1 | Out-String).Trim()
+    $ErrorActionPreference = $prev
+    $out
+}
+function RawCapture([string]$body) {
+    $content = New-Object System.Net.Http.StringContent($body, [Text.Encoding]::UTF8, "text/plain")
+    $http.PostAsync("http://localhost:8000/capture", $content).Result
+}
+function Health {
+    try { [int]$http.GetAsync("http://localhost:8000/healthz").Result.StatusCode } catch { 0 }
+}
+
+Write-Host "`n6) Ingestion quota per project"
+$q = "quota_$t"
+$quotaBody = '{"api_key":"pk_dev_local","batch":[' + ((1..1000 | ForEach-Object { '{"event":"quota_probe","distinct_id":"' + $q + '"}' }) -join ',') + ']}'
+$null = Pg "UPDATE projects SET ingest_events_per_second = 1000 WHERE id = 1"
+try {
+    Write-Host "  waiting 32 s for ingestion to reload the project settings..."
+    Start-Sleep -Seconds 32
+    $acceptedBatches = 0; $throttled = $null
+    for ($i = 0; $i -lt 6 -and -not $throttled; $i++) {
+        $r = RawCapture $quotaBody
+        if ([int]$r.StatusCode -eq 202) { $acceptedBatches++ } elseif ([int]$r.StatusCode -eq 429) { $throttled = $r }
+    }
+    Check "a project over its events per second gets 429" ($null -ne $throttled)
+    Check "with Retry-After: 1" ($throttled -and $throttled.Headers.RetryAfter.Delta.TotalSeconds -eq 1)
+    Start-Sleep -Seconds 1
+    $after = RawCapture $quotaBody
+    Check "the next second accepts again" ([int]$after.StatusCode -eq 202)
+    if ([int]$after.StatusCode -eq 202) { $acceptedBatches++ }
+    $expected = $acceptedBatches * 1000
+    Check "refused batches are not stored: StarRocks holds exactly $expected probe events" (WaitFor { (Rows $q) -eq "$expected" } 60)
+} finally {
+    $null = Pg "UPDATE projects SET ingest_events_per_second = NULL WHERE id = 1"
+}
+
+Write-Host "`n7) Health check reports whether the project keys are loaded"
+Check "healthy while PostgreSQL is up" ((Health) -eq 200)
+Quiet @("stop", "reapdeep-postgres")
+try {
+    Quiet @("restart", "reapdeep-ingestion")
+    Check "after a restart without PostgreSQL, /healthz answers 503" (WaitFor { (Health) -eq 503 } 30)
+    $down = Capture @((Ev "page_opened" "health_$t" "evt-h-$t"))
+    Check "and capture answers 503, so clients retry" ($down.Status -eq 503)
+} finally {
+    Quiet @("start", "reapdeep-postgres")
+}
+Check "once PostgreSQL is back, /healthz turns 200" (WaitFor { (Health) -eq 200 } 90)
+$up = Capture @((Ev "page_opened" "health_$t" "evt-h-$t"))
+Check "and the retried event is accepted" ($up.Status -eq 202 -and $up.Json.duplicates -eq 0)
+
 Write-Host ""
 if ($script:failed -gt 0) { Write-Host "$($script:failed) check(s) failed." -ForegroundColor Red; exit 1 }
 Write-Host "All checks passed." -ForegroundColor Green

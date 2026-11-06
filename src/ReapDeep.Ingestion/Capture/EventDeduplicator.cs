@@ -1,31 +1,11 @@
+using ReapDeep.Ingestion.Infrastructure;
 using StackExchange.Redis;
 
 namespace ReapDeep.Ingestion.Capture;
 
-public sealed class EventDeduplicator : IDisposable
+public sealed class EventDeduplicator(RedisConnection redis, IConfiguration cfg)
 {
-    readonly ConnectionMultiplexer? _redis;
-    readonly TimeSpan _window;
-    readonly ILogger<EventDeduplicator> _log;
-    DateTime _lastWarning = DateTime.MinValue;
-
-    public EventDeduplicator(IConfiguration cfg, ILogger<EventDeduplicator> log)
-    {
-        _log = log;
-        _window = TimeSpan.FromSeconds(Math.Max(1, cfg.GetValue("Ingestion:DedupSeconds", 600)));
-        var connection = cfg.GetConnectionString("Redis");
-        if (string.IsNullOrWhiteSpace(connection))
-        {
-            log.LogWarning("ConnectionStrings:Redis is not set; duplicate events are not filtered at ingestion");
-            return;
-        }
-        var options = ConfigurationOptions.Parse(connection);
-        options.AbortOnConnectFail = false;
-        options.ConnectTimeout = 2000;
-        options.SyncTimeout = 500;
-        options.AsyncTimeout = 500;
-        _redis = ConnectionMultiplexer.Connect(options);
-    }
+    readonly TimeSpan _window = TimeSpan.FromSeconds(Math.Max(1, cfg.GetValue("Ingestion:DedupSeconds", 600)));
 
     public static string Key(long projectId, string eventId) => $"dedup:{projectId}:{eventId}";
 
@@ -33,10 +13,9 @@ public sealed class EventDeduplicator : IDisposable
     {
         var fresh = new bool[eventIds.Count];
         Array.Fill(fresh, true);
-        if (_redis is null || eventIds.All(id => id is null)) return fresh;
+        if (redis.Database is not { } db || eventIds.All(id => id is null)) return fresh;
         try
         {
-            var db = _redis.GetDatabase();
             var batch = db.CreateBatch();
             var claims = new Task<bool>?[eventIds.Count];
             for (var i = 0; i < eventIds.Count; i++)
@@ -48,32 +27,22 @@ public sealed class EventDeduplicator : IDisposable
         }
         catch (Exception ex) when (ex is RedisException or TimeoutException)
         {
-            Warn(ex);
+            redis.Warn(ex);
             Array.Fill(fresh, true);
             return fresh;
         }
     }
 
-    public async Task ReleaseAsync(long projectId, IEnumerable<string> eventIds)
+    public async Task ReleaseAsync(long projectId, IReadOnlyCollection<string> eventIds)
     {
-        if (_redis is null) return;
+        if (eventIds.Count == 0 || redis.Database is not { } db) return;
         try
         {
-            var keys = eventIds.Select(id => (RedisKey)Key(projectId, id)).ToArray();
-            if (keys.Length > 0) await _redis.GetDatabase().KeyDeleteAsync(keys);
+            await db.KeyDeleteAsync(eventIds.Select(id => (RedisKey)Key(projectId, id)).ToArray());
         }
         catch (Exception ex) when (ex is RedisException or TimeoutException)
         {
-            Warn(ex);
+            redis.Warn(ex);
         }
     }
-
-    void Warn(Exception ex)
-    {
-        if (DateTime.UtcNow - _lastWarning < TimeSpan.FromSeconds(30)) return;
-        _lastWarning = DateTime.UtcNow;
-        _log.LogWarning("Redis is unavailable, duplicate events are let through: {Message}", ex.Message);
-    }
-
-    public void Dispose() => _redis?.Dispose();
 }

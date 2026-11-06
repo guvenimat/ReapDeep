@@ -481,4 +481,5 @@ button.link.active { text-decoration: underline; }
 .project-facts dd { margin: 0; }
 .project-facts dd.row { display: flex; align-items: center; gap: 8px; }
 .project-facts .full { grid-column: 1 / -1; }
+.project-facts .ingestion-facts { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; color: var(--text-2); }
 .project-facts code { padding: 4px 8px; background: var(--page); border-radius: var(--radius-sm); word-break: break-all; }

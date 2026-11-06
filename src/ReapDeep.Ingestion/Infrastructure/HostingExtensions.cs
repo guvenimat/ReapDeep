@@ -33,7 +33,9 @@ public static class HostingExtensions
         pg.EnableArrays();
         services.AddSingleton(pg.Build());
         services.AddSingleton<EventProducer>();
+        services.AddSingleton<RedisConnection>();
         services.AddSingleton<EventDeduplicator>();
+        services.AddSingleton<IngestionQuota>();
         services.AddSingleton<ProjectCache>();
         services.AddHostedService(sp => sp.GetRequiredService<ProjectCache>());
         services.AddSingleton<DefinitionTracker>();
