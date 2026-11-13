@@ -37,4 +37,14 @@ public class AnalyticsCacheTests
         Assert.NotEqual(Key(cohorts: [a, b]), Key(cohorts: [a, b with { Version = 4 }]));
         Assert.NotEqual(Key(), Key(cohorts: [a]));
     }
+
+    [Theory]
+    [InlineData("no-cache", true)]
+    [InlineData("No-Store", true)]
+    [InlineData("max-age=0, no-cache", true)]
+    [InlineData("max-age=60", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void Cache_control_no_cache_or_no_store_skips_the_cached_read(string? header, bool bypass) =>
+        Assert.Equal(bypass, AnalyticsCacheKeys.BypassRead(header));
 }

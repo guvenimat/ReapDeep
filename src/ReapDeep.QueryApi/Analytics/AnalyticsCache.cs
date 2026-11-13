@@ -19,6 +19,9 @@ public static class AnalyticsCacheKeys
     public const string Hit = "HIT";
     public const string Miss = "MISS";
 
+    public static bool BypassRead(string? cacheControl) =>
+        cacheControl is { Length: > 0 } value && (value.Contains("no-cache", StringComparison.OrdinalIgnoreCase) || value.Contains("no-store", StringComparison.OrdinalIgnoreCase));
+
     public static string Build(long projectId, string endpoint, string timeZoneId, string body, IEnumerable<CohortRef> cohorts)
     {
         var text = new StringBuilder()
@@ -52,8 +55,8 @@ public sealed class AnalyticsCache(RedisConnection redis, CohortService cohorts,
 
         try
         {
-            var cached = await db.StringGetAsync(key);
-            if (!cached.IsNull && JsonSerializer.Deserialize(cached.ToString(), responseType) is { } hit)
+            var cached = AnalyticsCacheKeys.BypassRead(http.Request.Headers.CacheControl.ToString()) ? RedisValue.Null : await db.StringGetAsync(key);
+            if (!cached.IsNull &&JsonSerializer.Deserialize(cached.ToString(), responseType) is { } hit)
             {
                 http.Response.Headers[AnalyticsCacheKeys.Header] = AnalyticsCacheKeys.Hit;
                 return withTook(hit, sw.Elapsed.TotalMilliseconds);

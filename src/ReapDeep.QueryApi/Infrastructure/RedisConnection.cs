@@ -25,7 +25,7 @@ public sealed class RedisConnection : IDisposable
         _redis = ConnectionMultiplexer.Connect(options);
     }
 
-    public IDatabase? Database => _redis?.GetDatabase();
+    public IDatabase? Database => _redis is { IsConnected: true } r ? r.GetDatabase() : null;
 
     public void Warn(Exception ex)
     {
