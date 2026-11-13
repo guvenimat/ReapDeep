@@ -52,6 +52,15 @@ public sealed class EventConsumer(IConfiguration cfg, IdentityResolver resolver,
         }
     }
 
+    public enum Failure { Retry, DeadLetter, Stop }
+
+    public static Failure Classify(Exception ex, bool cancellationRequested) => ex switch
+    {
+        _ when cancellationRequested => Failure.Stop,
+        NpgsqlException { IsTransient: true } or TimeoutException or OperationCanceledException => Failure.Retry,
+        _ => Failure.DeadLetter,
+    };
+
     void Handle(ConsumeResult<Ignore, byte[]> result, CancellationToken ct)
     {
         var message = result.Message.Value;
@@ -71,18 +80,24 @@ public sealed class EventConsumer(IConfiguration cfg, IdentityResolver resolver,
                 resolver.ProcessAsync(e, ct).GetAwaiter().GetResult();
                 return;
             }
-            catch (Exception ex) when (ex is NpgsqlException { IsTransient: true } or TimeoutException && !ct.IsCancellationRequested)
+            catch (Exception ex)
             {
-                var delay = TimeSpan.FromSeconds(Math.Min(MaxRetryDelaySeconds, Math.Pow(2, attempt)));
-                log.LogError(ex, "Failed to resolve identity ({Event} {DistinctId}), retrying in {Delay}s", e.Event, e.DistinctId, delay.TotalSeconds);
-                ct.WaitHandle.WaitOne(delay);
-                ct.ThrowIfCancellationRequested();
-            }
-            catch (NpgsqlException ex)
-            {
-                log.LogError(ex, "Failed to resolve identity, event moved to the dead letter topic: {Event} {DistinctId} anon={AnonId}", e.Event, e.DistinctId, e.AnonId);
-                deadLetters.Send(result, "identity", ex.Message, ct);
-                return;
+                switch (Classify(ex, ct.IsCancellationRequested))
+                {
+                    case Failure.Stop:
+                        ct.ThrowIfCancellationRequested();
+                        throw;
+                    case Failure.Retry:
+                        var delay = TimeSpan.FromSeconds(Math.Min(MaxRetryDelaySeconds, Math.Pow(2, attempt)));
+                        log.LogError(ex, "Failed to resolve identity ({Event} {DistinctId}), retrying in {Delay}s", e.Event, e.DistinctId, delay.TotalSeconds);
+                        ct.WaitHandle.WaitOne(delay);
+                        ct.ThrowIfCancellationRequested();
+                        break;
+                    default:
+                        log.LogError(ex, "Failed to resolve identity, event moved to the dead letter topic: {Event} {DistinctId} anon={AnonId}", e.Event, e.DistinctId, e.AnonId);
+                        deadLetters.Send(result, "identity", ex.Message, ct);
+                        return;
+                }
             }
         }
     }
