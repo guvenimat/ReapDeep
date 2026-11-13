@@ -18,7 +18,10 @@ public sealed class RecommendationRefreshJob(RecommendationRepository repository
     ILogger<RecommendationRefreshJob> log) : BackgroundService
 {
     readonly record struct Row(string Source, string ItemId, double Score);
-    readonly record struct HistoryRow(string Person, string ItemId, int Weight, DateTime At);
+    public const int HistoryBatchSize = 1_000;
+
+    public readonly record struct HistoryRow(string Person, string ItemId, int Weight, DateTime At);
+    public sealed record HistoryBatch(string[] People, string[] Histories, int Items);
 
     protected override async Task ExecuteAsync(CancellationToken ct)
     {
@@ -75,12 +78,54 @@ public sealed class RecommendationRefreshJob(RecommendationRepository repository
     async Task RefreshHistoryAsync(StarRocksStore store, long projectId, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
-        var rows = await store.QueryAsync(RecommendationSql.PersonHistory(projectId, DateTime.UtcNow),
+        var now = DateTime.UtcNow;
+        var runStart = new DateTime(now.Ticks - now.Ticks % 10, DateTimeKind.Utc);
+        var rows = store.StreamAsync(RecommendationSql.PersonHistory(projectId, runStart),
             r => new HistoryRow(r.GetString(0), r.GetString(1), Convert.ToInt32(r.GetValue(2)), r.GetDateTime(3)), ct);
-        var people = rows.GroupBy(r => r.Person).ToList();
-        await repository.ReplaceHistoryAsync(projectId, people.Select(g => g.Key).ToArray(), people.Select(HistoryJson).ToArray(), ct);
-        log.LogInformation("Person history (project {Project}): {People} people, {Rows} items in {Ms} ms",
-            projectId, people.Count, rows.Count, sw.ElapsedMilliseconds);
+        long people = 0, items = 0;
+        await foreach (var batch in HistoryBatches(rows, HistoryBatchSize, ct))
+        {
+            await repository.UpsertHistoryAsync(projectId, batch.People, batch.Histories, runStart, ct);
+            people += batch.People.Length;
+            items += batch.Items;
+        }
+        var removed = await repository.DeleteStaleHistoryAsync(projectId, runStart, ct);
+        log.LogInformation("Person history (project {Project}): {People} people, {Rows} items, {Removed} stale removed in {Ms} ms",
+            projectId, people, items, removed, sw.ElapsedMilliseconds);
+    }
+
+    public static async IAsyncEnumerable<HistoryBatch> HistoryBatches(IAsyncEnumerable<HistoryRow> rows, int batchSize,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct = default)
+    {
+        var people = new List<string>(batchSize);
+        var histories = new List<string>(batchSize);
+        var current = new List<HistoryRow>();
+        var items = 0;
+        await foreach (var row in rows.WithCancellation(ct))
+        {
+            if (current.Count > 0 && current[0].Person != row.Person)
+            {
+                people.Add(current[0].Person);
+                histories.Add(HistoryJson(current));
+                items += current.Count;
+                current.Clear();
+                if (people.Count >= batchSize)
+                {
+                    yield return new HistoryBatch([.. people], [.. histories], items);
+                    people.Clear();
+                    histories.Clear();
+                    items = 0;
+                }
+            }
+            current.Add(row);
+        }
+        if (current.Count > 0)
+        {
+            people.Add(current[0].Person);
+            histories.Add(HistoryJson(current));
+            items += current.Count;
+        }
+        if (people.Count > 0) yield return new HistoryBatch([.. people], [.. histories], items);
     }
 
     static string HistoryJson(IEnumerable<HistoryRow> items)

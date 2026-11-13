@@ -31,6 +31,15 @@ public sealed class StarRocksStore(MySqlDataSource db)
         return rows;
     }
 
+    public async IAsyncEnumerable<T> StreamAsync<T>(SqlQuery query, Func<MySqlDataReader, T> map,
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken ct)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        await using var cmd = Command(query, conn);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) yield return map(reader);
+    }
+
     static MySqlCommand Command(SqlQuery query, MySqlConnection conn)
     {
         var cmd = new MySqlCommand(query.Sql, conn) { CommandTimeout = CommandTimeoutSeconds };
