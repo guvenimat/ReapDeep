@@ -26,7 +26,7 @@ function Send($client, [string]$method, [string]$path, [string]$body = $null, [h
     [pscustomobject]@{ Status = [int]$r.StatusCode; Json = $(if ($text) { try { $text | ConvertFrom-Json } catch { $null } } else { $null }) }
 }
 function S([string]$method, [string]$path, [string]$body = $null) { Send $session $method $path $body }
-function K([string]$method, [string]$path, [string]$body = $null) { Send $plain $method $path $body @{ Authorization = "Bearer $readKey" } }
+function K([string]$method, [string]$path, [string]$body = $null) { Send $plain $method $path $body @{ Authorization = "Bearer $readKey"; "Cache-Control" = "no-cache" } }
 
 $login = '{"email":"' + $envValues.ADMIN_EMAIL + '","password":"' + $envValues.ADMIN_PASSWORD + '"}'
 if ((S POST "/auth/login" $login).Status -ne 200) { throw "login failed (rate limited? wait a minute)" }
