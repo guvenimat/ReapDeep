@@ -76,6 +76,7 @@ public static class HostingExtensions
         services.AddSingleton<RfmService>();
         services.AddSingleton<LifecycleService>();
         services.AddSingleton<EventService>();
+        services.AddSingleton<AnalyticsCache>();
 
         services.AddSingleton<PersonRepository>();
         services.AddSingleton<MetadataRepository>();

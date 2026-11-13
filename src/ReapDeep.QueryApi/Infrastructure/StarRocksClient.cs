@@ -9,6 +9,7 @@ public sealed record ExplainResponse(List<string> Sql, List<string> Plans);
 public sealed class StarRocksClient(MySqlDataSource db, IConfiguration cfg)
 {
     const int CommandTimeoutSeconds = 30;
+    public const int MaxParallelPerRequest = 4;
 
     readonly bool _allowExplain = cfg["QueryApi:AllowExplain"] == "true";
 
@@ -23,11 +24,27 @@ public sealed class StarRocksClient(MySqlDataSource db, IConfiguration cfg)
         return rows;
     }
 
+    public async Task<List<T>> QueryAsync<T>(SqlQuery query, Func<MySqlDataReader, T> map, SemaphoreSlim gate, CancellationToken ct)
+    {
+        await gate.WaitAsync(ct);
+        try
+        {
+            return await QueryAsync(query, map, ct);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    public static SemaphoreSlim RequestGate() => new(MaxParallelPerRequest, MaxParallelPerRequest);
+
     public async Task<ExplainResponse> ExplainAsync(IReadOnlyList<SqlQuery> queries, CancellationToken ct)
     {
         Ensure.That(_allowExplain, "explain is disabled in this environment");
+        using var gate = RequestGate();
         var plans = await Task.WhenAll(queries.Select(q =>
-            QueryAsync(q with { Sql = "EXPLAIN " + q.Sql }, r => r.GetString(0), ct)));
+            QueryAsync(q with { Sql = "EXPLAIN " + q.Sql }, r => r.GetString(0), gate, ct)));
         return new ExplainResponse(queries.Select(q => q.Sql).ToList(), plans.Select(p => string.Join('\n', p)).ToList());
     }
 

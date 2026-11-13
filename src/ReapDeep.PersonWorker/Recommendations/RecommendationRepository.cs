@@ -51,15 +51,24 @@ public sealed class RecommendationRepository(NpgsqlDataSource db)
         await tx.CommitAsync(ct);
     }
 
-    public async Task ReplaceHistoryAsync(long projectId, string[] people, string[] histories, CancellationToken ct)
+    public const string UpsertHistorySql = """
+        INSERT INTO person_item_history (project_id, person_key, items, calculated_at)
+        SELECT @Project, k, h::jsonb, @RunStart FROM unnest(@People, @Histories) AS t(k, h)
+        ON CONFLICT (project_id, person_key) DO UPDATE SET items = EXCLUDED.items, calculated_at = EXCLUDED.calculated_at
+        """;
+
+    public const string DeleteStaleHistorySql =
+        "DELETE FROM person_item_history WHERE project_id = @Project AND calculated_at < @RunStart";
+
+    public async Task UpsertHistoryAsync(long projectId, string[] people, string[] histories, DateTime runStart, CancellationToken ct)
     {
         await using var conn = await db.OpenConnectionAsync(ct);
-        await using var tx = await conn.BeginTransactionAsync(ct);
-        await conn.ExecuteAsync("DELETE FROM person_item_history WHERE project_id = @Project", new { Project = projectId }, tx);
-        await conn.ExecuteAsync("""
-            INSERT INTO person_item_history (project_id, person_key, items, calculated_at)
-            SELECT @Project, k, h::jsonb, now() FROM unnest(@People, @Histories) AS t(k, h)
-            """, new { Project = projectId, People = people, Histories = histories }, tx);
-        await tx.CommitAsync(ct);
+        await conn.ExecuteAsync(UpsertHistorySql, new { Project = projectId, People = people, Histories = histories, RunStart = runStart });
+    }
+
+    public async Task<int> DeleteStaleHistoryAsync(long projectId, DateTime runStart, CancellationToken ct)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        return await conn.ExecuteAsync(DeleteStaleHistorySql, new { Project = projectId, RunStart = runStart });
     }
 }

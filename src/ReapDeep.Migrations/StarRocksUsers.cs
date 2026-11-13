@@ -6,7 +6,8 @@ public static class StarRocksUsers
 
     static readonly User[] Users =
     [
-        new("reapdeep_query", "STARROCKS_QUERY_PASSWORD", ["GRANT SELECT ON ALL TABLES IN DATABASE analytics TO USER {0}"], null),
+        new("reapdeep_query", "STARROCKS_QUERY_PASSWORD", ["GRANT SELECT ON ALL TABLES IN DATABASE analytics TO USER {0}"],
+            "CREATE RESOURCE GROUP IF NOT EXISTS rg_query TO (user='reapdeep_query') WITH ('cpu_weight'='4', 'mem_limit'='0.4', 'concurrency_limit'='8')"),
         new("reapdeep_jobs", "STARROCKS_JOBS_PASSWORD",
             ["GRANT SELECT, DELETE ON ALL TABLES IN DATABASE analytics TO USER {0}", "GRANT INSERT ON TABLE analytics.cohort_members TO USER {0}"],
             "CREATE RESOURCE GROUP IF NOT EXISTS rg_jobs TO (user='reapdeep_jobs') WITH ('cpu_weight'='2', 'mem_limit'='0.3', 'concurrency_limit'='4')"),

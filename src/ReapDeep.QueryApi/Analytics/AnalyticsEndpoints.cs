@@ -20,28 +20,43 @@ public static class AnalyticsEndpoints
         api.MapGet("/events", Events);
     }
 
-    static async Task<IResult> Trends(TrendRequest req, ProjectContext project, TrendService trends, CancellationToken ct) => req.Explain
+    static async Task<IResult> Trends(TrendRequest req, ProjectContext project, TrendService trends, AnalyticsCache cache, HttpContext http,
+        CancellationToken ct) => req.Explain
         ? ApiResults.Ok(await trends.ExplainAsync(project, req, ct), AppJsonContext.Default.ExplainResponse)
-        : ApiResults.Ok(await trends.RunAsync(project, req, ct), AppJsonContext.Default.TrendResponse);
+        : ApiResults.Ok(await cache.GetOrRunAsync(http, project, "trends", req, AppJsonContext.Default.TrendRequest, req.Filters, req.Breakdown,
+            AppJsonContext.Default.TrendResponse, () => trends.RunAsync(project, req, ct), (r, ms) => r with { TookMs = ms }, ct),
+            AppJsonContext.Default.TrendResponse);
 
-    static async Task<IResult> Funnels(FunnelRequest req, ProjectContext project, FunnelService funnels, CancellationToken ct) => req.Explain
+    static async Task<IResult> Funnels(FunnelRequest req, ProjectContext project, FunnelService funnels, AnalyticsCache cache, HttpContext http,
+        CancellationToken ct) => req.Explain
         ? ApiResults.Ok(await funnels.ExplainAsync(project, req, ct), AppJsonContext.Default.ExplainResponse)
-        : ApiResults.Ok(await funnels.RunAsync(project, req, ct), AppJsonContext.Default.FunnelResponse);
+        : ApiResults.Ok(await cache.GetOrRunAsync(http, project, "funnels", req, AppJsonContext.Default.FunnelRequest, req.Filters, req.Breakdown,
+            AppJsonContext.Default.FunnelResponse, () => funnels.RunAsync(project, req, ct), (r, ms) => r with { TookMs = ms }, ct),
+            AppJsonContext.Default.FunnelResponse);
 
     static async Task<IResult> FunnelPersons(FunnelPersonsRequest req, ProjectContext project, FunnelService funnels, CancellationToken ct) =>
         ApiResults.Ok(await funnels.PersonsAsync(project, req, ct), AppJsonContext.Default.FunnelPersonsResponse);
 
-    static async Task<IResult> Retention(RetentionRequest req, ProjectContext project, RetentionService retention, CancellationToken ct) => req.Explain
+    static async Task<IResult> Retention(RetentionRequest req, ProjectContext project, RetentionService retention, AnalyticsCache cache, HttpContext http,
+        CancellationToken ct) => req.Explain
         ? ApiResults.Ok(await retention.ExplainAsync(project, req, ct), AppJsonContext.Default.ExplainResponse)
-        : ApiResults.Ok(await retention.RunAsync(project, req, ct), AppJsonContext.Default.RetentionResponse);
+        : ApiResults.Ok(await cache.GetOrRunAsync(http, project, "retention", req, AppJsonContext.Default.RetentionRequest, req.Filters, null,
+            AppJsonContext.Default.RetentionResponse, () => retention.RunAsync(project, req, ct), (r, ms) => r with { TookMs = ms }, ct),
+            AppJsonContext.Default.RetentionResponse);
 
-    static async Task<IResult> Paths(PathsRequest req, ProjectContext project, PathService paths, CancellationToken ct) => req.Explain
+    static async Task<IResult> Paths(PathsRequest req, ProjectContext project, PathService paths, AnalyticsCache cache, HttpContext http,
+        CancellationToken ct) => req.Explain
         ? ApiResults.Ok(await paths.ExplainAsync(project, req, ct), AppJsonContext.Default.ExplainResponse)
-        : ApiResults.Ok(await paths.RunAsync(project, req, ct), AppJsonContext.Default.PathsResponse);
+        : ApiResults.Ok(await cache.GetOrRunAsync(http, project, "paths", req, AppJsonContext.Default.PathsRequest, req.Filters, null,
+            AppJsonContext.Default.PathsResponse, () => paths.RunAsync(project, req, ct), (r, ms) => r with { TookMs = ms }, ct),
+            AppJsonContext.Default.PathsResponse);
 
-    static async Task<IResult> Rfm(RfmRequest req, ProjectContext project, RfmService rfm, CancellationToken ct) => req.Explain
+    static async Task<IResult> Rfm(RfmRequest req, ProjectContext project, RfmService rfm, AnalyticsCache cache, HttpContext http,
+        CancellationToken ct) => req.Explain
         ? ApiResults.Ok(await rfm.ExplainAsync(project, req, ct), AppJsonContext.Default.ExplainResponse)
-        : ApiResults.Ok(await rfm.RunAsync(project, req, ct), AppJsonContext.Default.RfmResponse);
+        : ApiResults.Ok(await cache.GetOrRunAsync(http, project, "rfm", req, AppJsonContext.Default.RfmRequest, req.Filters, null,
+            AppJsonContext.Default.RfmResponse, () => rfm.RunAsync(project, req, ct), (r, ms) => r with { TookMs = ms }, ct),
+            AppJsonContext.Default.RfmResponse);
 
     static async Task<IResult> RfmMigration(RfmMigrationRequest req, ProjectContext project, RfmService rfm, CancellationToken ct) =>
         ApiResults.Ok(await rfm.MigrationAsync(project, req, ct), AppJsonContext.Default.RfmMigrationResponse);
@@ -50,9 +65,12 @@ public static class AnalyticsEndpoints
         [FromQuery(Name = "window_days")] int? windowDays, [FromQuery(Name = "purchase_event")] string? purchaseEvent, CancellationToken ct) =>
         ApiResults.Ok(await rfm.PersonAsync(project, personId, windowDays, purchaseEvent, ct), AppJsonContext.Default.RfmPersonResponse);
 
-    static async Task<IResult> Lifecycle(LifecycleRequest req, ProjectContext project, LifecycleService lifecycle, CancellationToken ct) => req.Explain
+    static async Task<IResult> Lifecycle(LifecycleRequest req, ProjectContext project, LifecycleService lifecycle, AnalyticsCache cache, HttpContext http,
+        CancellationToken ct) => req.Explain
         ? ApiResults.Ok(await lifecycle.ExplainAsync(project, req, ct), AppJsonContext.Default.ExplainResponse)
-        : ApiResults.Ok(await lifecycle.RunAsync(project, req, ct), AppJsonContext.Default.LifecycleResponse);
+        : ApiResults.Ok(await cache.GetOrRunAsync(http, project, "lifecycle", req, AppJsonContext.Default.LifecycleRequest, req.Filters, null,
+            AppJsonContext.Default.LifecycleResponse, () => lifecycle.RunAsync(project, req, ct), (r, ms) => r with { TookMs = ms }, ct),
+            AppJsonContext.Default.LifecycleResponse);
 
     static async Task<IResult> Events(ProjectContext project, EventService events,
         [FromQuery(Name = "event")] string? eventName, [FromQuery(Name = "distinct_id")] string? distinctId,

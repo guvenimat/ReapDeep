@@ -6,6 +6,7 @@ x-query-api-environment: &query-api-environment
   ConnectionStrings__Postgres: *postgres-connection
   ConnectionStrings__StarRocks: Server=starrocks;Port=9030;User ID=reapdeep_query;Password=${STARROCKS_QUERY_PASSWORD:?Missing STARROCKS_QUERY_PASSWORD in .env};Database=analytics;ConnectionReset=false;Pooling=true;MaximumPoolSize=50
   QueryApi__AllowExplain: "true"
+  QueryApi__ResultCacheSeconds: ${QUERY_RESULT_CACHE_SECONDS:-0}
   Alerts__PollSeconds: "5"
   Alerts__AllowPrivateWebhooks: "true"
   Alerts__RetryDelaysSeconds: "3,3,3"
@@ -118,6 +119,7 @@ services:
   redis:
     image: redis:8.8.4-alpine
     container_name: reapdeep-redis
+    mem_limit: 640m
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?Missing REDIS_PASSWORD in .env - run run-local.ps1}", "--save", "", "--appendonly", "no", "--maxmemory", "512mb", "--maxmemory-policy", "volatile-ttl"]
     ports:
       - "127.0.0.1:6379:6379"
@@ -132,6 +134,7 @@ services:
   postgres:
     image: postgres:17
     container_name: reapdeep-postgres
+    mem_limit: 1g
     ports:
       - "127.0.0.1:5432:5432"
     environment:
@@ -339,7 +342,7 @@ services:
       - query-api
 
   kafka-ui:
-    image: provectuslabs/kafka-ui:latest
+    image: provectuslabs/kafka-ui:v0.7.2
     container_name: reapdeep-kafka-ui
     profiles: ["tools"]
     ports:
