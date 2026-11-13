@@ -25,8 +25,9 @@ public sealed class TrendService(StarRocksClient starRocks, CohortService cohort
         var sw = Stopwatch.StartNew();
         var plan = await BuildPlanAsync(project, req, ct);
 
-        var bucketTasks = plan.Series.Select(s => Query(s.Plan.Buckets, ct)).ToList();
-        var totalTasks = plan.Series.Select(s => s.Plan.Total is { } t ? Query(t, ct) : null).ToList();
+        using var gate = StarRocksClient.RequestGate();
+        var bucketTasks = plan.Series.Select(s => Query(s.Plan.Buckets, gate, ct)).ToList();
+        var totalTasks = plan.Series.Select(s => s.Plan.Total is { } t ? Query(t, gate, ct) : null).ToList();
         await Task.WhenAll(bucketTasks.Concat(totalTasks.OfType<Task<List<Row>>>()));
 
         var buckets = plan.Range.Buckets(plan.Interval);
@@ -92,10 +93,10 @@ public sealed class TrendService(StarRocksClient starRocks, CohortService cohort
             .ToList(), formula);
     }
 
-    Task<List<Row>> Query(SqlQuery q, CancellationToken ct) => starRocks.QueryAsync(q, r => new Row(
+    Task<List<Row>> Query(SqlQuery q, SemaphoreSlim gate, CancellationToken ct) => starRocks.QueryAsync(q, r => new Row(
         r.IsDBNull(0) ? null : r.GetDateTime(0),
         r.IsDBNull(1) ? null : r.GetString(1),
-        r.IsDBNull(2) ? 0 : Math.Round(Convert.ToDouble(r.GetValue(2)), 4)), ct);
+        r.IsDBNull(2) ? 0 : Math.Round(Convert.ToDouble(r.GetValue(2)), 4)), gate, ct);
 
     static string Letter(int index) => ((char)('A' + index)).ToString();
 

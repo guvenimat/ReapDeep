@@ -25,14 +25,15 @@ public sealed class FunnelService(StarRocksClient starRocks, CohortService cohor
     {
         var sw = Stopwatch.StartNew();
         var plan = await BuildPlanAsync(project, req, ct);
-        var timesTask = starRocks.QueryAsync(plan.Times, r => ReadTimes(r, plan.Steps.Count), ct);
+        using var gate = StarRocksClient.RequestGate();
+        var timesTask = starRocks.QueryAsync(plan.Times, r => ReadTimes(r, plan.Steps.Count), gate, ct);
         var perQuery = await Task.WhenAll(plan.Queries.Select(async q =>
         {
             var found = await starRocks.QueryAsync(q.Query, r => (
                 Breakdown: q.Cohort ?? (r.IsDBNull(0) ? null : r.GetString(0)),
                 Counts: Enumerable.Range(1, plan.Steps.Count)
                     .Select(i => r.IsDBNull(i) ? 0L : (long)Math.Round(Convert.ToInt64(r.GetValue(i)) / plan.Sampling))
-                    .ToArray()), ct);
+                    .ToArray()), gate, ct);
             return found.Count == 0 && q.Cohort is not null ? [(q.Cohort, new long[plan.Steps.Count])] : found;
         }));
         var rows = perQuery.SelectMany(r => r).ToList();

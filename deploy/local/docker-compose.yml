@@ -6,6 +6,7 @@ x-query-api-environment: &query-api-environment
   ConnectionStrings__Postgres: *postgres-connection
   ConnectionStrings__StarRocks: Server=starrocks;Port=9030;User ID=reapdeep_query;Password=${STARROCKS_QUERY_PASSWORD:?Missing STARROCKS_QUERY_PASSWORD in .env};Database=analytics;ConnectionReset=false;Pooling=true;MaximumPoolSize=50
   QueryApi__AllowExplain: "true"
+  QueryApi__ResultCacheSeconds: ${QUERY_RESULT_CACHE_SECONDS:-0}
   Alerts__PollSeconds: "5"
   Alerts__AllowPrivateWebhooks: "true"
   Alerts__RetryDelaysSeconds: "3,3,3"
