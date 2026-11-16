@@ -12,26 +12,18 @@ Set-Location -Path $PSScriptRoot
 . (Join-Path $PSScriptRoot "env.ps1")
 
 $envValues = Initialize-LocalEnv
-$pg = "Host=localhost;Port=5432;Database=reapdeep;Username=reapdeep;Password=$($envValues.POSTGRES_PASSWORD)"
-$sr = "Server=localhost;Port=9030;User ID=root;Database=analytics;ConnectionReset=false"
 $toolOut = Join-Path $env:TEMP "reapdeep-loadtest"
 $resultsDir = Join-Path $PSScriptRoot "load-test-results"
 New-Item -ItemType Directory -Force $resultsDir | Out-Null
 $report = Join-Path $resultsDir ("report-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".md")
 
 function Step($msg) { Write-Host "`n=== $msg ===" -ForegroundColor Cyan }
-function Tool {
-    & dotnet (Join-Path $toolOut "ReapDeep.LoadTest.dll") @args --report $report
-    if ($LASTEXITCODE -ne 0) { throw "ReapDeep.LoadTest $($args[0]) failed" }
+function RunTool([bool]$network, [object[]]$toolArgs) {
+    $reportArg = if ($network) { "/results/" + (Split-Path $report -Leaf) } else { $report }
+    Invoke-LoadTestTool -OutDir $toolOut -InNetwork $network -ToolArgs (@($toolArgs) + @("--report", $reportArg)) -Mounts @("${resultsDir}:/results")
 }
-function ToolInNetwork {
-    $toolArgs = $args
-    $containerReport = "/results/" + (Split-Path $report -Leaf)
-    & { $ErrorActionPreference = "Continue"
-        docker run --rm --network reapdeep_default -v "${toolOut}:/app:ro" -v "${resultsDir}:/results" mcr.microsoft.com/dotnet/runtime:10.0 `
-            dotnet /app/ReapDeep.LoadTest.dll @toolArgs --report $containerReport 2>&1 | ForEach-Object { "$_" } }
-    if ($LASTEXITCODE -ne 0) { throw "ReapDeep.LoadTest $($toolArgs[0]) failed" }
-}
+function Tool { RunTool $inNetwork $args }
+function ToolInNetwork { RunTool $true $args }
 function Append([string]$text) { Add-Content -Path $report -Value $text -Encoding utf8 }
 
 function Start-StatsSampler([string]$file) {
@@ -65,8 +57,10 @@ function Stop-StatsSampler($job, [string]$file, [string]$title) {
 }
 
 Step "Building the load test tool"
-dotnet build (Join-Path $PSScriptRoot "..\..\tests\ReapDeep.LoadTest") -c Release -o $toolOut | Select-String -Pattern "error"
-if ($LASTEXITCODE -ne 0) { throw "build failed" }
+$inNetwork = Build-LoadTestTool $toolOut
+$pgHost, $srHost, $queryApi = if ($inNetwork) { "postgres", "starrocks", "http://query-api:8001" } else { "localhost", "localhost", "http://localhost:8001" }
+$pg = "Host=$pgHost;Port=5432;Database=reapdeep;Username=reapdeep;Password=$($envValues.POSTGRES_PASSWORD)"
+$sr = "Server=$srHost;Port=9030;User ID=root;Database=analytics;ConnectionReset=false"
 
 if ($CleanupOnly) {
     Step "Removing load test data (projects 2 and 3)"
@@ -119,7 +113,7 @@ if (-not $SkipBench) {
     Tool recommendations --sr $sr --pg $pg
     Step "Query benchmark (person worker paused so the 30 s local cohort refresh does not compete; production refreshes hourly)"
     & { $ErrorActionPreference = "Continue"; docker compose stop person-worker 2>&1 | Out-Null }
-    try { Tool bench --api "http://localhost:8001" --key $benchKey --runs $Runs }
+    try { Tool bench --api $queryApi --key $benchKey --runs $Runs }
     finally { & { $ErrorActionPreference = "Continue"; docker compose start person-worker 2>&1 | Out-Null } }
     Step "Recommender latency (inside the compose network)"
     ToolInNetwork recommend-latency --url "http://recommender:8002" --key "pk_benchmark" --seconds 20 --concurrency 16
