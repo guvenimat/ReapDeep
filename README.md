@@ -221,7 +221,7 @@ The commerce contract is small: `product_viewed`, `add_to_cart` and `purchase` e
 |---|---|---|
 | `popular` | sum of each person's strongest interaction per item (view 1, cart 3, purchase 5) | 30 days |
 | `trending` | last 7 days against the expected share from the 21 days before | 28 days |
-| `co_viewed` | cosine similarity of items in the same person's 50 most recent items | 30 days |
+| `co_viewed` | cosine similarity of items in the same person's 50 most recent items, shrunk for small counts: `co / (sqrt(n_a * n_b) + 5)` | 30 days |
 | `bought_together` | the same, purchases only | 90 days |
 
 Interactions are counted per `distinct_id` first and then merged per person, so a product viewed before signing in still counts for the signed-in person. The person worker refreshes each project hourly (every minute locally) and keeps 50 candidates per item and 200 for the global lists. The Recommender filters them at request time (in stock, category, not the item itself) and fills short item-based lists with popular items of the same category, marking each item's `source`.
@@ -230,7 +230,7 @@ Interactions are counted per `distinct_id` first and then merged per person, so 
 curl "http://localhost:8002/recommend?api_key=pk_demo_shop&model=co_viewed&item_id=linen-shirt&limit=5"
 ```
 
-Quality is measured on demand (`POST /api/v1/recommendations/evaluate`, the Catalog tab's "Measure now"): the models are trained on the 30 days before the last week, and for each person the second item they touched last week counts as a hit if it was in the top 10 for their first. On the demo data co_viewed reaches a 26.6% hit rate against 24.2% for the popular baseline; the demo browsing is strongly popularity-driven, so the gap is small.
+Quality is measured on demand (`POST /api/v1/recommendations/evaluate`, the Catalog tab's "Measure now"): the models are trained on the 30 days before the last week, and for each person the second item they touched last week counts as a hit if it was in the top 10 for their first. On the demo data co_viewed reaches a 27.0% hit rate against 24.3% for the popular baseline; the demo browsing is strongly popularity-driven, so the gap is small.
 
 Live performance comes from the site itself: the SDK's `trackRecommendationShown` and `trackRecommendationClicked` send `recommendation_shown` and `recommendation_clicked` events with the model and the placement, and `GET /api/v1/recommendations/performance?days=7|30|90` (read key; the Catalog tab's "Live performance") returns impressions, clicks, click rate and purchases per model and placement. A purchase counts when the same person buys the clicked item within 7 days of the click. The demo shop sends both events: similar items on product pages are clicked 23.1% of the time and popular items on the home page 12.0% (last 30 days).
 

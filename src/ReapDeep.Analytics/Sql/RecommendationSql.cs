@@ -26,6 +26,7 @@ public static class RecommendationSql
     public const int ItemCandidates = 50;
     public const int MaxItemsPerPerson = 50;
     public const int MinCoOccurrence = 2;
+    public const int SimilarityShrinkage = 5;
     public const int MaxHistoryItems = 30;
 
     public static readonly TimeSpan PopularWindow = TimeSpan.FromDays(30);
@@ -146,6 +147,6 @@ public static class RecommendationSql
         "cnt AS (SELECT item_id, COUNT(*) AS n FROM lim GROUP BY item_id), " +
         "pairs AS (SELECT a.item_id AS src, o.item_id AS dst, COUNT(*) AS co FROM lim a JOIN lim o ON o.person = a.person AND o.item_id <> a.item_id " +
         $"GROUP BY 1, 2 HAVING COUNT(*) >= {b.P(MinCoOccurrence)}), " +
-        "scored AS (SELECT p.src, p.dst, p.co / sqrt(cs.n * cd.n) AS score FROM pairs p JOIN cnt cs ON cs.item_id = p.src JOIN cnt cd ON cd.item_id = p.dst), " +
+        $"scored AS (SELECT p.src, p.dst, p.co / (sqrt(cs.n * cd.n) + {SimilarityShrinkage}) AS score FROM pairs p JOIN cnt cs ON cs.item_id = p.src JOIN cnt cd ON cd.item_id = p.dst), " +
         "ranked AS (SELECT src, dst, score, ROW_NUMBER() OVER (PARTITION BY src ORDER BY score DESC, dst) AS rn FROM scored)";
 }

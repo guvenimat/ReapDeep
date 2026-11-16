@@ -36,12 +36,12 @@ public class RecommendationSqlTests
     }
 
     [Fact]
-    public void Similarity_caps_items_per_person_and_uses_cosine_scores()
+    public void Similarity_caps_items_per_person_and_uses_shrunk_cosine_scores()
     {
         var q = RecommendationSql.Build(RecommendationSql.CoViewed, Project, Now);
 
         Assert.Contains($"WHERE n <= {RecommendationSql.MaxItemsPerPerson}", q.Sql);
-        Assert.Contains("p.co / sqrt(cs.n * cd.n) AS score", q.Sql);
+        Assert.Contains($"p.co / (sqrt(cs.n * cd.n) + {RecommendationSql.SimilarityShrinkage}) AS score", q.Sql);
         Assert.Contains($"WHERE rn <= {RecommendationSql.ItemCandidates}", q.Sql);
         Assert.Contains(q.Parameters, p => p.Value is DateTime t && t == Now - RecommendationSql.CoViewedWindow);
     }
