@@ -32,6 +32,7 @@ function Call([string]$method, [string]$path, [string]$body = $null, [string]$ke
     for ($attempt = 1; ; $attempt++) {
         $req = New-Object System.Net.Http.HttpRequestMessage((New-Object System.Net.Http.HttpMethod($method)), "$api$path")
         if ($key) { $req.Headers.TryAddWithoutValidation("Authorization", "Bearer $key") | Out-Null }
+        $req.Headers.TryAddWithoutValidation("Cache-Control", "no-cache") | Out-Null
         if ($body) { $req.Content = New-Object System.Net.Http.StringContent((Fill $body), [Text.Encoding]::UTF8, "application/json") }
         $sw = [Diagnostics.Stopwatch]::StartNew()
         $r = $http.SendAsync($req).Result
