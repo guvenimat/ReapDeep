@@ -189,7 +189,7 @@ A trend series counts events, counts unique persons, or aggregates a numeric eve
 
 ### Alerts
 
-![Alerts](docs/images/alerts.png)
+![An alert being edited: a daily threshold on a saved trend, sent by email, above the list of webhook, email and Slack alerts](docs/images/alerts.png)
 
 An alert watches a saved trend over the last hour, day or week: *above* or *below* a value, or a *growth* or *drop* of at least N% against the window before. It follows the trend's first series, or its formula when there is one. The alert runner checks hourly-window alerts every 10 minutes, daily ones every hour and weekly ones every 6 hours (instances claim alerts with `FOR UPDATE SKIP LOCKED`), and "Check now" runs one on demand.
 
@@ -201,6 +201,10 @@ An alert notifies one channel: a webhook, a Slack incoming webhook (a short text
 
 A dynamic cohort is a set of OR'ed groups of AND'ed conditions: *did event X at least / at most / exactly N times in the last D days* (optionally where an event property matches), *did not do event Y in the last D days*, or *person property matches*. Windows are 1-90 days. *RFM segment is one of ...* turns RFM segments into a condition (see above). *Dropped after step N* or *reached step N* of a funnel (2-8 steps, a conversion window and a look-back of 1-90 days) keeps a funnel's drop-offs as a cohort that updates itself; the Funnels tab saves one from any drop-off. A static cohort is a list of person ids or distinct_ids, pasted or loaded from a CSV.
 
+| A funnel drop-off, saved as a fixed or dynamic cohort | The resulting cohort with its funnel condition |
+|---|---|
+| ![Funnel drop-off](docs/images/funnel-dropoff.png) | ![Funnel cohort](docs/images/cohort-funnel.png) |
+
 - **Materialized membership:** the person worker evaluates the rules in StarRocks and writes the members to `cohort_members` (every distinct_id of each person, so anonymous history counts for the merged person). Cohorts refresh hourly by default; the editor shows a live count computed on the fly.
 - **Cheap to use in analyses:** `cohort_members` is keyed by `(project_id, distinct_id)` in the same colocate group as `events`, so a cohort filter (`{"scope":"cohort","property":"<id>","op":"in" | "not_in"}`) is a bucket-local semi or anti join on the events table. Trends and funnels can also break down by up to 5 cohorts.
 - **Consistent versions:** each refresh writes a new version and switches to it atomically; the previous version is kept for 60 s so queries already running are not affected.
@@ -209,7 +213,7 @@ A dynamic cohort is a set of OR'ed groups of AND'ed conditions: *did event X at 
 
 ### Catalog and recommendations
 
-![Catalog](docs/images/catalog.png)
+![Catalog: model status, offline hit rate and live click rate per model and placement](docs/images/catalog.png)
 
 The commerce contract is small: `product_viewed`, `add_to_cart` and `purchase` events with `properties.item_id` (one `purchase` per item, linked by `order_id`; the SDK's `trackPurchase` does that). A `refund` event with the same `order_id` and a positive `amount` lowers the customer's spend in RFM; it never counts as an order or as the last purchase. The catalog lives in PostgreSQL and is written with `PUT /api/v1/items` by an owner or admin, a CSV upload in the dashboard, or a `catalog_write` API key (`ck_...`), which can only reach the catalog endpoints.
 
