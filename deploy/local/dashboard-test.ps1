@@ -99,6 +99,7 @@ Capture '[{"event":"$identify","distinct_id":"__U__","properties":{"$anon_distin
 Start-Sleep -Milliseconds 300
 Capture '[{"event":"page___TAG__","distinct_id":"__U__"},{"event":"step2___TAG__","distinct_id":"__U__"},{"event":"step3___TAG__","distinct_id":"__U__","properties":{"amount":499}}]'
 Capture '[{"event":"step1___TAG__","distinct_id":"__B__"}]'
+Capture '[{"event":"recommendation_shown","distinct_id":"__B__","properties":{"model":"co_viewed","placement":"pdp-__TAG__","item_ids":["a","b"]}},{"event":"recommendation_shown","distinct_id":"__B__","properties":{"model":"co_viewed","placement":"pdp-__TAG__","item_ids":["a","c"]}},{"event":"recommendation_clicked","distinct_id":"__B__","properties":{"model":"co_viewed","placement":"pdp-__TAG__","item_id":"a","position":1}}]'
 
 Write-Host "  Waiting for StarRocks ingestion and identity sync..."
 $deadline = (Get-Date).AddSeconds(60)
@@ -160,6 +161,11 @@ Check "Lifecycle: table's latest period has new = 1, active = 1" ((Section $html
 
 $html = Dom "#/alerts" "document.querySelector('[data-testid=alerts-card]') && !document.querySelector('.skeleton')"
 Check "Alerts tab renders for the owner with a 'New alert' action" ($html -match 'data-testid="alerts-card"' -and $html -match 'data-testid="new-alert"')
+
+Write-Host "`n4c) Catalog tab"
+$html = Dom "#/catalog" "[...document.querySelectorAll('[data-testid=recommendation-performance] tbody tr')].some((r) => r.textContent.includes('pdp-$tag'))"
+$perf = Section $html "recommendation-performance"
+Check "Live performance: this run's placement has 2 impressions, 1 click, 50% click rate" ($perf -match "<td>co_viewed</td><td>pdp-$tag</td><td class=""num"">2</td><td class=""num"">1</td><td class=""num"">50%</td><td class=""num"">0</td><td class=""num"">0%</td>")
 
 Write-Host "`n5) Events tab"
 $q = Q '{"event":"","distinct_id":"","person_id":"","limit":50}'
