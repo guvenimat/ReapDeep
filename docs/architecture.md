@@ -306,7 +306,7 @@ summary table.
 | Models computed in the person worker, lists stored in PostgreSQL | compute per request | a model scans 30-90 days; the serving path has a single-digit-millisecond budget |
 | Lists hold only `item_id` and `score`; catalog fields are joined at request time | store titles and stock in the lists | a product that goes out of stock disappears immediately instead of at the next refresh |
 | Separate public Recommender service | an endpoint in the Query API | public key and open CORS instead of secret keys and sessions; it reads only PostgreSQL and keeps everything in memory |
-| Cosine similarity over each person's 50 most recent items | raw co-occurrence over full histories | raw counts favor popular items; the cap bounds the self-join, which grows with the square of a person's item count (bots, crawlers) |
+| Cosine similarity over each person's 50 most recent items, with 5 added to the denominator | raw co-occurrence over full histories; plain cosine | raw counts favor popular items; the cap bounds the self-join, which grows with the square of a person's item count (bots, crawlers); without the added constant two items seen by the same two people and nobody else score 1.0 and outrank well-supported neighbours |
 | Hit rate against a popular baseline, on demand | offline evaluation in a notebook | it runs as one read-only StarRocks query from the Query API, so anyone can check a model on their own data |
 
 `catalog_write` API keys (`ck_...`) exist so a store backend can sync products without being able to read
