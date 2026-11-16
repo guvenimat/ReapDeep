@@ -12,14 +12,14 @@ retention, path and person questions over hundreds of millions of events.
 
 - **Analyses:** trends (totals, unique users, sum/average/median/p90 of a property, formulas such as `A / B`, comparison with the previous period, breakdowns), funnels with conversion windows, time to convert and the list of persons who dropped off at each step (savable as a cohort), weekly or daily retention cohorts, user paths, lifecycle (new, returning, resurrecting, dormant), RFM customer segments, a live event stream and person profiles; any of them can be saved and arranged on dashboards.
 - **Recommendations:** a product catalog plus popular, trending, viewed-together and bought-together suggestions, served to your site by a public endpoint from memory, measured offline with a hit-rate check and live with impression and click events.
-- **Alerts:** a saved trend can call a webhook when it goes above or below a threshold, or grows or drops by a percentage against the previous window; payloads are signed with HMAC-SHA256.
+- **Alerts:** a saved trend notifies a webhook, a Slack channel or e-mail addresses when it goes above or below a threshold, or grows or drops by a percentage against the previous window; webhook payloads are signed with HMAC-SHA256 and failed deliveries are retried.
 - **Cohorts:** segments defined by behavior ("viewed a product 3+ times in 30 days but did not buy") or person properties, or uploaded as a list; every analysis can filter or break down by them.
 - **Fast ingestion:** 50K events/s on a single machine with p99 under 10 ms; a `202` response means the event is durably in Kafka.
 - **Fresh data:** events are queryable in 4-11 s (Kafka -> StarRocks Routine Load).
 - **Identity resolution:** anonymous visitors are merged into identified users; their earlier events count as the same person in trends and funnels.
 - **Multi-tenant by design:** shared tables keyed by `project_id`; every StarRocks query comes from a single SQL builder that always adds the project and time filters.
 - **Small footprint:** ~2.7 KB gzip SDK with no dependencies, 30-50 MB ingestion process, dashboard without chart or UI libraries.
-- **Permissive licensing only:** Apache 2.0 for this repo; every code dependency is MIT or Apache 2.0, and the self-hosted Inter font is under the SIL Open Font License 1.1.
+- **Permissive licensing:** Apache 2.0 for this repo; code dependencies are under MIT, Apache 2.0, BSD-2-Clause (librdkafka, bundled with Confluent.Kafka) or the PostgreSQL License (Npgsql), and the self-hosted Inter font is under the SIL Open Font License 1.1.
 
 ## Architecture
 
@@ -82,6 +82,7 @@ flowchart LR
 - **Resynchronizing persons.** PostgreSQL holds the truth for persons and identities; StarRocks receives them through Kafka, which keeps messages for seven days. If StarRocks lost them (a job blocked for longer, a restored volume), `docker compose --profile app run --rm person-worker resync-persons [--project <id>]` queues every person and distinct id again through the outbox; StarRocks applies them in version order. Persons deleted since then are not touched, because they no longer exist in PostgreSQL.
 - **Several Query API instances.** Sessions and API keys are cached in Redis, not in process memory (`auth:session:*` for 30 s, `auth:key:*` for 60 s, 10 s for unknown keys), and every change that affects access (role change, removed member, password change, revoked key) deletes the cached entries, so a second instance never accepts a revoked session or key. Without Redis every request reads PostgreSQL. `docker compose --profile scale up -d query-api-2` starts a second instance on port 8003.
 - **Alerts run apart from user queries.** The alert job runs in its own process (`alert-runner`, the Query API image with `Alerts__RunJob=true`); the API instances leave it off. It connects to StarRocks as `reapdeep_alerts` in the `rg_alerts` resource group (CPU weight 1, 20% memory, 2 concurrent queries), so a burst of alert checks cannot slow down the dashboard. Alerts are claimed with a lease, so several runners never check the same alert twice.
+- **Result cache.** Trend, funnel, retention, path, RFM and lifecycle results are cached in Redis for 45 s (`QueryApi__ResultCacheSeconds`, `0` turns it off), keyed by project, time zone, request body and the versions of the cohorts it uses, so a recalculated cohort is never served from an old entry. Responses carry `X-Cache: HIT` or `MISS`, and a request with `Cache-Control: no-cache` skips the cached copy. Without Redis every request runs its query.
 - **Request quotas.** Project endpoints are limited per minute to 300 requests per user or API key and 1,200 per project (`QueryApi__RequestsPerMinutePerPrincipal`, `QueryApi__RequestsPerMinutePerProject`). The counters live in Redis, so the limit holds across instances; past it the API answers `429` with `Retry-After`. Without Redis each instance counts on its own.
 
 ![ReapDeep overview dashboard in Grafana](docs/images/grafana-overview.png)
@@ -108,7 +109,7 @@ docker compose up -d                          # data stack; wait until the migra
 docker compose --profile app up -d --build
 ```
 
-On first start, `.env` is created with random local credentials: the PostgreSQL password, a project read API key (`READ_API_KEY`), the dashboard admin account (`ADMIN_EMAIL`, `ADMIN_PASSWORD`) the passwords of the StarRocks users (read-only for the Query API, jobs for the person worker, operations for the routine load watchdog) and the Redis password. Missing keys are added to an existing `.env` automatically. The file is git-ignored, and every port is bound to `127.0.0.1`.
+On first start, `.env` is created with random local credentials: the PostgreSQL password, a project read API key (`READ_API_KEY`), the dashboard admin account (`ADMIN_EMAIL`, `ADMIN_PASSWORD`), the passwords of the StarRocks users (read-only for the Query API, jobs for the person worker, operations for the routine load watchdog, alerts for the alert runner) and the Redis password. Missing keys are added to an existing `.env` automatically. The file is git-ignored, and every port is bound to `127.0.0.1`.
 
 | Service | Address |
 |---|---|
@@ -190,9 +191,9 @@ A trend series counts events, counts unique persons, or aggregates a numeric eve
 
 ![Alerts](docs/images/alerts.png)
 
-An alert watches a saved trend over the last hour, day or week: *above* or *below* a value, or a *growth* or *drop* of at least N% against the window before. It follows the trend's first series, or its formula when there is one. A background job in the Query API checks hourly-window alerts every 10 minutes, daily ones every hour and weekly ones every 6 hours (instances claim alerts with `FOR UPDATE SKIP LOCKED`), and "Check now" runs one on demand.
+An alert watches a saved trend over the last hour, day or week: *above* or *below* a value, or a *growth* or *drop* of at least N% against the window before. It follows the trend's first series, or its formula when there is one. The alert runner checks hourly-window alerts every 10 minutes, daily ones every hour and weekly ones every 6 hours (instances claim alerts with `FOR UPDATE SKIP LOCKED`), and "Check now" runs one on demand.
 
-An alert notifies one channel: a webhook, a Slack incoming webhook (a short text message) or up to 10 email addresses over SMTP (`Alerts__Smtp__Host`, `Port`, `From`, `Username`, `Password`, `EnableSsl`; the local stack sends to Mailpit). A notification goes out only when an alert starts or stops firing; a webhook gets a JSON body (`state`, `value`, `previous_value`, `message`, the insight) and an `X-ReapDeep-Signature: sha256=<HMAC-SHA256(secret, body)>` header; the secret is shown when the alert is created. Each event and the outcome of its delivery are kept in the alert's history. Deliveries are queued in PostgreSQL before they are sent: a network error, a timeout, `408`, `429` or `5xx` is retried after 1, 5 and 15 minutes, 1 hour and 3 hours (six attempts in all), while other `4xx` answers fail at once. Every attempt carries `X-ReapDeep-Delivery` (the same id on each retry, so receivers can drop duplicates) and `X-ReapDeep-Attempt`, and the body and signature do not change between attempts. Webhook URLs that resolve to private, loopback or link-local addresses are refused, and the check is repeated on the connection itself so DNS rebinding cannot bypass it; the local compose file sets `Alerts__AllowPrivateWebhooks=true` so tests can use a receiver on the host. Only owners and admins manage alerts.
+An alert notifies one channel: a webhook, a Slack incoming webhook (a short text message) or up to 10 email addresses over SMTP (`Alerts__Smtp__Host`, `Port`, `From`, `Username`, `Password`, `EnableSsl`; the local stack sends to Mailpit). A notification goes out only when an alert starts or stops firing; a webhook gets a JSON body (`state`, `value`, `previous_value`, `message`, the insight) and an `X-ReapDeep-Signature: sha256=<HMAC-SHA256(secret, body)>` header; the secret is shown when the alert is created. Each event and the outcome of its delivery are kept in the alert's history. Deliveries are queued in PostgreSQL before they are sent: a network error, a timeout, `408`, `429` or `5xx` (for e-mail, a connection error or a temporary `4xx` SMTP reply) is retried after 1, 5 and 15 minutes, 1 hour and 3 hours (six attempts in all), while other answers fail at once. Every attempt carries `X-ReapDeep-Delivery` (the same id on each retry, so receivers can drop duplicates) and `X-ReapDeep-Attempt`, and the body and signature do not change between attempts. Webhook URLs that resolve to private, loopback or link-local addresses are refused, and the check is repeated on the connection itself so DNS rebinding cannot bypass it; the local compose file sets `Alerts__AllowPrivateWebhooks=true` so tests can use a receiver on the host. Only owners and admins manage alerts.
 
 ### Cohorts
 
@@ -225,9 +226,9 @@ Interactions are counted per `distinct_id` first and then merged per person, so 
 curl "http://localhost:8002/recommend?api_key=pk_demo_shop&model=co_viewed&item_id=linen-shirt&limit=5"
 ```
 
-Quality is measured on demand (`POST /api/v1/recommendations/evaluate`, the Catalog tab's "Measure now"): the models are trained on the 30 days before the last week, and for each person the second item they touched last week counts as a hit if it was in the top 10 for their first. On the demo data co_viewed reaches a 26.9% hit rate against 23.1% for the popular baseline; the demo browsing is strongly popularity-driven, so the gap is small.
+Quality is measured on demand (`POST /api/v1/recommendations/evaluate`, the Catalog tab's "Measure now"): the models are trained on the 30 days before the last week, and for each person the second item they touched last week counts as a hit if it was in the top 10 for their first. On the demo data co_viewed reaches a 26.6% hit rate against 24.2% for the popular baseline; the demo browsing is strongly popularity-driven, so the gap is small.
 
-Live performance comes from the site itself: the SDK's `trackRecommendationShown` and `trackRecommendationClicked` send `recommendation_shown` and `recommendation_clicked` events with the model and the placement, and `GET /api/v1/recommendations/performance?days=7|30|90` (read key; the Catalog tab's "Live performance") returns impressions, clicks, click rate and purchases per model and placement. A purchase counts when the same person buys the clicked item within 7 days of the click. The demo shop sends both events: similar items on product pages are clicked 23.5% of the time and popular items on the home page 11.9%.
+Live performance comes from the site itself: the SDK's `trackRecommendationShown` and `trackRecommendationClicked` send `recommendation_shown` and `recommendation_clicked` events with the model and the placement, and `GET /api/v1/recommendations/performance?days=7|30|90` (read key; the Catalog tab's "Live performance") returns impressions, clicks, click rate and purchases per model and placement. A purchase counts when the same person buys the clicked item within 7 days of the click. The demo shop sends both events: similar items on product pages are clicked 23.1% of the time and popular items on the home page 12.0% (last 30 days).
 
 The recommendation tables hold aggregates over many people, not personal data. A deleted person's interactions drop out at the next refresh.
 
@@ -244,7 +245,7 @@ signature = hex(HMAC-SHA256(recommendation_secret, "{distinct_id}.{expires}"))
 GET /recommend?api_key=pk_...&model=for_you&distinct_id=customer-42&expires=1793430000&signature=...
 ```
 
-`expires` is a Unix time at most one hour ahead. A wrong or expired signature is `401`; personalized answers are sent with `Cache-Control: private, no-store`. On the demo project (3,985 people with a history) a personalized request takes 1.2 ms at p50 and 1.6 ms at p95, measured from the host.
+`expires` is a Unix time at most one hour ahead. A wrong or expired signature is `401`; personalized answers are sent with `Cache-Control: private, no-store`. On the demo project (4,288 people with a history) a personalized request takes 1.2 ms at p50 and 1.6 ms at p95, measured from the host.
 
 Measured on the 30M-event seed with a 2,000-item catalog (`load-test.ps1`):
 
@@ -448,7 +449,7 @@ Shared build settings and every NuGet package version live in `src/Directory.Bui
 
 ReapDeep is an early v1. It runs end to end locally but has not been operated in production yet.
 
-- Alerts notify through webhooks only; there is no e-mail or Slack integration yet, and a failed delivery is recorded but not retried.
+- An alert notifies a single channel. Slack is reached through an incoming webhook rather than a Slack app, and e-mail alerts can only be created when an SMTP server is configured (`Alerts__Smtp__Host`).
 - Members are added with a temporary password; there are no invitation emails or password reset by email.
 - A person's `created_at` is the time of their first `$identify` or `$set` event; earlier anonymous events without person properties do not move it.
 - Retention and paths read raw events and join persons on every query; they are fast on the demo and test data but were not part of the 100M-event benchmark.
