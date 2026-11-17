@@ -55,6 +55,47 @@ Check "missing key -> 401" ((Call GET "/api/v1/events" -key "").Status -eq 401)
 Check "valid key -> 200" ((Call GET "/api/v1/events?limit=1").Status -eq 200)
 Check "invalid property name -> 400" ((Call POST "/api/v1/query/trends" '{"series":[{"event":"x"}],"filters":[{"property":"a'' OR 1=1 --","op":"eq","value":"1"}]}').Status -eq 400)
 
+Write-Host "`n1b) Parallel analysis requests above the database concurrency limit (rg_query: 8)"
+$burstBodies = @(
+    @("trends", '{"series":[{"event":"$pageview","metric":"unique_users"}],"interval":"day","breakdown":{"property":"$browser"}}'),
+    @("funnels", '{"steps":[{"event":"view_product"},{"event":"add_to_cart"},{"event":"purchase"}]}'),
+    @("retention", '{"start_event":"$pageview","return_event":"$pageview","period":"day","periods":6}'),
+    @("lifecycle", '{"event":"$pageview","period":"day","lookback_days":30}')
+)
+function Burst([int]$n) {
+    $tasks = for ($i = 0; $i -lt $n; $i++) {
+        $b = $burstBodies[$i % $burstBodies.Count]
+        $req = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::Post, "$api/api/v1/query/$($b[0])")
+        $req.Headers.TryAddWithoutValidation("Authorization", "Bearer $readKey") | Out-Null
+        $req.Headers.TryAddWithoutValidation("Cache-Control", "no-cache") | Out-Null
+        $req.Content = New-Object System.Net.Http.StringContent($b[1], [Text.Encoding]::UTF8, "application/json")
+        $http.SendAsync($req)
+    }
+    [System.Threading.Tasks.Task]::WaitAll([System.Threading.Tasks.Task[]]$tasks)
+    @($tasks | ForEach-Object { $_.Result })
+}
+[System.Net.ServicePointManager]::DefaultConnectionLimit = [Math]::Max([System.Net.ServicePointManager]::DefaultConnectionLimit, 64)
+$burstStart = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+$responses = Burst 24
+$limited = @($responses | Where-Object { [int]$_.StatusCode -eq 429 })
+if ($limited.Count -gt 0) {
+    $wait = if ($limited[0].Headers.RetryAfter -and $limited[0].Headers.RetryAfter.Delta) { [int][Math]::Ceiling($limited[0].Headers.RetryAfter.Delta.TotalSeconds) } else { 60 }
+    Write-Host "  (request quota reached, waiting $wait s)" -ForegroundColor DarkGray
+    Start-Sleep -Seconds $wait
+    $burstStart = [DateTimeOffset]::UtcNow.ToUnixTimeMilliseconds()
+    $responses = Burst 24
+}
+$codes = ($responses | Group-Object { [int]$_.StatusCode } | ForEach-Object { "$($_.Count)x $($_.Name)" }) -join ", "
+Check "24 parallel analysis requests all return 200 instead of a concurrency error ($codes)" (@($responses | Where-Object { [int]$_.StatusCode -ne 200 }).Count -eq 0)
+$prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+$audit = docker.exe exec reapdeep-starrocks sh -c "grep 'User=reapdeep_query' starrocks/fe/log/fe.audit.log | tail -n 400" 2>$null
+$ErrorActionPreference = $prev
+$pending = @($audit | Where-Object { $_ -match 'Timestamp=(\d+)' -and [long]$Matches[1] -ge $burstStart -and $_ -match 'PendingTimeMs=(\d+)' } | ForEach-Object { [void]($_ -match 'PendingTimeMs=(\d+)'); [int]$Matches[1] })
+if ($pending.Count -gt 0) {
+    $queued = @($pending | Where-Object { $_ -ge 10 }).Count
+    Write-Host ("  StarRocks queue: {0} of {1} statements waited 10 ms or more, longest {2} ms" -f $queued, $pending.Count, ($pending | Measure-Object -Maximum).Maximum) -ForegroundColor DarkGray
+}
+
 Write-Host "`n2) Sending test data (tag: $tag)"
 Capture $chrome @'
 [{"event":"$pageview","distinct_id":"__A__","event_id":"__TAG__-pv1","properties":{"qt":"__TAG__","$current_url":"https://example.com/products/1"}},
