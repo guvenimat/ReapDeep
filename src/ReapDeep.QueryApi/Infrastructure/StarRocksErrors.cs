@@ -2,7 +2,7 @@ using MySqlConnector;
 
 namespace ReapDeep.QueryApi.Infrastructure;
 
-public enum StarRocksFailure { ResourceLimit, Unavailable, QueryError }
+public enum StarRocksFailure { ResourceLimit, Busy, Unavailable, QueryError }
 
 public static class StarRocksErrors
 {
@@ -13,6 +13,8 @@ public static class StarRocksErrors
     public static StarRocksFailure Classify(int number, string? sqlState, string message) => number switch
     {
         QueryTimeout => StarRocksFailure.ResourceLimit,
+        GenericError when message.Contains("Failed to allocate resource to query", StringComparison.OrdinalIgnoreCase)
+            || message.Contains("Exceed concurrency limit", StringComparison.OrdinalIgnoreCase) => StarRocksFailure.Busy,
         _ when sqlState is not null && sqlState.StartsWith(ResourceClass, StringComparison.Ordinal) => StarRocksFailure.ResourceLimit,
         GenericError when message.Contains("exceed limit", StringComparison.OrdinalIgnoreCase)
             || message.Contains("exceed the limit", StringComparison.OrdinalIgnoreCase)

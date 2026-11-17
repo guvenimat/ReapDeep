@@ -8,7 +8,7 @@ public sealed record ExplainResponse(List<string> Sql, List<string> Plans);
 
 public sealed class StarRocksClient(MySqlDataSource db, IConfiguration cfg)
 {
-    const int CommandTimeoutSeconds = 30;
+    public const int CommandTimeoutSeconds = 30;
     public const int MaxParallelPerRequest = 4;
 
     readonly bool _allowExplain = cfg["QueryApi:AllowExplain"] == "true";

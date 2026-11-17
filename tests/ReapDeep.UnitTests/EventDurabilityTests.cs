@@ -14,6 +14,9 @@ public class EventDurabilityTests
     [InlineData(1064, "HY000", "Mem usage has exceed the limit of single query", StarRocksFailure.ResourceLimit)]
     [InlineData(1064, "HY000", "Getting analyzing error. Detail message: Column 'x' cannot be resolved.", StarRocksFailure.QueryError)]
     [InlineData(5502, "42602", "Getting analyzing error. Detail message: Unknown table 'analytics.nope'.", StarRocksFailure.QueryError)]
+    [InlineData(1064, "HY000", "Failed to allocate resource to query: pending timeout [15s], you could modify the session variable [query_queue_pending_timeout_second] to pending more time", StarRocksFailure.Busy)]
+    [InlineData(1064, "HY000", "Failed to allocate resource to query: com.starrocks.common.StarRocksException: Resource is not enough and the number of pending queries exceeds capacity [1024], you could modify the session variable [query_queue_max_queued_queries] to make more query can be queued", StarRocksFailure.Busy)]
+    [InlineData(1064, "HY000", "Exceed concurrency limit: 8 backend [id=10001] [host=127.0.0.1]", StarRocksFailure.Busy)]
     [InlineData(1042, null, "Unable to connect to any of the specified MySQL hosts.", StarRocksFailure.Unavailable)]
     [InlineData(1064, "HY000", "Backend node not found. Check if any backend node is down.backend: [127.0.0.1 alive: true inBlacklist: true]", StarRocksFailure.Unavailable)]
     public void StarRocks_errors_are_classified_by_code_first(int number, string? sqlState, string message, StarRocksFailure expected) =>
