@@ -1,5 +1,5 @@
 import type {
-  Alert, AlertEvent, AlertInput,
+  Alert, AlertEvent, AlertInput, FeatureFlag, FlagInput,
   ApiKey, CatalogItem, CatalogItemDetail, CatalogItemInput, Cohort, CohortDefinition, CohortKind, CohortPerson, Dashboard, DashboardSummary, DateRange, DeletionRequest, EventRow, FunnelPersonsResponse, FunnelRequest, FunnelResponse, Insight, InsightKind,
   HitRate, KeyScope, Me, Member, Metadata, ModelRun, LifecycleResponse, PathsResponse, Person, PersonCohortsResponse, RecommendationPerformanceResponse, RetentionResponse, RfmMigrationResponse, RfmPerson, RfmResponse, Role, TrendRequest, TrendResponse, ProjectDetail,
 } from './types'
@@ -147,6 +147,11 @@ export const api = {
   checkAlert: (id: number) =>
     request<{ state: Alert['state']; value: number | null; previous_value: number | null; message: string; event: AlertEvent | null }>('POST', `/api/v1/alerts/${id}/check`),
   alertEvents: (id: number, signal?: AbortSignal) => request<{ events: AlertEvent[] }>('GET', `/api/v1/alerts/${id}/events`, undefined, signal),
+
+  flags: (signal?: AbortSignal) => request<{ flags: FeatureFlag[] }>('GET', '/api/v1/flags', undefined, signal),
+  createFlag: (body: FlagInput) => request<FeatureFlag>('POST', '/api/v1/flags', body),
+  updateFlag: (id: number, body: Partial<FlagInput>) => request<FeatureFlag>('PUT', `/api/v1/flags/${id}`, body),
+  deleteFlag: (id: number) => request<void>('DELETE', `/api/v1/flags/${id}`),
 
   deletionRequests: (signal?: AbortSignal) => request<{ deletion_requests: DeletionRequest[] }>('GET', '/api/v1/deletion-requests', undefined, signal),
   requestDeletion: (target_type: DeletionRequest['target_type'], target_id: string) =>

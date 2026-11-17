@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { DateRange, Interval } from '../api/types'
 import type { IconName } from '../components/icons'
 
-export type Tab = 'dashboards' | 'trends' | 'funnels' | 'retention' | 'paths' | 'lifecycle' | 'rfm' | 'alerts' | 'events' | 'persons' | 'cohorts' | 'catalog' | 'settings'
+export type Tab = 'dashboards' | 'trends' | 'funnels' | 'retention' | 'paths' | 'lifecycle' | 'rfm' | 'alerts' | 'flags' | 'events' | 'persons' | 'cohorts' | 'catalog' | 'settings'
 export interface TabInfo { id: Tab; label: string; icon: IconName; description: string; group: 'analyze' | 'data' | 'admin' }
 export const TABS: TabInfo[] = [
   { id: 'dashboards', label: 'Dashboards', icon: 'dashboards', description: 'Saved insights, side by side', group: 'analyze' },
@@ -16,6 +16,7 @@ export const TABS: TabInfo[] = [
   { id: 'events', label: 'Events', icon: 'events', description: 'Raw event stream', group: 'data' },
   { id: 'persons', label: 'Persons', icon: 'persons', description: 'Identified people and their history', group: 'data' },
   { id: 'cohorts', label: 'Cohorts', icon: 'users', description: 'Segments of people by what they did and who they are', group: 'data' },
+  { id: 'flags', label: 'Feature flags', icon: 'flag', description: 'Roll features out gradually and split visitors into variants', group: 'data' },
   { id: 'catalog', label: 'Catalog', icon: 'catalog', description: 'Products and the recommendations served to your site', group: 'data' },
   { id: 'settings', label: 'Settings', icon: 'settings', description: 'Project, members, API keys and account', group: 'admin' },
 ]

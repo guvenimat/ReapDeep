@@ -7,6 +7,7 @@ import { Alerts } from '../features/alerts/Alerts'
 import { Catalog } from '../features/catalog/Catalog'
 import { Cohorts } from '../features/cohorts/Cohorts'
 import { Events } from '../features/events/Events'
+import { Flags } from '../features/flags/Flags'
 import { Funnels } from '../features/funnels/Funnels'
 import { Lifecycle } from '../features/lifecycle/Lifecycle'
 import { Dashboards } from '../features/insights/Dashboards'
@@ -63,7 +64,7 @@ export function Workspace({ me, onLogout, onAccessChanged }: { me: Me; onLogout:
   const onQuery = (q: string) => setParams({ q })
   const onInsight = (id?: string) => setParams({ insight: id })
   const openPerson = (id?: string) => navigate('persons', id)
-  const showRange = route.tab !== 'persons' && route.tab !== 'settings' && route.tab !== 'cohorts' && route.tab !== 'catalog' && route.tab !== 'rfm' && route.tab !== 'alerts'
+  const showRange = route.tab !== 'persons' && route.tab !== 'settings' && route.tab !== 'cohorts' && route.tab !== 'catalog' && route.tab !== 'rfm' && route.tab !== 'alerts' && route.tab !== 'flags'
 
   return (
     <MetaContext.Provider value={meta.data}>
@@ -88,6 +89,7 @@ export function Workspace({ me, onLogout, onAccessChanged }: { me: Me; onLogout:
               {route.tab === 'lifecycle' && <Lifecycle params={route.params} range={range} onChange={onQuery} onInsight={onInsight} />}
               {route.tab === 'rfm' && <Rfm params={route.params} onChange={onQuery} onInsight={onInsight} onCohortCreated={() => setCohortsVersion((v) => v + 1)} />}
               {route.tab === 'alerts' && <Alerts canManage={canManage} />}
+              {route.tab === 'flags' && <Flags canManage={canManage} />}
               {route.tab === 'events' && <Events params={route.params} range={range} onChange={onQuery} openPerson={openPerson} />}
               {route.tab === 'persons' && <Persons id={route.id} openPerson={openPerson} canManage={canManage} />}
               {route.tab === 'cohorts' && <Cohorts id={route.id} navigate={(id) => navigate('cohorts', id)} openPerson={openPerson}

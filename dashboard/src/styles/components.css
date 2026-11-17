@@ -485,3 +485,10 @@ button.link.active { text-decoration: underline; }
 .project-facts .full { grid-column: 1 / -1; }
 .project-facts .ingestion-facts { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; color: var(--text-2); }
 .project-facts code { padding: 4px 8px; background: var(--page); border-radius: var(--radius-sm); word-break: break-all; }
+
+.flag-editor { display: flex; flex-direction: column; gap: 16px; max-width: 860px; }
+.flag-editor .flag-condition .suggest { min-width: 200px; }
+.flag-name { display: block; margin-top: 4px; }
+.flag-toggle { gap: 8px; }
+.flag-editor .segmented { align-self: flex-start; }
+.flag-targeting .cell-sub { white-space: nowrap; }
