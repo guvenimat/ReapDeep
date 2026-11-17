@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using ReapDeep.Analytics.Sql;
+using ReapDeep.Recommender.Flags;
 using ReapDeep.Recommender.Infrastructure;
 using ReapDeep.Recommender.Projects;
 
@@ -18,7 +19,7 @@ public static class RecommendEndpoint
     public static void MapRecommend(this WebApplication app)
     {
         app.MapGet("/recommend", Recommend);
-        app.MapGet("/healthz", (ProjectCache projects, RecommendationCache cache) => projects.IsLoaded && cache.IsLoaded
+        app.MapGet("/healthz", (ProjectCache projects, RecommendationCache cache, FlagCache flags) => projects.IsLoaded && cache.IsLoaded && flags.IsLoaded
             ? Results.Json(new HealthResponse("ok"), AppJsonContext.Default.HealthResponse)
             : Results.Json(new HealthResponse("loading"), AppJsonContext.Default.HealthResponse, statusCode: StatusCodes.Status503ServiceUnavailable));
     }

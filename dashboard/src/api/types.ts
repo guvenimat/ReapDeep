@@ -169,6 +169,18 @@ export interface AlertInput {
   channel: AlertChannel; webhook_url?: string; email_to?: string[]
 }
 
+export type FlagOp = 'eq' | 'neq' | 'contains' | 'not_contains' | 'in' | 'not_in' | 'gt' | 'gte' | 'lt' | 'lte' | 'is_set' | 'is_not_set'
+export type FlagScalar = string | number | boolean
+export interface FlagVariant { key: string; percentage: number }
+export interface FlagCondition { property: string; op: FlagOp; value?: FlagScalar | FlagScalar[] | null }
+export interface FeatureFlag {
+  id: number; key: string; name: string; description: string; enabled: boolean; rollout_percentage: number
+  variants: FlagVariant[]; conditions: FlagCondition[]; created_by: string | null; updated_by: string | null; created_at: string; updated_at: string
+}
+export interface FlagInput {
+  key?: string; name: string; description: string; enabled: boolean; rollout_percentage: number; variants: FlagVariant[]; conditions: FlagCondition[]
+}
+
 export type ProjectDetail = {
   id: number; name: string; organization_id: number; organization_name: string; timezone: string; public_key: string; created_at: string
   anonymize_ip: boolean; ingest_events_per_second: number | null

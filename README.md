@@ -13,12 +13,13 @@ retention, path and person questions over hundreds of millions of events.
 - **Analyses:** trends (totals, unique users, sum/average/median/p90 of a property, formulas such as `A / B`, comparison with the previous period, breakdowns), funnels with conversion windows, time to convert and the list of persons who dropped off at each step (savable as a cohort), weekly or daily retention cohorts, user paths, lifecycle (new, returning, resurrecting, dormant), RFM customer segments, a live event stream and person profiles; any of them can be saved and arranged on dashboards.
 - **Recommendations:** a product catalog plus popular, trending, viewed-together and bought-together suggestions, served to your site by a public endpoint from memory, measured offline with a hit-rate check and live with impression and click events.
 - **Alerts:** a saved trend notifies a webhook, a Slack channel or e-mail addresses when it goes above or below a threshold, or grows or drops by a percentage against the previous window; webhook payloads are signed with HMAC-SHA256 and failed deliveries are retried.
+- **Feature flags:** on/off flags and multivariate flags with a rollout percentage and person property targeting, evaluated from memory by the public Recommender; every read in the SDK sends a `$feature_flag_called` exposure event with the flag key and variant.
 - **Cohorts:** segments defined by behavior ("viewed a product 3+ times in 30 days but did not buy") or person properties, or uploaded as a list; every analysis can filter or break down by them.
 - **Fast ingestion:** 50K events/s on a single machine with p99 under 10 ms; a `202` response means the event is durably in Kafka.
 - **Fresh data:** events are queryable in 4-11 s (Kafka -> StarRocks Routine Load).
 - **Identity resolution:** anonymous visitors are merged into identified users; their earlier events count as the same person in trends and funnels.
 - **Multi-tenant by design:** shared tables keyed by `project_id`; every StarRocks query comes from a single SQL builder that always adds the project and time filters.
-- **Small footprint:** ~2.7 KB gzip SDK with no dependencies, 30-50 MB ingestion process, dashboard without chart or UI libraries.
+- **Small footprint:** ~2.9 KB gzip SDK with no dependencies, 30-50 MB ingestion process, dashboard without chart or UI libraries.
 - **Permissive licensing:** Apache 2.0 for this repo; code dependencies are under MIT, Apache 2.0, BSD-2-Clause (librdkafka, bundled with Confluent.Kafka) or the PostgreSQL License (Npgsql), and the self-hosted Inter font is under the SIL Open Font License 1.1.
 
 ## Architecture
@@ -46,7 +47,7 @@ flowchart LR
     DB["Dashboard<br/>React"] -->|"/api"| QA
     PW -->|"cohorts, recommendations"| SR
     RC["Recommender<br/>.NET, Native AOT"] -->|"catalog + lists, in memory"| PG
-    SDK -->|"GET /recommend"| RC
+    SDK -->|"GET /recommend, GET /flags"| RC
 ```
 
 | Component | Path | Stack |
@@ -54,7 +55,7 @@ flowchart LR
 | Ingestion API | `src/ReapDeep.Ingestion` | .NET 10 Minimal API, Native AOT, Confluent.Kafka |
 | Person worker | `src/ReapDeep.PersonWorker` | .NET 10 Worker, Native AOT, transactional outbox |
 | Query API | `src/ReapDeep.QueryApi` | .NET 10 Minimal API, Native AOT, MySqlConnector, Npgsql + Dapper.AOT |
-| Recommender | `src/ReapDeep.Recommender` | .NET 10 Minimal API, Native AOT, public `GET /recommend` |
+| Recommender | `src/ReapDeep.Recommender` | .NET 10 Minimal API, Native AOT, public `GET /recommend` and `GET /flags` |
 | JS SDK | `sdk/js` | TypeScript, esbuild (ESM + IIFE) |
 | Dashboard | `dashboard` | React 19, TypeScript, Vite, hand-written SVG charts |
 | Load test | `tests/ReapDeep.LoadTest` | .NET 10 console app |
@@ -195,6 +196,29 @@ A trend series counts events, counts unique persons, or aggregates a numeric eve
 An alert watches a saved trend over the last hour, day or week: *above* or *below* a value, or a *growth* or *drop* of at least N% against the window before. It follows the trend's first series, or its formula when there is one. The alert runner checks hourly-window alerts every 10 minutes, daily ones every hour and weekly ones every 6 hours (instances claim alerts with `FOR UPDATE SKIP LOCKED`), and "Check now" runs one on demand.
 
 An alert notifies one channel: a webhook, a Slack incoming webhook (a short text message) or up to 10 email addresses over SMTP (`Alerts__Smtp__Host`, `Port`, `From`, `Username`, `Password`, `EnableSsl`; the local stack sends to Mailpit). A notification goes out only when an alert starts or stops firing; a webhook gets a JSON body (`state`, `value`, `previous_value`, `message`, the insight) and an `X-ReapDeep-Signature: sha256=<HMAC-SHA256(secret, body)>` header; the secret is shown when the alert is created. Each event and the outcome of its delivery are kept in the alert's history. Deliveries are queued in PostgreSQL before they are sent: a network error, a timeout, `408`, `429` or `5xx` (for e-mail, a connection error or a temporary `4xx` SMTP reply) is retried after 1, 5 and 15 minutes, 1 hour and 3 hours (six attempts in all), while other answers fail at once. Every attempt carries `X-ReapDeep-Delivery` (the same id on each retry, so receivers can drop duplicates) and `X-ReapDeep-Attempt`, and the body and signature do not change between attempts. Webhook URLs that resolve to private, loopback or link-local addresses are refused, and the check is repeated on the connection itself so DNS rebinding cannot bypass it; the local compose file sets `Alerts__AllowPrivateWebhooks=true` so tests can use a receiver on the host. Only owners and admins manage alerts.
+
+### Feature flags
+
+A flag has a key (letters, digits, `-`, `_`), an on/off switch, a rollout percentage, optional person property conditions and either no variants (the value is `true` or `false`) or 2-10 variants whose percentages add up to 100. Owners and admins manage flags on the *Feature flags* tab or through `/api/v1/flags` (`GET`, `POST`, `PUT /{id}`, `DELETE /{id}`); members and read keys can list them. A flag's key cannot be changed and is unique per project.
+
+The Recommender serves `GET /flags?api_key=pk_...&identity=<id>&properties=<JSON object>` from memory: it reloads the enabled flags from PostgreSQL when they change (every 5 s by default, `Recommender__FlagRefreshSeconds`) and never queries a database per request. The answer lists every enabled flag of the project:
+
+```json
+{ "flags": { "new-checkout": "test", "free-shipping-banner": true, "pro-dashboard": false } }
+```
+
+- **Assignment:** a visitor is in the rollout when `SHA-256("{key}.{salt}.r.{identity}")` mod 10,000 is below the rollout x 100, and gets the variant whose cumulative range holds `SHA-256("{key}.{salt}.v.{identity}")` mod 10,000. Nothing is stored: the same identity always gets the same answer, raising the rollout keeps everyone who was already in, and each flag has its own random salt so assignments of different flags are independent.
+- **Identity:** the SDK sends the first anonymous id it stored in the browser. It does not change on `identify()` or `reset()`, so a visitor keeps the variant after signing in; a different browser or device is a different identity.
+- **Targeting:** all conditions must match the `properties` sent with the request (`eq`, `neq`, `in`, `not_in`, `contains`, `not_contains`, `gt`, `gte`, `lt`, `lte`, `is_set`, `is_not_set`; text comparisons ignore case, numbers compare as numbers). The site passes them, for example `rd.loadFlags({ plan: 'pro' })`; stored person properties are not looked up, so targeting is not a security boundary.
+- **Off flags:** a disabled flag is left out of the answer, so `getFlag()` returns `undefined`; a visitor outside the rollout or the conditions gets `false`.
+- **Exposure:** `getFlag()` and `isEnabled()` send `$feature_flag_called` with `$feature_flag` (key) and `$feature_flag_response` (variant, `true` or `false`) the first time each flag value is read on a page, so experiments can be analyzed from events.
+
+```js
+const rd = init('pk_...', { apiHost: 'https://ingest.example.com', recommendHost: 'https://reco.example.com' })
+await rd.loadFlags({ plan: 'pro' })
+if (rd.getFlag('new-checkout') === 'test') showNewCheckout()
+if (rd.isEnabled('free-shipping-banner')) showBanner()
+```
 
 ### Cohorts
 
@@ -400,6 +424,7 @@ cd deploy/local
 .\rfm-lifecycle-test.ps1  # RFM scores and segments with known answers, rfm_segment cohorts, lifecycle states and look-back
 .\alerts-test.ps1       # alerts: validation, firing and resolving, signed webhooks to a local receiver, change and formula conditions, errors
 .\recommender-test.ps1  # catalog, key scopes, models from real events, the public Recommender, stock changes, signed for_you requests
+.\flags-test.ps1       # feature flags: validation, access, variant and rollout shares over 6,000 identities, stable assignment, disabled flags, targeting, project isolation, exposure events
 .\query-test.ps1        # Query API: trends, funnels, retention, paths, events, persons, EXPLAIN, latency
 .\durability-test.ps1   # duplicate retries, Redis and Kafka outages without loss, dead letters, de-duplicated event list, ingestion quota, health check
 .\observability-test.ps1  # health checks, metrics, traces and logs in Grafana, the routine load watchdog, rows StarRocks filters out, person worker backlog
@@ -436,7 +461,7 @@ Schema changes are migrations. `ReapDeep.Migrations` runs once before the servic
 src/ReapDeep.Ingestion      Ingestion API
 src/ReapDeep.PersonWorker   identity resolution, cohort and recommendation calculation, deletion jobs
 src/ReapDeep.QueryApi       Query API: feature folders (Analytics, Catalog, Cohorts, Persons, Insights, Organization, ...)
-src/ReapDeep.Recommender    public recommendation endpoint, served from memory
+src/ReapDeep.Recommender    public recommendation and feature flag endpoints, served from memory
 src/ReapDeep.Analytics      shared library: every StarRocks analytics query is built here (SqlBuilder, CohortSql, RfmSql, LifecycleSql, RecommendationSql)
 src/ReapDeep.ServiceDefaults  telemetry and health helpers shared by the services
 src/ReapDeep.Migrations     PostgreSQL and StarRocks migrations, StarRocks users and grants
@@ -460,7 +485,7 @@ ReapDeep is an early v1. It runs end to end locally but has not been operated in
 - Retention and paths read raw events and join persons on every query; they are fast on the demo and test data but were not part of the 100M-event benchmark.
 - RFM scores are relative to the customers in the report: a filter re-ranks only the matching customers. Amounts are summed without currency conversion (the report warns when it sees several currencies).
 - Cohort membership is the current membership: a 90-day trend filtered by a cohort uses who is in the cohort now, not who was in it on each day. Behavioral windows are limited to 90 days.
-- Not in v1: session replay, mobile SDKs, autocapture, feature flags.
+- Not in v1: session replay, mobile SDKs, autocapture, experiment analysis (feature flags and exposure events are in place). Flags cannot target cohorts yet and are evaluated only in the browser SDK.
 - Behind a load balancer, set `ForwardedHeaders__TrustedNetworks` (CIDR list) on the ingestion and Query APIs; `X-Forwarded-For` is ignored otherwise. The Query API sends no CORS headers unless `QueryApi__CorsOrigins` is set.
 - The deletion job runs every 30 s in the local compose file so tests finish quickly; the default is once a day (`Deletion__IntervalSeconds`). Raw events also stay in Kafka for its 7-day retention.
 

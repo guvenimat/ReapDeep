@@ -161,6 +161,10 @@ Check "Lifecycle: table's latest period has new = 1, active = 1" ((Section $html
 
 $html = Dom "#/alerts" "document.querySelector('[data-testid=alerts-card]') && !document.querySelector('.skeleton')"
 Check "Alerts tab renders for the owner with a 'New alert' action" ($html -match 'data-testid="alerts-card"' -and $html -match 'data-testid="new-alert"')
+$html = Dom "#/flags" "document.querySelector('[data-testid=flags-card]') && !document.querySelector('.skeleton')"
+Check "Feature flags tab renders for the owner with a 'New flag' action" ($html -match 'data-testid="flags-card"' -and $html -match 'data-testid="new-flag"')
+$html = Dom "#/flags" "(function(){const b=document.querySelector('[data-testid=new-flag]');if(b&&!window.__f){window.__f=1;b.click();return false}const a=document.querySelector('[data-testid=flag-editor] .add-button');if(a&&window.__f===1){window.__f=2;a.click()}return false})() || document.querySelector('[data-testid=flag-editor] .suggest input')"
+Check "the flag editor opens with a person property field that suggests names" ((Section $html "flag-editor") -match 'role="combobox"' -and (Section $html "flag-editor") -match 'Create flag')
 
 Write-Host "`n4c) Catalog tab"
 $html = Dom "#/catalog" "[...document.querySelectorAll('[data-testid=recommendation-performance] tbody tr')].some((r) => r.textContent.includes('pdp-$tag'))"

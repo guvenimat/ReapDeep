@@ -40,6 +40,8 @@ export interface RecommendationContext {
   sourceItemId?: string
 }
 
+export type FlagValue = boolean | string
+
 export interface PurchasedItem extends Properties {
   item_id: string
   price?: number
@@ -48,6 +50,8 @@ export interface PurchasedItem extends Properties {
 
 interface State {
   distinctId: string
+  anonId: string
+  flags?: Record<string, FlagValue>
   identified: boolean
   sessionId: string
   sessionStart: number
@@ -70,12 +74,14 @@ export class ReapDeep {
   private retries = 0
   private timer: ReturnType<typeof setTimeout> | undefined
   private lastPageviewUrl: string | undefined
+  private flagCalls: Record<string, FlagValue> = {}
 
   constructor(private readonly apiKey: string, config: Config) {
     this.cfg = { recommendHost: '', autoPageview: true, flushInterval: 3000, batchSize: 50, sessionTimeoutMinutes: 30, debug: false, ...config }
     this.url = this.cfg.apiHost.replace(/\/+$/, '') + '/capture'
     this.storage = createStorage(`reapdeep_${apiKey}`)
     this.state = this.storage.get<State>() ?? this.newState()
+    this.state.anonId ??= this.state.distinctId
     this.storage.set(this.state)
 
     if (typeof window === 'undefined') return
@@ -127,14 +133,33 @@ export class ReapDeep {
   }
 
   async recommend(options: RecommendOptions = {}): Promise<RecommendedItem[]> {
-    if (!this.cfg.recommendHost) throw new Error('reapdeep: set recommendHost to use recommend()')
     const query = new URLSearchParams({ api_key: this.apiKey, model: options.model ?? 'popular' })
     if (options.itemId) query.set('item_id', options.itemId)
     if (options.category) query.set('category', options.category)
     if (options.limit) query.set('limit', String(options.limit))
-    const res = await fetch(`${this.cfg.recommendHost.replace(/\/+$/, '')}/recommend?${query}`)
-    if (!res.ok) throw new Error(`reapdeep: recommend failed with HTTP ${res.status}`)
-    return ((await res.json()) as { items: RecommendedItem[] }).items
+    return ((await this.get('recommend', query)) as { items: RecommendedItem[] }).items
+  }
+
+  async loadFlags(personProperties?: Properties): Promise<Record<string, FlagValue>> {
+    const query = new URLSearchParams({ api_key: this.apiKey, identity: this.state.anonId })
+    if (personProperties) query.set('properties', JSON.stringify(personProperties))
+    const { flags } = (await this.get('flags', query)) as { flags: Record<string, FlagValue> }
+    this.state.flags = flags
+    this.save()
+    return flags
+  }
+
+  getFlag(key: string): FlagValue | undefined {
+    const value = this.state.flags?.[key]
+    if (value !== undefined && this.flagCalls[key] !== value) {
+      this.flagCalls[key] = value
+      this.capture('$feature_flag_called', { $feature_flag: key, $feature_flag_response: value })
+    }
+    return value
+  }
+
+  isEnabled(key: string): boolean {
+    return !!this.getFlag(key)
   }
 
   identify(distinctId: string, personProperties?: Properties): void {
@@ -152,7 +177,7 @@ export class ReapDeep {
   }
 
   reset(): void {
-    this.state = this.newState()
+    this.state = { ...this.newState(), anonId: this.state.anonId }
     this.save()
   }
 
@@ -191,6 +216,13 @@ export class ReapDeep {
       if (this.queue.length >= this.cfg.batchSize) return this.flush()
     }
     this.schedule()
+  }
+
+  private async get(path: string, query: URLSearchParams): Promise<unknown> {
+    if (!this.cfg.recommendHost) throw new Error(`reapdeep: set recommendHost to use ${path}`)
+    const res = await fetch(`${this.cfg.recommendHost.replace(/\/+$/, '')}/${path}?${query}`)
+    if (!res.ok) throw new Error(`reapdeep: ${path} failed with HTTP ${res.status}`)
+    return res.json()
   }
 
   private enqueue(e: QueuedEvent): void {
@@ -262,7 +294,8 @@ export class ReapDeep {
 
   private newState(): State {
     const now = Date.now()
-    return { distinctId: uuidv7(), identified: false, sessionId: uuidv7(), sessionStart: now, lastActivity: now, superProps: {} }
+    const id = uuidv7()
+    return { distinctId: id, anonId: id, identified: false, sessionId: uuidv7(), sessionStart: now, lastActivity: now, superProps: {} }
   }
 
   private save(): void {

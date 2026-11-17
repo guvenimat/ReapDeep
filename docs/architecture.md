@@ -36,7 +36,7 @@ flowchart LR
     DB["Dashboard"] -->|"/api via nginx"| QA
     PW -. "cohorts, recommendation lists" .-> PG
     RC["Recommender"] -->|"reload on change"| PG
-    SDK -->|"GET /recommend"| RC
+    SDK -->|"GET /recommend, GET /flags"| RC
 ```
 
 | Component | Responsibility | Why it is separate |
@@ -47,7 +47,7 @@ flowchart LR
 | PostgreSQL | accounts, projects, keys, persons (source of truth), saved insights | transactional data and row-level locking |
 | Person worker (.NET, Native AOT) | identity resolution, outbox publishing, deletion job | keeps identity logic off the ingestion hot path |
 | Query API (.NET, Native AOT) | analytics, catalog and management endpoints; auth and tenancy | one place to enforce `project_id` filters |
-| Recommender (.NET, Native AOT) | public `GET /recommend` with the project's public key | different security model (public key, open CORS) and latency budget; never touches StarRocks |
+| Recommender (.NET, Native AOT) | public `GET /recommend` and `GET /flags` with the project's public key | different security model (public key, open CORS) and latency budget; never touches StarRocks |
 | Dashboard (React, nginx) | UI; same origin as the API | no CORS needed, cookie sessions work |
 
 All four .NET services are Minimal API or Worker projects, and compile to Native AOT (about 30-60 MB
@@ -324,6 +324,18 @@ Personalized recommendations (`for_you`) are the exception, and they are built a
 | A signature, not a secret API key | a server-only `recommend` key | the same request works from a browser when the store's backend renders the signature into the page |
 | The Recommender reads one PostgreSQL row per request | keep every history in memory | the history can be large; the lookup resolves `distinct_id` to the person and is a primary-key read (1.2 ms p50 end to end on the demo project) |
 | A deletion request deletes the person's history in the same transaction | wait for the next refresh | the history is personal data |
+
+### Feature flags
+
+| Decision | Alternative | Why |
+|---|---|---|
+| Evaluate in the Recommender, from an in-memory copy of the enabled flags | an endpoint in the Query API; Redis or PostgreSQL per request | it already serves the public key with open CORS from memory; flags are read on page load and need the same latency budget |
+| Reload all enabled flags when `count(*)` or `max(updated_at)` of `feature_flags` changes, checked every 5 s | per-project versions, or LISTEN/NOTIFY | the table is small (at most 200 flags per project); one cheap query covers inserts, updates and deletes |
+| Assignment by hashing key, salt and identity into 10,000 buckets; nothing stored | store each assignment | stateless and reproducible; raising the rollout keeps existing visitors in; an assignment table would grow with every visitor |
+| Separate hashes for the rollout and the variant | one bucket for both | changing the rollout does not move anyone between variants |
+| Identity is the SDK's first anonymous id | the current `distinct_id` | the variant does not change when a visitor signs in, which experiments need; cross-device consistency is given up |
+| Person properties come from the request | look up the person in PostgreSQL, or keep every person's properties in memory | no database read per request and no cache that grows with the number of persons; the identity is anonymous, so it often has no stored person yet; client-side flags are not a security boundary anyway |
+| Exposure as an ordinary event with `$feature_flag` and `$feature_flag_response` in `properties` | dedicated columns | no schema or Routine Load change; experiment queries can move them to columns later if JSON extraction turns out to be slow |
 
 ### RFM and lifecycle
 

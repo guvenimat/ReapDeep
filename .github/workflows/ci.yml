@@ -41,11 +41,11 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
-      - name: Size budget (3 KB gzip)
+      - name: Size budget (3.5 KB gzip)
         run: |
           size=$(gzip -9 -c dist/reapdeep.min.js | wc -c)
           echo "reapdeep.min.js: $size bytes gzip"
-          test "$size" -le 3072
+          test "$size" -le 3584
 
   dashboard:
     name: Dashboard lint, tests and build
