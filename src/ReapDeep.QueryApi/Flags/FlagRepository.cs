@@ -64,6 +64,7 @@ public sealed class FlagRepository(NpgsqlDataSource db)
             UPDATE feature_flags SET name = @Name, description = @Description, enabled = @Enabled, rollout_percentage = @RolloutPercentage,
                    variants = @Variants::jsonb, conditions = @Conditions::jsonb, updated_by = @UpdatedBy, updated_at = now()
             WHERE id = @Id AND project_id = @ProjectId
+              AND (variants = @Variants::jsonb OR NOT EXISTS (SELECT 1 FROM experiments x WHERE x.flag_id = feature_flags.id AND x.status = 'running'))
             """, new { v.Name, v.Description, v.Enabled, v.RolloutPercentage, v.Variants, v.Conditions, UpdatedBy = updatedBy, Id = id, ProjectId = projectId });
         return updated == 0 ? null : await GetAsync(conn, projectId, id);
     }
