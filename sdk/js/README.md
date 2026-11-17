@@ -65,6 +65,8 @@ await rd.loadFlags({ plan: 'pro' })
 if (rd.getFlag('new-checkout') === 'test') showNewCheckout()
 ```
 
+Person properties passed to `identify()` are remembered in `localStorage` and sent with every `loadFlags()` call; properties passed to `loadFlags()` win for the same key and are not remembered. `reset()` forgets them.
+
 Flags are assigned to the first anonymous id stored in the browser, which `identify()` and `reset()` keep, so a visitor sees the same variant before and after signing in. The first read of each flag value on a page sends `$feature_flag_called` with `$feature_flag` and `$feature_flag_response`; reading it again on the same page sends nothing.
 
 | Option | Default | |

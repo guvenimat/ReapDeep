@@ -52,6 +52,7 @@ interface State {
   distinctId: string
   anonId: string
   flags?: Record<string, FlagValue>
+  personProps?: Properties
   identified: boolean
   sessionId: string
   sessionStart: number
@@ -142,7 +143,8 @@ export class ReapDeep {
 
   async loadFlags(personProperties?: Properties): Promise<Record<string, FlagValue>> {
     const query = new URLSearchParams({ api_key: this.apiKey, identity: this.state.anonId })
-    if (personProperties) query.set('properties', JSON.stringify(personProperties))
+    const props = { ...this.state.personProps, ...personProperties }
+    if (Object.keys(props).length) query.set('properties', JSON.stringify(props))
     const { flags } = (await this.get('flags', query)) as { flags: Record<string, FlagValue> }
     this.state.flags = flags
     this.save()
@@ -164,6 +166,7 @@ export class ReapDeep {
 
   identify(distinctId: string, personProperties?: Properties): void {
     if (!distinctId) return
+    if (personProperties) this.state.personProps = { ...this.state.personProps, ...personProperties }
     const previous = this.state.distinctId
     if (distinctId === previous) {
       if (personProperties) this.capture('$set', { $set: personProperties })
