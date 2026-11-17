@@ -300,6 +300,36 @@ describe('feature flags', () => {
     expect(new URL(fetchMock.mock.calls.at(-1)![0]).searchParams.get('identity')).toBe(anon)
   })
 
+  it('sends person properties from identify with loadFlags, explicit properties winning', async () => {
+    const rd = client({ recommendHost: 'http://reco.local' })
+    const sentProps = () => new URL(fetchMock.mock.calls.at(-1)![0]).searchParams.get('properties')
+    rd.identify('user_1', { plan: 'free', country: 'TR' })
+    rd.identify('user_1', { plan: 'pro', seats: 3 })
+    fetchMock.mockResolvedValueOnce(flagsResponse({}))
+    await rd.loadFlags()
+    expect(JSON.parse(sentProps()!)).toEqual({ plan: 'pro', country: 'TR', seats: 3 })
+
+    fetchMock.mockResolvedValueOnce(flagsResponse({}))
+    await rd.loadFlags({ country: 'DE', beta: true })
+    expect(JSON.parse(sentProps()!)).toEqual({ plan: 'pro', country: 'DE', seats: 3, beta: true })
+
+    fetchMock.mockResolvedValueOnce(flagsResponse({}))
+    await client({ recommendHost: 'http://reco.local' }).loadFlags()
+    expect(JSON.parse(sentProps()!)).toEqual({ plan: 'pro', country: 'TR', seats: 3 })
+  })
+
+  it('forgets remembered person properties on reset but keeps the flag identity', async () => {
+    const rd = client({ recommendHost: 'http://reco.local' })
+    const anon = rd.getDistinctId()
+    rd.identify('user_1', { plan: 'pro' })
+    rd.reset()
+    fetchMock.mockResolvedValueOnce(flagsResponse({}))
+    await rd.loadFlags()
+    const params = new URL(fetchMock.mock.calls.at(-1)![0]).searchParams
+    expect(params.has('properties')).toBe(false)
+    expect(params.get('identity')).toBe(anon)
+  })
+
   it('uses the stored distinct id as flag identity for state saved by an older SDK', async () => {
     localStorage.setItem('reapdeep_pk_test', JSON.stringify({ distinctId: 'old-anon', identified: false, sessionId: 's', sessionStart: Date.now(), lastActivity: Date.now(), superProps: {} }))
     const rd = client({ recommendHost: 'http://reco.local' })
