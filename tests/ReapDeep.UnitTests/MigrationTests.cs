@@ -73,6 +73,15 @@ public class MigrationTests
         Assert.Equal(["0002"], MigrationCatalog.Pending(All, new HashSet<string> { "0001" }, MigrationCatalog.StarRocks).Select(m => m.Version));
 
     [Fact]
+    public void Queries_over_a_resource_group_limit_queue_for_less_than_the_query_api_waits()
+    {
+        Assert.Contains("SET GLOBAL enable_query_queue_select = true", StarRocksSettings.Statements);
+        Assert.Contains("SET GLOBAL enable_group_level_query_queue = true", StarRocksSettings.Statements);
+        Assert.Contains($"SET GLOBAL query_queue_pending_timeout_second = {StarRocksSettings.QueuePendingTimeoutSeconds}", StarRocksSettings.Statements);
+        Assert.InRange(StarRocksSettings.QueuePendingTimeoutSeconds, 1, ReapDeep.QueryApi.Infrastructure.StarRocksClient.CommandTimeoutSeconds / 2);
+    }
+
+    [Fact]
     public void Users_are_created_only_when_their_password_is_set_and_passwords_are_escaped()
     {
         var env = new Dictionary<string, string> { ["STARROCKS_QUERY_PASSWORD"] = "it's" };

@@ -67,7 +67,9 @@ if (!string.IsNullOrWhiteSpace(starRocks))
     }
     foreach (var statement in StarRocksUsers.Statements(Environment.GetEnvironmentVariable))
         await using (var cmd = new MySqlCommand(statement, sr)) await cmd.ExecuteNonQueryAsync();
-    Console.WriteLine("starrocks: users and grants are up to date");
+    foreach (var statement in StarRocksSettings.Statements)
+        await using (var cmd = new MySqlCommand(statement, sr)) await cmd.ExecuteNonQueryAsync();
+    Console.WriteLine("starrocks: users, grants and query queue settings are up to date");
 }
 
 await Exec(conn, "SELECT pg_advisory_unlock(7130)");
