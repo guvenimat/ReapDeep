@@ -1,6 +1,6 @@
 # @reapdeep/js
 
-ReapDeep web SDK. ~2.6 KB gzip, no dependencies.
+ReapDeep web SDK. ~2.9 KB gzip (budget 3.5 KB), no dependencies.
 
 ## Usage
 
@@ -56,10 +56,21 @@ They send `recommendation_shown` (`model`, `placement`, `source_item_id`, `item_
 
 Models: `popular`, `trending`, `co_viewed` and `bought_together` (the last two need `itemId`). Only items that are in the catalog and in stock are returned; each item has a `source`, which is `popular` when a short item-based list was filled with popular items. Personalized `for_you` lists are not available through `recommend()`: they need a request signed with the project's recommendation secret, so the store's server calls the Recommender directly (see [Personalized recommendations](../../README.md#personalized-recommendations)).
 
+### Feature flags
+
+`loadFlags(personProperties?)` asks the Recommender for the project's enabled flags (`recommendHost` is required) and keeps them in `localStorage`, so later page loads can read the last values before calling it again. `getFlag(key)` returns the variant, `true` or `false`, or `undefined` for an unknown or disabled flag; `isEnabled(key)` is `!!getFlag(key)`.
+
+```js
+await rd.loadFlags({ plan: 'pro' })
+if (rd.getFlag('new-checkout') === 'test') showNewCheckout()
+```
+
+Flags are assigned to the first anonymous id stored in the browser, which `identify()` and `reset()` keep, so a visitor sees the same variant before and after signing in. The first read of each flag value on a page sends `$feature_flag_called` with `$feature_flag` and `$feature_flag_response`; reading it again on the same page sends nothing.
+
 | Option | Default | |
 |---|---|---|
 | `apiHost` | | Ingestion API URL |
-| `recommendHost` | | Recommender URL, needed for `recommend()` |
+| `recommendHost` | | Recommender URL, needed for `recommend()` and `loadFlags()` |
 | `autoPageview` | `true` | `$pageview` on load and on SPA navigation (`pushState`, `popstate`) |
 | `flushInterval` | `3000` | Queue flush interval (ms) |
 | `batchSize` | `50` | Flush immediately when the queue reaches this size |

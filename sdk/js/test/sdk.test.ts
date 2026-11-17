@@ -5,7 +5,7 @@ import { beacon, MAX_BODY_BYTES, type QueuedEvent } from '../src/transport'
 type Body = { api_key: string; sent_at: string; batch: QueuedEvent[] }
 
 let fetchMock: ReturnType<typeof vi.fn>
-const sentBatches = (): Body[] => fetchMock.mock.calls.map((c) => JSON.parse(c[1].body))
+const sentBatches = (): Body[] => fetchMock.mock.calls.filter((c) => c[1]?.body).map((c) => JSON.parse(c[1].body))
 const sentEvents = () => sentBatches().flatMap((b) => b.batch)
 
 function respond(status: number) {
@@ -236,5 +236,82 @@ describe('commerce', () => {
     const rd = client({ recommendHost: 'http://reco.local' })
     fetchMock.mockResolvedValueOnce({ ok: false, status: 401, json: async () => ({}) })
     await expect(rd.recommend()).rejects.toThrow('HTTP 401')
+  })
+})
+
+describe('feature flags', () => {
+  const flagsResponse = (flags: Record<string, boolean | string>) => ({ ok: true, status: 200, json: async () => ({ flags }) })
+
+  it('loads flags for the first anonymous id, which does not change on identify', async () => {
+    const rd = client({ recommendHost: 'http://reco.local/' })
+    const anon = rd.getDistinctId()
+    rd.identify('user_1')
+    fetchMock.mockResolvedValueOnce(flagsResponse({ 'new-checkout': 'test', banner: true, beta: false }))
+
+    const flags = await rd.loadFlags({ plan: 'pro', seats: 3 })
+
+    const url = new URL(fetchMock.mock.calls[0][0])
+    expect(url.origin + url.pathname).toBe('http://reco.local/flags')
+    expect(Object.fromEntries(url.searchParams)).toEqual({ api_key: 'pk_test', identity: anon, properties: '{"plan":"pro","seats":3}' })
+    expect(flags).toEqual({ 'new-checkout': 'test', banner: true, beta: false })
+    expect(rd.getFlag('new-checkout')).toBe('test')
+    expect(rd.isEnabled('banner')).toBe(true)
+    expect(rd.isEnabled('beta')).toBe(false)
+    expect(rd.isEnabled('unknown')).toBe(false)
+    expect(rd.getFlag('unknown')).toBeUndefined()
+  })
+
+  it('sends $feature_flag_called once per flag and value per page load', async () => {
+    const rd = client({ recommendHost: 'http://reco.local' })
+    fetchMock.mockResolvedValueOnce(flagsResponse({ 'new-checkout': 'control', beta: false }))
+    await rd.loadFlags()
+    rd.getFlag('new-checkout')
+    rd.isEnabled('new-checkout')
+    rd.isEnabled('beta')
+    rd.isEnabled('missing')
+    fetchMock.mockResolvedValueOnce(flagsResponse({ 'new-checkout': 'test', beta: false }))
+    await rd.loadFlags()
+    rd.getFlag('new-checkout')
+    rd.getFlag('beta')
+    respond(202)
+    await vi.advanceTimersByTimeAsync(3000)
+
+    const calls = sentEvents().filter((e) => e.event === '$feature_flag_called').map((e) => e.properties)
+    expect(calls).toMatchObject([
+      { $feature_flag: 'new-checkout', $feature_flag_response: 'control' },
+      { $feature_flag: 'beta', $feature_flag_response: false },
+      { $feature_flag: 'new-checkout', $feature_flag_response: 'test' },
+    ])
+    expect(calls).toHaveLength(3)
+  })
+
+  it('keeps the last flags and the flag identity across reloads and reset', async () => {
+    const rd = client({ recommendHost: 'http://reco.local' })
+    const anon = rd.getDistinctId()
+    fetchMock.mockResolvedValueOnce(flagsResponse({ banner: true }))
+    await rd.loadFlags()
+    expect(client({ recommendHost: 'http://reco.local' }).getFlag('banner')).toBe(true)
+
+    rd.identify('user_1')
+    rd.reset()
+    expect(rd.getFlag('banner')).toBeUndefined()
+    fetchMock.mockResolvedValueOnce(flagsResponse({}))
+    await rd.loadFlags()
+    expect(new URL(fetchMock.mock.calls.at(-1)![0]).searchParams.get('identity')).toBe(anon)
+  })
+
+  it('uses the stored distinct id as flag identity for state saved by an older SDK', async () => {
+    localStorage.setItem('reapdeep_pk_test', JSON.stringify({ distinctId: 'old-anon', identified: false, sessionId: 's', sessionStart: Date.now(), lastActivity: Date.now(), superProps: {} }))
+    const rd = client({ recommendHost: 'http://reco.local' })
+    fetchMock.mockResolvedValueOnce(flagsResponse({}))
+    await rd.loadFlags()
+    expect(new URL(fetchMock.mock.calls[0][0]).searchParams.get('identity')).toBe('old-anon')
+  })
+
+  it('loadFlags fails clearly without recommendHost or on an error response', async () => {
+    await expect(client().loadFlags()).rejects.toThrow('recommendHost')
+    const rd = client({ recommendHost: 'http://reco.local' })
+    fetchMock.mockResolvedValueOnce({ ok: false, status: 401, json: async () => ({}) })
+    await expect(rd.loadFlags()).rejects.toThrow('HTTP 401')
   })
 })
