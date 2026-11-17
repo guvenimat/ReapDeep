@@ -475,8 +475,7 @@ unit tests on every push.
 ## 11. Known limits and what production would need
 
 - Multi-node StarRocks and Kafka replication, then a repeat of the benchmark.
-- Versioned schema migrations; today the local stack is recreated when the schema changes.
 - Observability: metrics for ingestion latency, Kafka lag, Routine Load errors and the deletion job.
-- Caches are per Query API instance; with several instances, revocations take up to 30-60 s to apply
-  everywhere.
+- Sessions and API keys are cached in Redis and every access change deletes the cached entries, so
+  revocations apply on all Query API instances at once; without Redis every request reads PostgreSQL.
 - No invitation or password reset emails.
