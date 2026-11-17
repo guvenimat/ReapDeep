@@ -27,7 +27,7 @@ public static class FlagsEndpoint
         if (string.IsNullOrWhiteSpace(identity) || identity.Length > MaxIdentityLength)
             return Error(StatusCodes.Status400BadRequest, $"identity is required (at most {MaxIdentityLength} characters)");
         if (ParseProperties(properties) is not { } props)
-            return Error(StatusCodes.Status400BadRequest, $"properties must be a JSON object of at most {MaxProperties} strings, numbers or booleans ({MaxPropertiesLength} characters)");
+            return Error(StatusCodes.Status400BadRequest, $"properties must be a JSON object of at most {MaxPropertiesLength} characters with at most {MaxProperties} string, number or boolean values; other values are ignored");
 
         ctx.Response.Headers.CacheControl = "private, no-store";
         return Results.Json(new FlagsResponse(Evaluate(flags.Get(projectId), identity, props)), AppJsonContext.Default.FlagsResponse);
@@ -55,9 +55,8 @@ public static class FlagsEndpoint
             if (doc.RootElement.ValueKind != JsonValueKind.Object) return null;
             foreach (var p in doc.RootElement.EnumerateObject())
             {
-                if (p.Value.ValueKind == JsonValueKind.Null) continue;
-                if (p.Value.ValueKind is not (JsonValueKind.String or JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False)) return null;
-                result[p.Name] = FlagRules.Text(p.Value);
+                if (p.Value.ValueKind is JsonValueKind.String or JsonValueKind.Number or JsonValueKind.True or JsonValueKind.False)
+                    result[p.Name] = FlagRules.Text(p.Value);
             }
             return result.Count <= MaxProperties ? result : null;
         }

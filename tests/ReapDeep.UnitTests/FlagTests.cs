@@ -195,9 +195,14 @@ public class FlagTargetingTests
     [Theory]
     [InlineData("not json")]
     [InlineData("[1,2]")]
-    [InlineData("""{"nested":{"a":1}}""")]
-    [InlineData("""{"list":[1]}""")]
     public void Invalid_request_properties_are_rejected(string json) => Assert.Null(FlagsEndpoint.ParseProperties(json));
+
+    [Fact]
+    public void Nested_request_properties_are_ignored_so_identify_traits_never_break_flags()
+    {
+        var p = FlagsEndpoint.ParseProperties("""{"plan":"pro","address":{"city":"x"},"tags":[1]}""")!;
+        Assert.Equal(["plan"], p.Keys);
+    }
 
     [Fact]
     public void Too_many_request_properties_are_rejected()
