@@ -9,6 +9,7 @@ using ReapDeep.QueryApi.Auth;
 using ReapDeep.QueryApi.Catalog;
 using ReapDeep.QueryApi.Cohorts;
 using ReapDeep.QueryApi.Deletion;
+using ReapDeep.QueryApi.Flags;
 using ReapDeep.QueryApi.Insights;
 using ReapDeep.QueryApi.Metadata;
 using ReapDeep.QueryApi.Organization;
@@ -94,6 +95,7 @@ public static class HostingExtensions
         services.AddSingleton<WebhookSender>();
         services.AddSingleton<EmailSender>();
         services.AddSingleton<AlertService>();
+        services.AddSingleton<FlagRepository>();
         if (cfg.GetValue("Alerts:RunJob", true)) services.AddHostedService<AlertJob>();
         return builder;
     }

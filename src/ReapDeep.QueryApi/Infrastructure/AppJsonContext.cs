@@ -5,6 +5,7 @@ using ReapDeep.QueryApi.Auth;
 using ReapDeep.QueryApi.Catalog;
 using ReapDeep.QueryApi.Cohorts;
 using ReapDeep.QueryApi.Deletion;
+using ReapDeep.QueryApi.Flags;
 using ReapDeep.QueryApi.Health;
 using ReapDeep.QueryApi.Insights;
 using ReapDeep.QueryApi.Metadata;
@@ -86,4 +87,7 @@ namespace ReapDeep.QueryApi.Infrastructure;
 [JsonSerializable(typeof(SlackMessage))]
 [JsonSerializable(typeof(EmailMessage))]
 [JsonSerializable(typeof(CohortUsageResponse))]
+[JsonSerializable(typeof(FlagBody))]
+[JsonSerializable(typeof(FeatureFlag))]
+[JsonSerializable(typeof(FeatureFlagsResponse))]
 internal partial class AppJsonContext : JsonSerializerContext;
