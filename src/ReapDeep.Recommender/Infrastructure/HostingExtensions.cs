@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Npgsql;
+using ReapDeep.Recommender.Flags;
 using ReapDeep.Recommender.Projects;
 using ReapDeep.Recommender.Recommendations;
 using ReapDeep.ServiceDefaults;
@@ -27,6 +28,8 @@ public static class HostingExtensions
         services.AddSingleton<PersonHistoryStore>();
         services.AddSingleton<RecommendationCache>();
         services.AddHostedService(sp => sp.GetRequiredService<RecommendationCache>());
+        services.AddSingleton<FlagCache>();
+        services.AddHostedService(sp => sp.GetRequiredService<FlagCache>());
         return builder;
     }
 
@@ -34,6 +37,7 @@ public static class HostingExtensions
     {
         app.UseCors();
         app.MapRecommend();
+        app.MapFlags();
         return app;
     }
 }
