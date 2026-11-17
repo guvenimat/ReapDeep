@@ -77,6 +77,7 @@ services:
     image: starrocks/allin1-ubuntu:4.0.8
     container_name: reapdeep-starrocks
     mem_limit: 3500m
+    stop_grace_period: 60s
     command: ["sh", "-c", "cp /config/fe.conf starrocks/fe/conf/fe.conf && cp /config/be.conf starrocks/be/conf/be.conf && exec ./entrypoint.sh"]
     ports:
       - "127.0.0.1:9030:9030"
@@ -323,6 +324,7 @@ services:
     image: grafana/otel-lgtm:0.37.0
     container_name: reapdeep-lgtm
     mem_limit: 1536m
+    stop_grace_period: 30s
     profiles: ["app"]
     ports:
       - "127.0.0.1:3005:3000"
