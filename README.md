@@ -152,7 +152,7 @@ cd deploy/local
 .\demo-data.ps1     # ~50K events from 3,000 visitors over 8 weeks plus a year of purchase history, sent through the ingestion API
 ```
 
-The seed creates a **Demo Shop** project with a deterministic store scenario: traffic sources, desktop and mobile browsers, product pages, a cart and checkout funnel, sign-ups that merge anonymous history, and returning visitors over the following weeks. Repeat buyers and a group of past customers who bought up to 11 months ago give the RFM segments a realistic spread. It also creates a "Demo Shop overview" dashboard and sample cohorts (Champions, Customers at risk, Window shoppers, Pro plan). `-Reset` regenerates the project from scratch. Pick the project in the top bar and choose "Last 30 days".
+The seed creates a **Demo Shop** project with a deterministic store scenario: traffic sources, desktop and mobile browsers, product pages, a cart and checkout funnel, sign-ups that merge anonymous history, and returning visitors over the following weeks. Repeat buyers and a group of past customers who bought up to 11 months ago give the RFM segments a realistic spread. It also creates a "Demo Shop overview" dashboard and sample cohorts (Champions, Customers at risk, Window shoppers, Pro plan), plus three alerts created through the Query API (a webhook and a Slack alert that post to `example.com`, and an email alert to `example.com` addresses that the local stack delivers to Mailpit); alerts that already exist by name are left alone. `-Reset` regenerates the project from scratch. Pick the project in the top bar and choose "Last 30 days".
 
 ![Demo Shop dashboard](docs/images/dashboard.png)
 
