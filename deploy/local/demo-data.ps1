@@ -44,4 +44,15 @@ foreach ($a in $demoAlerts) {
 }
 Write-Host "Demo alerts: $created created, $($demoAlerts.Count - $created) already present or skipped."
 
+$noteDay = [DateTime]::UtcNow.AddDays(-10).ToString("yyyy-MM-dd")
+$noteFrom = [DateTime]::UtcNow.AddDays(-60).ToString("yyyy-MM-dd")
+if (-not @((Invoke-DemoApi Get "/annotations?from=$noteFrom").annotations | Where-Object { $_.content -eq "Newsletter sent" })) {
+    Invoke-DemoApi Post "/annotations" @{ day = $noteDay; content = "Newsletter sent" } | Out-Null
+    Write-Host "Demo chart note added on $noteDay."
+}
+if (-not @((Invoke-DemoApi Get "/actions").actions | Where-Object { $_.name -eq "Shopping" })) {
+    Invoke-DemoApi Post "/actions" @{ name = "Shopping"; description = "Viewed a product, added to cart or bought"; events = @("product_viewed", "add_to_cart", "purchase") } | Out-Null
+    Write-Host "Demo action 'Shopping' added."
+}
+
 Write-Host "`nOpen http://localhost:3000, pick the 'Demo Shop' project and 'Last 30 days', then Dashboards." -ForegroundColor Green
