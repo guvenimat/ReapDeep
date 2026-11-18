@@ -517,7 +517,7 @@ cd deploy/local
 .\ai-test.ps1           # platform and customer AI switches and features, platform admin access, explanations, the rule-based experiment decision, questions to trends and funnels, the weekly note, caching (fake model only)
 .\server-test.ps1       # server keys, /batch with historical timestamps and duplicates, flag definitions, the .NET SDK sample run inside the compose network, revocation
 .\account-test.ps1      # invitation and password reset emails through Mailpit: single use, expiry, no account enumeration, rate limits
-.\insights-test.ps1     # saved insights and dashboards, API and browser
+.\insights-test.ps1     # saved insights and dashboards, chart notes, actions, funnel correlation, API and browser
 .\cohort-test.ps1       # cohorts: rules, identity merge, static lists, filters and breakdowns, recalculation, deletion
 .\rfm-lifecycle-test.ps1  # RFM scores and segments with known answers, rfm_segment cohorts, lifecycle states and look-back
 .\alerts-test.ps1       # alerts: validation, firing and resolving, signed webhooks to a local receiver, manual retry, test notifications, change and formula conditions, errors
