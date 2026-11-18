@@ -99,6 +99,7 @@ Capture '[{"event":"$identify","distinct_id":"__U__","properties":{"$anon_distin
 Start-Sleep -Milliseconds 300
 Capture '[{"event":"page___TAG__","distinct_id":"__U__"},{"event":"step2___TAG__","distinct_id":"__U__"},{"event":"step3___TAG__","distinct_id":"__U__","properties":{"amount":499}}]'
 Capture '[{"event":"step1___TAG__","distinct_id":"__B__"}]'
+Capture '[{"event":"$pageview","distinct_id":"web___TAG__","properties":{"$pathname":"/dt-__TAG__","$session_id":"s___TAG__","$device_type":"Desktop","$browser":"Chrome","$os":"Windows"}}]'
 Capture '[{"event":"recommendation_shown","distinct_id":"__B__","properties":{"model":"co_viewed","placement":"pdp-__TAG__","item_ids":["a","b"]}},{"event":"recommendation_shown","distinct_id":"__B__","properties":{"model":"co_viewed","placement":"pdp-__TAG__","item_ids":["a","c"]}},{"event":"recommendation_clicked","distinct_id":"__B__","properties":{"model":"co_viewed","placement":"pdp-__TAG__","item_id":"a","position":1}}]'
 
 Write-Host "  Waiting for StarRocks ingestion and identity sync..."
@@ -158,6 +159,13 @@ $html = Dom "#/lifecycle?range=7d&q=$q" "document.querySelector('[data-testid=li
 Check "Lifecycle: one new person today" ((Section $html "lifecycle-new") -match '>1</div>')
 Check "Lifecycle: one stacked bar for the new person" (([regex]::Matches((Section $html "lifecycle-chart"), '<path fill="var\(--series-1\)"')).Count -eq 1)
 Check "Lifecycle: table's latest period has new = 1, active = 1" ((Section $html "lifecycle-table") -match '<tbody><tr><td class="nowrap">[^<]+</td><td class="num">1</td><td class="num">0</td><td class="num">0</td><td class="num neg">0</td><td class="num strong">1</td>')
+
+Write-Host "`n4b2) Web analytics tab"
+$q = Q '{"filters":[{"property":"$pathname","op":"eq","value":"/dt-__TAG__"}],"pages":"top","sources":"referring_domain","devices":"device_type"}'
+$html = Dom "#/web?range=24h&q=$q" "document.querySelector('[data-testid=web-pages] tbody tr') && document.querySelector('[data-testid=web-chart] svg')"
+Check "Web analytics: one visitor, one pageview, one session, all bounced" ((Section $html "web-visitors") -match '>1</div>' -and (Section $html "web-pageviews") -match '>1</div>' -and (Section $html "web-sessions") -match '>1</div>' -and (Section $html "web-bounce-rate") -match '>100%</div>')
+Check "Web analytics: visitors and pageviews chart with two lines" (([regex]::Matches((Section $html "web-chart"), 'class="line"')).Count -eq 2)
+Check "Web analytics: the page, the direct source and the desktop device are listed" ((Section $html "web-pages") -match "data-value=""/dt-$tag""" -and (Section $html "web-sources") -match '>Direct<' -and (Section $html "web-devices") -match 'data-value="Desktop"')
 
 $html = Dom "#/alerts" "document.querySelector('[data-testid=alerts-card]') && !document.querySelector('.skeleton')"
 Check "Alerts tab renders for the owner with a 'New alert' action" ($html -match 'data-testid="alerts-card"' -and $html -match 'data-testid="new-alert"')

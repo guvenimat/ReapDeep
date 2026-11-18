@@ -64,3 +64,13 @@ public sealed record LifecycleRequest(
     string? Event, string? Period, int? LookbackDays, string? DateFrom, string? DateTo, List<Filter>? Filters, bool Explain);
 public sealed record LifecyclePeriod(string Start, long New, long Returning, long Resurrecting, long Dormant);
 public sealed record LifecycleResponse(string? Event, string Period, int LookbackDays, string Timezone, List<LifecyclePeriod> Periods, double TookMs);
+
+public sealed record WebAnalyticsRequest(string? DateFrom, string? DateTo, string? Interval, List<Filter>? Filters, int? Limit, bool Explain);
+public sealed record WebSummary(long Visitors, long Pageviews, long Sessions, long Bounces, double? BounceRate, double? AvgSessionSeconds);
+public sealed record WebPoint(string Bucket, long Visitors, long Pageviews);
+public sealed record WebPage(string? Pathname, long Pageviews, long Visitors);
+public sealed record WebBreakdownRow(string? Value, long Sessions, long Visitors, double BounceRate, double AvgSessionSeconds);
+public sealed record WebBreakdown(string Dimension, List<WebBreakdownRow> Rows);
+public sealed record WebAnalyticsResponse(
+    string Interval, string Timezone, string DateFrom, string DateTo, string PreviousFrom, WebSummary Current, WebSummary Previous,
+    List<WebPoint> Series, List<WebPage> Pages, List<WebBreakdown> Breakdowns, double TookMs);

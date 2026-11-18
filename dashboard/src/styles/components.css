@@ -504,3 +504,11 @@ button.link.active { text-decoration: underline; }
 .lift-point { position: absolute; top: 2px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: var(--muted); border: 2px solid var(--surface, #fff); }
 .lift-range.good, .lift-point.good { background: var(--good); }
 .lift-range.bad, .lift-point.bad { background: var(--critical); }
+
+.web-filters { padding: 14px 18px; }
+.web-stats { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+@media (max-width: 1280px) { .web-stats { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); } }
+.web-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(480px, 100%), 1fr)); gap: 16px; align-items: start; }
+.web-grid .card-head { flex-wrap: wrap; gap: 8px; }
+.web-table td.web-label { width: 100%; max-width: 0; }
+.web-table td.web-label .truncate { display: block; max-width: 100%; margin-bottom: 5px; }

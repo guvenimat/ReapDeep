@@ -11,6 +11,7 @@ retention, path and person questions over hundreds of millions of events.
 ![A tour of the dashboard: overview, trend formula, funnel, lifecycle, RFM, cohort and alerts](docs/images/tour.gif)
 
 - **Analyses:** trends (totals, unique users, sum/average/median/p90 of a property, formulas such as `A / B`, comparison with the previous period, breakdowns), funnels with conversion windows, time to convert and the list of persons who dropped off at each step (savable as a cohort), weekly or daily retention cohorts, user paths, lifecycle (new, returning, resurrecting, dormant), RFM customer segments, a live event stream and person profiles; any of them can be saved and arranged on dashboards.
+- **Web analytics:** a ready-made traffic page with visitors, pageviews, sessions, bounce rate and session duration against the previous period, visitors and pageviews over time, top and entry pages, referrers and UTM source, medium and campaign, and device type, browser and OS.
 - **Recommendations:** a product catalog plus popular, trending, viewed-together and bought-together suggestions, served to your site by a public endpoint from memory, measured offline with a hit-rate check and live with impression and click events.
 - **Alerts:** a saved trend notifies a webhook, a Slack channel or e-mail addresses when it goes above or below a threshold, or grows or drops by a percentage against the previous window; webhook payloads are signed with HMAC-SHA256 and failed deliveries are retried.
 - **Feature flags:** on/off flags and multivariate flags with a rollout percentage and person property targeting, evaluated from memory by the public Recommender; every read in the SDK sends a `$feature_flag_called` exposure event with the flag key and variant.
@@ -145,7 +146,7 @@ curl http://localhost:8001/api/v1/query/trends \
   -d '{ "series": [{ "event": "$pageview", "metric": "unique_users" }], "interval": "day" }'
 ```
 
-Other endpoints: `POST /api/v1/query/funnels`, `POST /api/v1/query/funnels/persons`, `/api/v1/cohorts` (CRUD, `preview`, `persons`, `recalculate`), `POST /api/v1/query/retention`, `POST /api/v1/query/paths`, `POST /api/v1/query/lifecycle`, `POST /api/v1/query/rfm`, `POST /api/v1/query/rfm/migration`, `GET /api/v1/persons/{id}/rfm`, `GET /api/v1/persons/{id}/cohorts`, `/api/v1/alerts` (CRUD, `check`, `events`), `GET /api/v1/events`, `GET /api/v1/persons[/{id}]`, `GET /api/v1/metadata`, `GET /healthz`.
+Other endpoints: `POST /api/v1/query/web`, `POST /api/v1/query/funnels`, `POST /api/v1/query/funnels/persons`, `/api/v1/cohorts` (CRUD, `preview`, `persons`, `recalculate`), `POST /api/v1/query/retention`, `POST /api/v1/query/paths`, `POST /api/v1/query/lifecycle`, `POST /api/v1/query/rfm`, `POST /api/v1/query/rfm/migration`, `GET /api/v1/persons/{id}/rfm`, `GET /api/v1/persons/{id}/cohorts`, `/api/v1/alerts` (CRUD, `check`, `events`), `GET /api/v1/events`, `GET /api/v1/persons[/{id}]`, `GET /api/v1/metadata`, `GET /healthz`.
 
 ### Demo data
 
@@ -167,6 +168,17 @@ The seed creates a **Demo Shop** project with a deterministic store scenario: tr
 | ![Paths](docs/images/paths.png) | ![Person](docs/images/person.png) |
 
 The dashboard opens in a dark theme; the light theme is one click away in the sidebar and uses its own validated color steps: [screenshot](docs/images/dashboard-light.png).
+
+### Web analytics
+
+![Web analytics on the Demo Shop, last 30 days](docs/images/web-analytics.png)
+
+The Web analytics page (`POST /api/v1/query/web`) is built from `$pageview` events and the columns ingestion already fills: `session_id`, `pathname`, `referring_domain`, `utm_source`/`utm_medium`/`utm_campaign`, `device_type`, `browser` and `os`. It takes the date range, the project's time zone and the usual property and cohort filters, and runs four queries per load through the result cache and the per-request limit of 4 parallel StarRocks queries.
+
+- **Visitors** are unique persons (anonymous and identified ids merged) with a pageview; **pageviews** count `$pageview` events.
+- A **session** is the SDK's `$session_id` (30 minutes of inactivity, 24 hours at most) with at least one pageview. A **bounce** is a session with exactly one pageview, and the **session duration** runs from the session's first to its last event of any kind. Every tile is compared with the previous period of the same length; a session belongs to the period in which it started.
+- Entry page, referrer, UTM values and device are taken from each session's first pageview, so later internal pages do not count as sources. A missing referrer counts as direct. Each table shows the top 10 values (`limit` up to 100) with sessions, visitors, bounce rate and average duration.
+- On the Demo Shop (about 64K events in total) a load takes 70 ms for 7 days, 90 ms for 30 days and 230-410 ms for 180-365 days without the cache; the slowest of the four queries is the session breakdown.
 
 ### Retention and paths
 
@@ -443,6 +455,7 @@ cd deploy/local
 .\recommender-test.ps1  # catalog, key scopes, models from real events, the public Recommender, stock changes, signed for_you requests
 .\flags-test.ps1       # feature flags: validation, access, variant and rollout shares over 6,000 identities, stable assignment, disabled flags, targeting, project isolation, exposure events
 .\experiments-test.ps1  # experiments: known-answer conversion, funnel, window and revenue results (z, t, p, CI), excluded persons, conversions before exposure, SRM warning, variant lock, access, project isolation
+.\web-test.ps1          # web analytics: known-answer sessions, bounces, durations, entry pages, referrers, UTM values and devices, time zone buckets, previous period, filters, cache, access, project isolation
 .\query-test.ps1        # Query API: trends, funnels, retention, paths, events, persons, EXPLAIN, latency
 .\durability-test.ps1   # duplicate retries, Redis and Kafka outages without loss, dead letters, de-duplicated event list, ingestion quota, health check
 .\observability-test.ps1  # health checks, metrics, traces and logs in Grafana, the routine load watchdog, rows StarRocks filters out, person worker backlog
@@ -480,7 +493,7 @@ src/ReapDeep.Ingestion      Ingestion API
 src/ReapDeep.PersonWorker   identity resolution, cohort and recommendation calculation, deletion jobs
 src/ReapDeep.QueryApi       Query API: feature folders (Analytics, Catalog, Cohorts, Persons, Insights, Organization, ...)
 src/ReapDeep.Recommender    public recommendation and feature flag endpoints, served from memory
-src/ReapDeep.Analytics      shared library: every StarRocks analytics query is built here (SqlBuilder, CohortSql, RfmSql, LifecycleSql, RecommendationSql)
+src/ReapDeep.Analytics      shared library: every StarRocks analytics query is built here (SqlBuilder, CohortSql, RfmSql, LifecycleSql, WebSql, RecommendationSql)
 src/ReapDeep.ServiceDefaults  telemetry and health helpers shared by the services
 src/ReapDeep.Migrations     PostgreSQL and StarRocks migrations, StarRocks users and grants
 sdk/js                      browser SDK
@@ -503,6 +516,7 @@ ReapDeep is an early v1. It runs end to end locally but has not been operated in
 - Retention and paths read raw events and join persons on every query; they are fast on the demo and test data but were not part of the 100M-event benchmark.
 - RFM scores are relative to the customers in the report: a filter re-ranks only the matching customers. Amounts are summed without currency conversion (the report warns when it sees several currencies).
 - Cohort membership is the current membership: a 90-day trend filtered by a cohort uses who is in the cohort now, not who was in it on each day. Behavioral windows are limited to 90 days.
+- Web analytics has no country breakdown (it would need a GeoIP database and a new column). A session that started before the selected range is counted from its first event inside it in the tables, while the tiles count it in the period in which it started; sessions are split only by the SDK's session id, not by a change of source.
 - Not in v1: session replay, mobile SDKs, autocapture. Flags cannot target cohorts yet and are evaluated only in the browser SDK.
 - Experiments use fixed-horizon frequentist tests: looking at the results repeatedly while an experiment runs inflates false positives, and several variants are each compared with the control without a multiple-comparison correction. There are no secondary metrics, sample size planner or metric filters yet.
 - Behind a load balancer, set `ForwardedHeaders__TrustedNetworks` (CIDR list) on the ingestion and Query APIs; `X-Forwarded-For` is ignored otherwise. The Query API sends no CORS headers unless `QueryApi__CorsOrigins` is set.

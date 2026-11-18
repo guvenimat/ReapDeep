@@ -347,6 +347,16 @@ Personalized recommendations (`for_you`) are the exception, and they are built a
 | Distribution functions written in C# (Lanczos log-gamma, incomplete gamma and beta by continued fractions) | a statistics package | no dependency for four functions; unit tests compare them with scipy to 1e-9 relative |
 | Variants and percentages are locked while an experiment runs; rollout, targeting and on/off are not | lock the whole flag | rollout and variant use separate hashes, so changing who is in the rollout never moves anyone between variants; turning a broken feature off must stay possible |
 
+### Web analytics
+
+| Decision | Alternative | Why |
+|---|---|---|
+| Sessions are grouped at query time from the SDK's `session_id` column; a session needs one pageview | a sessions table maintained by a job | no new table, job or Routine Load; the column is already in `events` with a bloom filter, and the demo loads in 70-90 ms for 7-30 days. A sessions table becomes worth it if long ranges on large projects get slow |
+| Entry page, source and device come from the session's first pageview (`min_by(x, IF(pv = 1, ts, NULL))`) | the first event, or every event | internal pages carry the site itself as referrer and SDK events can precede the first pageview; StarRocks' `min_by` skips rows whose key is NULL, so the condition picks the first pageview in the same pass |
+| Four queries per load (overview of both periods, time series, top pages, session breakdowns as one `UNION ALL` over a shared session CTE) | one query per table and tab (11) | stays under the per-request limit of 4 parallel queries, so one page load never waits for its own queries in the StarRocks queue |
+| The previous period is read in the same scan as the current one and split by the session's start | a second set of queries | one query instead of two; a session counts in the period in which it started |
+| No country breakdown | GeoIP lookup at ingestion | needs a GeoIP database (licensing, updates) and a new column with a Routine Load and contract change; left for a separate decision |
+
 ### RFM and lifecycle
 
 RFM scores every person who bought in a 90, 180 or 365-day window on recency (time since the last
@@ -486,12 +496,13 @@ The system is verified end to end against the real stack rather than with mocks:
 | `alerts-test.ps1` | alert validation, firing and resolving against known values, signed webhooks received by a local listener, change and formula conditions, error states, cascade on insight deletion |
 | `rfm-lifecycle-test.ps1` | one customer per RFM segment with known scores (ties, merged identities, orders without `order_id`, invalid amounts), `rfm_segment` cohorts, every lifecycle state per day and the look-back |
 | `auth-test.ps1`, `settings-test.ps1` | sessions, roles, API keys, CORS, forwarded headers, StarRocks grants |
+| `web-test.ps1` | visitors, pageviews, sessions, bounces and durations against hand-built sessions (including a merged identity, a session without a pageview, a pageview without a session and an earlier custom event), local-time buckets, the previous period, entry pages, referrers, UTM values, devices, filters, cache, access and project isolation |
 | `experiments-test.ps1` | conversion, funnel, window and revenue results against hand-built data with z, t, p and intervals from scipy, excluded persons, conversions before exposure, SRM on skewed data, the variant lock, access and project isolation |
 | `dashboard-test.ps1`, `insights-test.ps1` | headless Chrome over the DevTools Protocol, every tab and dashboards |
 | `load-test.ps1` | throughput, latency, loss and freshness; the 100M-event query benchmark |
 
 Unit tests cover the pure logic: the SQL builder's mandatory filters and parameterization, the cohort rule
-compiler and its validation, the experiment statistics against scipy reference values, the RFM segment map and the RFM and lifecycle SQL, time range
+compiler and its validation, the experiment statistics against scipy reference values, the RFM segment map and the RFM, lifecycle and web analytics SQL, time range
 parsing and bucketing, password hashing and user agent parsing. CI builds everything and runs the SDK and
 unit tests on every push.
 
