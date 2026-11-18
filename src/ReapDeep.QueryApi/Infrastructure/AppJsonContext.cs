@@ -50,6 +50,7 @@ namespace ReapDeep.QueryApi.Infrastructure;
 [JsonSerializable(typeof(LifecycleResponse))]
 [JsonSerializable(typeof(StickinessRequest))]
 [JsonSerializable(typeof(StickinessResponse))]
+[JsonSerializable(typeof(FunnelCorrelationResponse))]
 [JsonSerializable(typeof(WebAnalyticsRequest))]
 [JsonSerializable(typeof(WebAnalyticsResponse))]
 [JsonSerializable(typeof(EventsResponse))]

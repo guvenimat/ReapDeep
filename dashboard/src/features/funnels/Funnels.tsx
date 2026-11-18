@@ -11,6 +11,7 @@ import { useDebounced, useQuery } from '../../lib/hooks'
 import { SaveInsight } from '../insights/SaveInsight'
 import { funnelsCsv } from '../../lib/csv'
 import { ExplainCard } from '../ai/AiAnswer'
+import { CorrelationCard } from './Correlation'
 
 export interface FunnelState { steps: string[]; window_seconds: number; filters: Filter[]; breakdown?: Breakdown; sampling: number }
 
@@ -112,6 +113,7 @@ export function Funnels({ params, range, onChange, onInsight }: {
             <Legend items={groups.map((g) => ({ label: g.label, colorIndex: g.colorIndex }))} />
             <FunnelChart steps={stepNames} groups={groups} />
           </Card>
+          {results.length > 0 && <CorrelationCard request={request} />}
 
           <Card title="Step details">
             <div className="table-wrap">

@@ -69,6 +69,31 @@ public sealed class FunnelService(StarRocksClient starRocks, CohortService cohor
         return new FunnelPersonsResponse(step, kind, rows.Count == 0 ? 0 : rows[0].Total, persons, sw.Elapsed.TotalMilliseconds);
     }
 
+    public async Task<FunnelCorrelationResponse> CorrelationAsync(ProjectContext project, FunnelRequest req, CancellationToken ct)
+    {
+        var sw = Stopwatch.StartNew();
+        var steps = Steps(await actions.ApplyAsync(project.ProjectId, req.Steps ?? [], ct));
+        var window = Window(req.WindowSeconds);
+        var range = TimeRange.Parse(req.DateFrom, req.DateTo, project.TimeZone, TimeSpan.FromDays(30));
+        var b = new SqlBuilder(project.ProjectId, range.FromUtc, range.ToUtc);
+        b.AddFilters(req.Filters, await cohorts.ResolveAsync(project, req.Filters, null, ct));
+        var rows = await starRocks.QueryAsync(FunnelSql.Correlation(b, steps, window, 300), r => (
+            Event: r.GetString(0), ConvertedWith: Convert.ToInt64(r.GetValue(1)), DroppedWith: Convert.ToInt64(r.GetValue(2)),
+            Converted: Convert.ToInt64(r.GetValue(3)), Dropped: Convert.ToInt64(r.GetValue(4))), ct);
+        var (converted, dropped) = rows.Count == 0 ? (0L, 0L) : (rows[0].Converted, rows[0].Dropped);
+        var scored = rows.Select(r =>
+        {
+            var odds = FunnelSql.OddsRatio(r.ConvertedWith, converted, r.DroppedWith, dropped);
+            return new FunnelCorrelation(r.Event, r.ConvertedWith, r.DroppedWith, converted == 0 ? 0 : Math.Round(r.ConvertedWith / (double)converted, 4),
+                dropped == 0 ? 0 : Math.Round(r.DroppedWith / (double)dropped, 4), Math.Round(odds, 3));
+        }).ToList();
+        const int Top = 8;
+        return new FunnelCorrelationResponse(converted, dropped,
+            [.. scored.Where(c => c.OddsRatio >= FunnelSql.MinOddsRatio).OrderByDescending(c => c.OddsRatio).ThenBy(c => c.Event, StringComparer.Ordinal).Take(Top)],
+            [.. scored.Where(c => c.OddsRatio <= 1 / FunnelSql.MinOddsRatio).OrderBy(c => c.OddsRatio).ThenBy(c => c.Event, StringComparer.Ordinal).Take(Top)],
+            FunnelSql.MinCorrelationPersons, sw.Elapsed.TotalMilliseconds);
+    }
+
     async Task<Plan> BuildPlanAsync(ProjectContext project, FunnelRequest req, CancellationToken ct)
     {
         var steps = Steps(await actions.ApplyAsync(project.ProjectId, req.Steps ?? [], ct));

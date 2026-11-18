@@ -18,6 +18,7 @@ public static class AnalyticsEndpoints
         api.MapGet("/persons/{personId}/rfm", PersonRfm);
         api.MapPost("/query/lifecycle", Lifecycle);
         api.MapPost("/query/stickiness", Stickiness);
+        api.MapPost("/query/funnels/correlation", FunnelCorrelation);
         api.MapPost("/query/web", Web);
         api.MapGet("/events", Events);
     }
@@ -66,6 +67,12 @@ public static class AnalyticsEndpoints
     static async Task<IResult> PersonRfm(string personId, ProjectContext project, RfmService rfm,
         [FromQuery(Name = "window_days")] int? windowDays, [FromQuery(Name = "purchase_event")] string? purchaseEvent, CancellationToken ct) =>
         ApiResults.Ok(await rfm.PersonAsync(project, personId, windowDays, purchaseEvent, ct), AppJsonContext.Default.RfmPersonResponse);
+
+    static async Task<IResult> FunnelCorrelation(FunnelRequest req, ProjectContext project, FunnelService funnels, AnalyticsCache cache, HttpContext http,
+        CancellationToken ct) =>
+        ApiResults.Ok(await cache.GetOrRunAsync(http, project, "funnel-correlation", req, AppJsonContext.Default.FunnelRequest, req.Filters, null,
+            AppJsonContext.Default.FunnelCorrelationResponse, () => funnels.CorrelationAsync(project, req, ct), (r, ms) => r with { TookMs = ms }, ct),
+            AppJsonContext.Default.FunnelCorrelationResponse);
 
     static async Task<IResult> Stickiness(StickinessRequest req, ProjectContext project, StickinessService stickiness, AnalyticsCache cache, HttpContext http,
         CancellationToken ct) => req.Explain
