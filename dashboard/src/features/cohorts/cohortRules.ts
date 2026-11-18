@@ -1,4 +1,5 @@
 import type { CohortCondition, CohortDefinition, CountOp, Op } from '../../api/types'
+import { eventOrAction } from '../../components/editors'
 import { RFM_SEGMENT_NAMES, RFM_WINDOWS } from '../rfm/segments'
 
 export const MAX_GROUPS = 5
@@ -33,7 +34,7 @@ const conditionComplete = (c: CohortCondition) => {
     return c.steps.length >= 2 && c.steps.every((s) => s.trim() !== '') && c.within_days >= 1 && c.within_days <= MAX_WITHIN_DAYS &&
       (c.outcome === 'dropped' ? c.step >= 1 && c.step < c.steps.length : c.step >= 2 && c.step <= c.steps.length)
   const days = c.within_days >= 1 && c.within_days <= MAX_WITHIN_DAYS
-  return c.event.trim() !== '' && days && (c.type === 'not_performed_event' || c.count >= 1)
+  return (c.event.trim() !== '' || !!c.action?.trim()) && days && (c.type === 'not_performed_event' || c.count >= 1)
 }
 
 const hasPositive = (conditions: CohortCondition[]) => conditions.some((c) => c.type !== 'not_performed_event')
@@ -52,11 +53,16 @@ export function cleanDefinition(def: CohortDefinition): CohortDefinition {
     groups: def.groups.map((g) => ({
       conditions: g.conditions.map((c) => {
         if (c.type === 'person_property') return { ...c, property: c.property.trim(), value: c.op === 'is_set' ? undefined : c.value?.trim() }
-        if (c.type === 'not_performed_event') return { ...c, event: c.event.trim() }
         if (c.type === 'rfm_segment') return { ...c, event: c.event?.trim() || undefined }
         if (c.type === 'funnel') return { ...c, steps: c.steps.map((s) => s.trim()) }
+        if (c.type === 'not_performed_event') {
+          const parsed = eventOrAction(c.event.trim())
+          return 'action' in parsed ? { ...c, event: '', action: parsed.action } : { ...c, event: parsed.event, action: undefined }
+        }
+        const parsed = eventOrAction(c.event.trim())
+        const named = 'action' in parsed ? { ...c, event: '', action: parsed.action } : { ...c, event: parsed.event, action: undefined }
         const filters = (c.filters ?? []).filter((f) => f.property.trim() && (f.op === 'is_set' || (f.value ?? '').trim() !== ''))
-        return { ...c, event: c.event.trim(), filters: filters.length ? filters : undefined }
+        return { ...named, filters: filters.length ? filters : undefined }
       }),
     })),
   }
@@ -69,15 +75,16 @@ export function describeCondition(c: CohortCondition): string {
   if (c.type === 'person_property') return `${c.property} ${OP_TEXT[c.op] ?? c.op}${c.op === 'is_set' ? '' : ` "${c.value ?? ''}"`}`
   if (c.type === 'rfm_segment')
     return `RFM segment is ${c.segments.map((k) => RFM_SEGMENT_NAMES[k]).join(' or ')} (last ${days(c.within_days)}${c.event && c.event !== 'purchase' ? `, ${c.event}` : ''})`
-  if (c.type === 'not_performed_event') return `did not do ${c.event} in the last ${days(c.within_days)}`
   if (c.type === 'funnel') {
     const at = c.steps[c.step - 1]
     const what = c.outcome === 'dropped' ? `dropped after ${at}` : `reached ${at}`
     return `${what} in the funnel ${c.steps.join(' > ')} (last ${days(c.within_days)})`
   }
+  const activity = c.action ? `action ${c.action}` : c.event
+  if (c.type === 'not_performed_event') return `did not do ${activity} in the last ${days(c.within_days)}`
   const label = COUNT_OPS.find((o) => o.id === c.count_op)?.label ?? 'at least'
   const where = (c.filters ?? []).map((f) => ` where ${f.property} ${OP_TEXT[f.op] ?? f.op}${f.op === 'is_set' ? '' : ` "${f.value ?? ''}"`}`).join('')
-  return `did ${c.event} ${label} ${times(c.count)} in the last ${days(c.within_days)}${where}`
+  return `did ${activity} ${label} ${times(c.count)} in the last ${days(c.within_days)}${where}`
 }
 
 export function parseIds(text: string): string[] {

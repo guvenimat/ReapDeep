@@ -53,7 +53,7 @@ public sealed class CohortRefreshJob(CohortRepository cohorts, StarRocksStore? s
         {
             await cohorts.MarkCalculatingAsync(cohort.Id, ct);
             if (cohort.Kind == "static") await WriteStaticAsync(store, cohort, version, ct);
-            else await store.ExecuteAsync(CohortSql.Materialize(cohort.ProjectId, cohort.Id, version, Definition(cohort), DateTime.UtcNow), ct);
+            else await store.ExecuteAsync(CohortSql.Materialize(cohort.ProjectId, cohort.Id, version, await DefinitionAsync(cohort, ct), DateTime.UtcNow), ct);
 
             var members = await store.ScalarAsync(CohortSql.PersonCount(cohort.ProjectId, cohort.Id, version), ct);
             if (await cohorts.CompleteAsync(cohort, version, members, (int)sw.ElapsedMilliseconds, ct))
@@ -101,7 +101,24 @@ public sealed class CohortRefreshJob(CohortRepository cohorts, StarRocksStore? s
         }
     }
 
-    static CohortDefinition Definition(CohortRepository.DueCohortRecord cohort) =>
-        JsonSerializer.Deserialize(cohort.Definition, CohortJsonContext.Default.CohortDefinition)
-        ?? throw new InvalidOperationException($"Cohort {cohort.Id} has no definition");
+    async Task<CohortDefinition> DefinitionAsync(CohortRepository.DueCohortRecord cohort, CancellationToken ct)
+    {
+        var definition = JsonSerializer.Deserialize(cohort.Definition, CohortJsonContext.Default.CohortDefinition)
+            ?? throw new InvalidOperationException($"Cohort {cohort.Id} has no definition");
+        var names = definition.Groups?.SelectMany(g => g.Conditions ?? [])
+            .Where(c => c.Action is { Length: > 0 }).Select(c => c.Action!)
+            .Distinct(StringComparer.Ordinal).ToArray() ?? [];
+        if (names.Length == 0) return definition;
+
+        var found = await cohorts.ActionEventsAsync(cohort.ProjectId, names, ct);
+        return definition with
+        {
+            Groups = definition.Groups!.Select(g => g with
+            {
+                Conditions = g.Conditions!.Select(c => c.Action is { Length: > 0 } action
+                    ? c with { Events = found.TryGetValue(action, out var events) ? events.ToList() : throw new InvalidOperationException($"Unknown action: '{action}'") }
+                    : c).ToList(),
+            }).ToList(),
+        };
+    }
 }

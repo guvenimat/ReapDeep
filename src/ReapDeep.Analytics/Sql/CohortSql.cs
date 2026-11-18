@@ -175,18 +175,20 @@ public static class CohortSql
     {
         var counts = behavioral.Select((c, k) =>
         {
-            var parts = new List<string> { $"e.event = {b.P(c.Event!)}", $"e.timestamp >= {b.P(nowUtc.AddDays(-c.WithinDays!.Value))}" };
+            var parts = new List<string> { SqlFragments.EventIs(b, c.Event!, c.Events), $"e.timestamp >= {b.P(nowUtc.AddDays(-c.WithinDays!.Value))}" };
             parts.AddRange((c.Filters ?? []).Select(b.Condition));
             return $"SUM(IF({string.Join(" AND ", parts)}, 1, 0)) AS c{k}";
         });
         var since = b.P(nowUtc.AddDays(-behavioral.Max(c => c.WithinDays!.Value)));
-        var events = string.Join(", ", behavioral.Select(c => c.Event!).Distinct().Select(e => b.P(e)));
+        var events = string.Join(", ", behavioral.SelectMany(Events).Distinct().Select(e => b.P(e)));
         var agg = $"SELECT e.project_id, e.distinct_id, {string.Join(", ", counts)} FROM analytics.events e " +
                   $"WHERE e.project_id = {project} AND e.timestamp >= {since} AND e.timestamp < {now} AND e.event IN ({events}) GROUP BY 1, 2";
         var sums = string.Join(", ", behavioral.Select((_, k) => $"SUM(a.c{k}) AS c{k}"));
         return $"SELECT COALESCE(pdi.person_id, a.distinct_id) AS person, {sums} FROM ({agg}) a " +
                $"LEFT JOIN {Pdi} pdi ON a.project_id = pdi.project_id AND a.distinct_id = pdi.distinct_id AND pdi.is_deleted = 0 GROUP BY 1";
     }
+
+    static IReadOnlyList<string> Events(CohortCondition c) => c.Events is { Count: > 0 } ? c.Events : [c.Event!];
 
     static string CountCondition(SqlBuilder b, CohortCondition c, string column) => c.Type == ConditionTypes.NotPerformed
         ? $"{column} = 0"

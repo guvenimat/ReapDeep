@@ -38,6 +38,19 @@ public class CohortSqlTests
     }
 
     [Fact]
+    public void An_action_condition_matches_any_of_its_events_and_scans_all_of_them()
+    {
+        var action = new CohortCondition(ConditionTypes.Performed, Event: "Checkout", CountOp: "gte", Count: 1, WithinDays: 30,
+            Action: "Checkout", Events: ["add_to_cart", "begin_checkout"]);
+        var q = CohortSql.Count(Project, Def([action, NotPerformed("purchase")]), Now);
+
+        Assert.Contains("SUM(IF(e.event IN (@p", q.Sql);
+        Assert.Contains(q.Parameters, p => (p.Value as string) == "begin_checkout");
+        Assert.Contains(q.Parameters, p => (p.Value as string) == "add_to_cart");
+        Assert.DoesNotContain(q.Parameters, p => (p.Value as string) == "Checkout");
+    }
+
+    [Fact]
     public void Values_are_parameters_not_sql_text()
     {
         var def = Def([Performed("bought'; DROP TABLE x", filters: [new Filter("event", "$browser", "eq", Json("\"Chrome\""))]), Property("plan", "premium-tier")]);

@@ -137,7 +137,7 @@ public sealed class ActionRepository(NpgsqlDataSource db)
     static List<string> Lookup(Dictionary<string, List<string>> found, string name) =>
         found.TryGetValue(name, out var events) ? events : throw new ValidationException($"Unknown action: '{name}'");
 
-    async Task<Dictionary<string, List<string>>> ResolveAsync(long projectId, IEnumerable<string?> names, CancellationToken ct)
+    public async Task<Dictionary<string, List<string>>> ResolveAsync(long projectId, IEnumerable<string?> names, CancellationToken ct)
     {
         var wanted = names.OfType<string>().Where(n => n.Length > 0).Distinct(StringComparer.Ordinal).ToArray();
         if (wanted.Length == 0) return [];

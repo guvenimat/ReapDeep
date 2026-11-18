@@ -157,7 +157,7 @@ function ConditionRow({ condition: c, onChange, onRemove }: {
   const changeType = (type: CohortCondition['type']) => {
     const next = newCondition(type)
     if (withEvent(next.type) && (c.type === 'performed_event' || c.type === 'not_performed_event'))
-      onChange({ ...next, event: c.event, within_days: c.within_days } as CohortCondition)
+      onChange({ ...next, event: c.event, action: c.action, within_days: c.within_days } as CohortCondition)
     else onChange(next)
   }
   return (
@@ -172,7 +172,8 @@ function ConditionRow({ condition: c, onChange, onRemove }: {
             ? <span className="editor-hint">customers scored on their purchases</span>
             : c.type === 'funnel'
               ? <span className="editor-hint">persons by how far they got</span>
-            : <SuggestInput list="events" placeholder="event" value={c.event} onChange={(v) => onChange({ ...c, event: v })} aria-label="Event" />}
+            : <SuggestInput list="events-actions" placeholder="event or action" value={c.event || (c.action ? `action:${c.action}` : '')}
+                onChange={(v) => onChange({ ...c, event: v, action: undefined })} aria-label="Event or action" />}
         {onRemove && <IconButton icon="close" label="Remove condition" onClick={onRemove} />}
       </div>
       {c.type === 'person_property' && (

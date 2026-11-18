@@ -35,6 +35,9 @@ public static class CohortRules
     static CohortCondition NormalizeCondition(CohortCondition c)
     {
         Ensure.OneOf(c.Type, "type", ConditionTypes.All);
+        Ensure.That(string.IsNullOrWhiteSpace(c.Action) || c.Type is ConditionTypes.Performed or ConditionTypes.NotPerformed,
+            "action is only supported on performed_event and not_performed_event conditions");
+
         if (c.Type == ConditionTypes.PersonProperty)
         {
             ColumnMapper.Validate(c.Property ?? "");
@@ -67,10 +70,12 @@ public static class CohortRules
             return new CohortCondition(c.Type, WithinDays: c.WithinDays, Steps: steps, Step: step, Outcome: outcome, WindowSeconds: window);
         }
 
-        var eventName = Ensure.NotBlank(c.Event, "event");
+        var action = string.IsNullOrWhiteSpace(c.Action) ? null : c.Action.Trim();
+        Ensure.That(action is null || action.Length <= 100, "action can be at most 100 characters");
+        var eventName = action ?? Ensure.NotBlank(c.Event, "event");
         Ensure.That(c.WithinDays is >= 1 and <= MaxWithinDays, $"within_days must be between 1 and {MaxWithinDays}");
         if (c.Type == ConditionTypes.NotPerformed)
-            return new CohortCondition(c.Type, Event: eventName, WithinDays: c.WithinDays);
+            return new CohortCondition(c.Type, Event: eventName, WithinDays: c.WithinDays, Action: action, Events: action is null ? null : c.Events);
 
         var countOp = Ensure.OneOf(c.CountOp ?? "gte", "count_op", CountOps);
         var count = Ensure.InRange(c.Count ?? 1, 1, MaxCount, "count");
@@ -78,6 +83,6 @@ public static class CohortRules
         Ensure.That(filters.Count <= MaxConditionFilters, $"A condition can have at most {MaxConditionFilters} filters");
         Ensure.That(filters.All(f => (f.Scope ?? "event") == "event"), "Filters inside a performed_event condition must use event properties");
         return new CohortCondition(c.Type, Event: eventName, CountOp: countOp, Count: count, WithinDays: c.WithinDays,
-            Filters: filters.Count == 0 ? null : filters);
+            Filters: filters.Count == 0 ? null : filters, Action: action, Events: action is null ? null : c.Events);
     }
 }

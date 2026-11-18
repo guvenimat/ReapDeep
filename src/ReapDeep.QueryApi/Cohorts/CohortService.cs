@@ -3,13 +3,14 @@ using System.Text.Json;
 using ReapDeep.Analytics;
 using ReapDeep.Analytics.Cohorts;
 using ReapDeep.Analytics.Sql;
+using ReapDeep.QueryApi.Actions;
 using ReapDeep.QueryApi.Auth;
 using ReapDeep.QueryApi.Infrastructure;
 using ReapDeep.QueryApi.Persons;
 
 namespace ReapDeep.QueryApi.Cohorts;
 
-public sealed class CohortService(CohortRepository cohorts, PersonRepository persons, StarRocksClient starRocks)
+public sealed class CohortService(CohortRepository cohorts, PersonRepository persons, StarRocksClient starRocks, ActionRepository actions)
 {
     public const int MaxBreakdownCohorts = 5;
     public const int MaxStaticMembers = 100_000;
@@ -19,9 +20,29 @@ public sealed class CohortService(CohortRepository cohorts, PersonRepository per
     public async Task<CohortPreviewResponse> PreviewAsync(ProjectContext project, CohortDefinition? definition, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
-        var query = CohortSql.Count(project.ProjectId, CohortRules.Normalize(definition), DateTime.UtcNow);
+        var query = CohortSql.Count(project.ProjectId, await NormalizeAsync(project, definition, ct), DateTime.UtcNow);
         var count = (await starRocks.QueryAsync(query, r => Convert.ToInt64(r.GetValue(0)), ct)).Single();
         return new CohortPreviewResponse(count, sw.Elapsed.TotalMilliseconds);
+    }
+
+    public async Task<CohortDefinition> NormalizeAsync(ProjectContext project, CohortDefinition? definition, CancellationToken ct)
+    {
+        var normalized = CohortRules.Normalize(definition);
+        var names = normalized.Groups!.SelectMany(g => g.Conditions!)
+            .Where(c => c.Action is { Length: > 0 }).Select(c => c.Action!)
+            .Distinct(StringComparer.Ordinal).ToArray();
+        if (names.Length == 0) return normalized;
+
+        var found = await actions.ResolveAsync(project.ProjectId, names, ct);
+        return normalized with
+        {
+            Groups = normalized.Groups!.Select(g => g with
+            {
+                Conditions = g.Conditions!.Select(c => c.Action is { Length: > 0 } action
+                    ? c with { Events = found.TryGetValue(action, out var events) ? events : throw new ValidationException($"Unknown action: '{action}'") }
+                    : c).ToList(),
+            }).ToList(),
+        };
     }
 
     public async Task<CohortPersonsResponse?> PersonsAsync(ProjectContext project, long id, string? after, int limit, CancellationToken ct)
