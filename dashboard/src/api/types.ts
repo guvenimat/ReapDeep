@@ -176,6 +176,7 @@ export interface FlagCondition { property: string; op: FlagOp; value?: FlagScala
 export interface FeatureFlag {
   id: number; key: string; name: string; description: string; enabled: boolean; rollout_percentage: number
   variants: FlagVariant[]; conditions: FlagCondition[]; created_by: string | null; updated_by: string | null; created_at: string; updated_at: string
+  locked_by_experiment: string | null
 }
 export interface FlagInput {
   key?: string; name: string; description: string; enabled: boolean; rollout_percentage: number; variants: FlagVariant[]; conditions: FlagCondition[]
