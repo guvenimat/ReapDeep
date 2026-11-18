@@ -80,6 +80,8 @@ $again = Batch $sk @($events[0..2])
 Check "sending the same event_ids again counts them as duplicates -> $($again.Text)" ($again.Status -eq 202 -and $again.Json.duplicates -eq 3)
 $big = Batch $sk @(1..5001 | ForEach-Object { @{ event = "x"; distinct_id = "d" } })
 Check "more than 5000 events -> 400" ($big.Status -eq 400)
+$fromBrowser = Send $plain POST "$ingestion/batch" (ConvertTo-Json @{ batch = @(@{ event = "x"; distinct_id = "d" }) } -Compress) @{ Authorization = "Bearer $sk"; Origin = "https://shop.example" }
+Check "a server key sent from a browser (Origin header) -> 403" ($fromBrowser.Status -eq 403)
 Check "the events land on their own date, 60 days ago" (WaitFor { (Total "server_order" "tag" $tag $past.AddDays(-1) $past.AddDays(1)) -eq 3 } 90)
 
 Write-Host "`n3) Flag definitions"

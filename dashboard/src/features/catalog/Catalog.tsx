@@ -247,7 +247,7 @@ function ItemDetail({ itemId, onClose }: { itemId: string; onClose: () => void }
           <>
             <dl className="kv">
               <dt>item_id</dt><dd className="mono">{itemId}</dd>
-              {i?.url && <><dt>url</dt><dd><a href={i.url} target="_blank" rel="noreferrer">{i.url}</a></dd></>}
+              {i?.url && <><dt>url</dt><dd>{/^https?:\/\//i.test(i.url) ? <a href={i.url} target="_blank" rel="noreferrer noopener">{i.url}</a> : i.url}</dd></>}
             </dl>
             <RecommendationList title="Viewed together" items={detail.data.co_viewed} testId="co-viewed" />
             <RecommendationList title="Bought together" items={detail.data.bought_together} testId="bought-together" />

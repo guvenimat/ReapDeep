@@ -108,7 +108,12 @@ public sealed class WebhookSender : IDisposable
         if (ip.IsIPv4MappedToIPv6) ip = ip.MapToIPv4();
         if (IPAddress.IsLoopback(ip) || ip.Equals(IPAddress.Any) || ip.Equals(IPAddress.IPv6Any) || ip.IsIPv6LinkLocal || ip.IsIPv6SiteLocal || ip.IsIPv6Multicast)
             return true;
-        if (ip.AddressFamily == AddressFamily.InterNetworkV6) return (ip.GetAddressBytes()[0] & 0xFE) == 0xFC;
+        if (ip.AddressFamily == AddressFamily.InterNetworkV6)
+        {
+            var v6 = ip.GetAddressBytes();
+            if (EmbeddedIpv4(v6) is { } inner) return IsPrivate(inner);
+            return (v6[0] & 0xFE) == 0xFC;
+        }
         var b = ip.GetAddressBytes();
         return b[0] switch
         {
@@ -120,6 +125,15 @@ public sealed class WebhookSender : IDisposable
             >= 224 => true,
             _ => false,
         };
+    }
+
+    static IPAddress? EmbeddedIpv4(byte[] v6)
+    {
+        if (v6[0] == 0x00 && v6[1] == 0x64 && v6[2] == 0xFF && v6[3] == 0x9B && v6.AsSpan(4, 8).IndexOfAnyExcept((byte)0) < 0)
+            return new IPAddress(v6.AsSpan(12, 4));
+        if (v6[0] == 0x20 && v6[1] == 0x02) return new IPAddress(v6.AsSpan(2, 4));
+        if (v6.AsSpan(0, 12).IndexOfAnyExcept((byte)0) < 0 && v6.AsSpan(12).IndexOfAnyExcept((byte)0) >= 0) return new IPAddress(v6.AsSpan(12, 4));
+        return null;
     }
 
     public void Dispose() => _http.Dispose();

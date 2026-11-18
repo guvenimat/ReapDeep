@@ -71,6 +71,7 @@ Check "read key cannot write the catalog -> 403" ((K $readKey PUT "/items" @{ it
 Check "catalog_write key cannot query analytics -> 403" ((K $ck.key POST "/query/trends" @{ series = @(@{ event = "x" }) }).Status -eq 403)
 Check "catalog_write key can read the catalog" ((K $ck.key GET "/items?search=$tag").Json.total -ge 6)
 Check "invalid item (no title) -> 400" ((K $ck.key PUT "/items" @{ items = @(@{ item_id = "x" }) }).Status -eq 400)
+Check "a javascript: url -> 400" ((K $ck.key PUT "/items" @{ items = @(@{ item_id = "x-$tag"; title = "x"; url = "javascript:alert(1)" }) }).Status -eq 400)
 
 Write-Host "`n2) Interactions"
 Capture ("[" + ((1..3 | ForEach-Object { Events "p$_-$tag" "product_viewed" @($A, $B) }) -join ",") + "]")

@@ -55,6 +55,8 @@ public static class CaptureEndpoint
         IngestionQuota quota, ILoggerFactory loggers)
     {
         if (!projects.IsLoaded) return Results.StatusCode(StatusCodes.Status503ServiceUnavailable);
+        if (ctx.Request.Headers.Origin.Count > 0)
+            return Results.Text("Server keys must stay on the server; this request came from a browser", statusCode: StatusCodes.Status403Forbidden);
         if (ServerKey(ctx.Request) is not { } key || !projects.TryGetProjectBySecret(key, out var project))
             return Results.Text("A server key is required: Authorization: Bearer sk_...", statusCode: StatusCodes.Status401Unauthorized);
         if (ctx.Features.Get<IHttpMaxRequestBodySizeFeature>() is { IsReadOnly: false } limit) limit.MaxRequestBodySize = MaxServerBodyBytes;
