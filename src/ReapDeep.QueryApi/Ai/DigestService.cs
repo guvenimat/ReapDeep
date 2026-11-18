@@ -97,7 +97,7 @@ public sealed class DigestRepository(NpgsqlDataSource db)
 
     public sealed record NoteRecord(long Id, string Trigger, string PeriodFrom, string PeriodTo, string EmailedTo, DateTime CreatedAt, string Answer);
     public sealed record ScheduleRecord(long ProjectId, string Frequency, int Weekday, int MonthDay, int Hour, string EmailTo, DateTime NextRunAt,
-        DateTime? LastRunAt, string? LastError, string Timezone, string ProjectName);
+        DateTime? LastRunAt, string? LastError, string Timezone, string ProjectName, int FailedAttempts);
 
     public async Task<long> SaveNoteAsync(long projectId, string origin, string from, string to, AiAnswer answer, CancellationToken ct)
     {
@@ -138,7 +138,7 @@ public sealed class DigestRepository(NpgsqlDataSource db)
 
     const string ScheduleSelect = """
         SELECT s.project_id, s.frequency, s.weekday::int AS weekday, s.month_day::int AS month_day, s.hour::int AS hour, array_to_string(s.email_to, ',') AS email_to, s.next_run_at, s.last_run_at,
-               s.last_error, p.timezone, p.name AS project_name
+               s.last_error, p.timezone, p.name AS project_name, s.failed_attempts
         FROM ai_digest_schedules s JOIN projects p ON p.id = s.project_id
         """;
 
@@ -177,12 +177,13 @@ public sealed class DigestRepository(NpgsqlDataSource db)
         return (await conn.QueryAsync<ScheduleRecord>(ScheduleSelect + " WHERE s.project_id = ANY(@Ids)", new { Ids = ids })).AsList();
     }
 
-    public async Task FinishRunAsync(long projectId, DateTime nextRunAt, string? error, CancellationToken ct)
+    public async Task FinishRunAsync(long projectId, DateTime nextRunAt, string? error, int failedAttempts, CancellationToken ct)
     {
         await using var conn = await db.OpenConnectionAsync(ct);
         await conn.ExecuteAsync("""
-            UPDATE ai_digest_schedules SET next_run_at = @NextRunAt, last_run_at = now(), last_error = @Error WHERE project_id = @ProjectId
-            """, new { ProjectId = projectId, NextRunAt = nextRunAt, Error = error });
+            UPDATE ai_digest_schedules SET next_run_at = @NextRunAt, last_run_at = now(), last_error = @Error, failed_attempts = @FailedAttempts
+            WHERE project_id = @ProjectId
+            """, new { ProjectId = projectId, NextRunAt = nextRunAt, Error = error, FailedAttempts = failedAttempts });
     }
 
     public static List<string> Split(string text) => [.. text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
@@ -217,6 +218,7 @@ public sealed class DigestJob(DigestRepository schedules, DigestService digests,
         var runDay = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, project.TimeZone));
         var period = DigestRules.PeriodFor(s.Frequency, runDay);
         string? error;
+        var transient = false;
         try
         {
             var (answer, noteId) = await digests.WriteAsync(project, period, "schedule", ct);
@@ -228,9 +230,13 @@ public sealed class DigestJob(DigestRepository schedules, DigestService digests,
         catch (Exception e) when (e is AiDisabledException or AiUnavailableException or AiQuotaException or ValidationException)
         {
             error = e.Message;
-            log.LogWarning("Project {Project}: scheduled strategy note skipped: {Error}", s.ProjectId, e.Message);
+            transient = e is AiUnavailableException;
+            log.LogWarning("Project {Project}: scheduled strategy note failed: {Error}", s.ProjectId, e.Message);
         }
-        var next = DigestRules.NextRunUtc(s.Frequency, s.Weekday, s.MonthDay, s.Hour, project.TimeZone, DateTime.UtcNow);
-        await schedules.FinishRunAsync(s.ProjectId, next, error, ct);
+        var (next, failed, gaveUp) = DigestRules.AfterRun(s.Frequency, s.Weekday, s.MonthDay, s.Hour, project.TimeZone, DateTime.UtcNow, transient, s.FailedAttempts);
+        if (gaveUp)
+            await notifications.AddAsync(s.ProjectId, ReapDeep.QueryApi.Notifications.NotificationKinds.Note,
+                $"Strategy note for {period.FromText} to {period.ToText ?? "today"} could not be written", error ?? "", "#/ai", ct);
+        await schedules.FinishRunAsync(s.ProjectId, next, error, failed, ct);
     }
 }

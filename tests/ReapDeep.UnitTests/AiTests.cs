@@ -187,4 +187,48 @@ public class AiTests
         Assert.Throws<ReapDeep.Analytics.ValidationException>(() => DigestRules.Validate(new DigestScheduleBody("monthly", null, 31, null, null)));
         Assert.Throws<ReapDeep.Analytics.ValidationException>(() => DigestRules.Validate(new DigestScheduleBody("daily", null, null, 24, null)));
     }
+
+    sealed class Replies(params (int Status, string Body)[] replies) : HttpMessageHandler
+    {
+        public int Calls;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            var (status, body) = replies[Math.Min(Calls++, replies.Length - 1)];
+            return Task.FromResult(new HttpResponseMessage((System.Net.HttpStatusCode)status) { Content = new StringContent(body) });
+        }
+    }
+
+    const string Ok = """{"choices":[{"finish_reason":"stop","message":{"content":"{\"summary\":\"ok\"}"}}]}""";
+    static readonly AiOptions Options = new("openai", "http://model.test", "m", "key", 10, TimeSpan.Zero, 100);
+
+    [Fact]
+    public async Task Transient_provider_errors_are_retried_and_others_are_not()
+    {
+        var flaky = new Replies((503, ""), (429, ""), (200, Ok));
+        var model = new OpenAiCompatibleChatModel(new HttpClient(flaky), Options) { Delay = (_, _) => Task.CompletedTask };
+        Assert.Equal("""{"summary":"ok"}""", await model.CompleteJsonAsync("s", "u", CancellationToken.None));
+        Assert.Equal(3, flaky.Calls);
+
+        var down = new Replies((503, ""));
+        await Assert.ThrowsAsync<AiUnavailableException>(() => new OpenAiCompatibleChatModel(new HttpClient(down), Options) { Delay = (_, _) => Task.CompletedTask }
+            .CompleteJsonAsync("s", "u", CancellationToken.None));
+        Assert.Equal(OpenAiCompatibleChatModel.Attempts, down.Calls);
+
+        var bad = new Replies((401, ""));
+        await Assert.ThrowsAsync<AiUnavailableException>(() => new OpenAiCompatibleChatModel(new HttpClient(bad), Options).CompleteJsonAsync("s", "u", CancellationToken.None));
+        Assert.Equal(1, bad.Calls);
+    }
+
+    [Fact]
+    public void A_failed_scheduled_note_is_retried_three_times_then_waits_for_the_next_period()
+    {
+        var now = Utc(2026, 11, 23, 6);
+        Assert.Equal((now.AddMinutes(15), 1, false), DigestRules.AfterRun(DigestRules.Weekly, 1, 1, 9, Istanbul, now, true, 0));
+        Assert.Equal((now.AddMinutes(15), 3, false), DigestRules.AfterRun(DigestRules.Weekly, 1, 1, 9, Istanbul, now, true, 2));
+        Assert.Equal((Utc(2026, 11, 30, 6), 0, true), DigestRules.AfterRun(DigestRules.Weekly, 1, 1, 9, Istanbul, now, true, 3));
+        Assert.Equal((Utc(2026, 11, 30, 6), 0, false), DigestRules.AfterRun(DigestRules.Weekly, 1, 1, 9, Istanbul, now, false, 2));
+        Assert.Equal(TimeSpan.FromSeconds(5), OpenAiCompatibleChatModel.Backoff(1, TimeSpan.FromSeconds(5)));
+        Assert.Equal(TimeSpan.FromSeconds(4), OpenAiCompatibleChatModel.Backoff(2, null));
+    }
 }
