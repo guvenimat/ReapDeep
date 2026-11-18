@@ -92,6 +92,9 @@ public class AiTests
         Assert.True(Of(("Ai:Provider", "fake")).Configured);
         Assert.False(Of(("Ai:Provider", "openai")).Configured);
         Assert.Equal("https://api.deepseek.com", Of().BaseUrl);
+        Assert.Equal("deepseek-flash", Of().Model);
+        Assert.Null(Of().Effort);
+        Assert.Equal("low", Of(("Ai:Effort", " LOW ")).Effort);
     }
 
     [Fact]
