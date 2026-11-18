@@ -13,6 +13,8 @@ public class RecommendationSqlTests
     [InlineData(RecommendationSql.Trending)]
     [InlineData(RecommendationSql.CoViewed)]
     [InlineData(RecommendationSql.BoughtTogether)]
+    [InlineData(RecommendationSql.CoViewedWeighted)]
+    [InlineData(RecommendationSql.CoViewedSession)]
     public void Every_model_filters_by_project_time_and_item_events(string model)
     {
         var q = RecommendationSql.Build(model, Project, Now);
@@ -47,6 +49,29 @@ public class RecommendationSqlTests
     }
 
     [Fact]
+    public void Weighted_similarity_counts_purchases_and_carts_more_than_views()
+    {
+        var q = RecommendationSql.Build(RecommendationSql.CoViewedWeighted, Project, Now);
+
+        Assert.Contains("SUM(a.w * o.w) AS co", q.Sql);
+        Assert.Contains("SUM(w * w) AS n", q.Sql);
+        Assert.Contains($"HAVING COUNT(*) >= @p", q.Sql);
+        Assert.Contains("COALESCE(pdi.person_id, d.distinct_id) AS person", q.Sql);
+    }
+
+    [Fact]
+    public void Session_similarity_pairs_items_within_one_session()
+    {
+        var q = RecommendationSql.Build(RecommendationSql.CoViewedSession, Project, Now);
+
+        Assert.Contains("SELECT e.session_id AS person", q.Sql);
+        Assert.Contains("e.session_id IS NOT NULL AND e.session_id <> ''", q.Sql);
+        Assert.DoesNotContain("person_distinct_ids", q.Sql);
+        Assert.Contains("FROM si) x", q.Sql);
+        Assert.Contains("COUNT(*) AS co", q.Sql);
+    }
+
+    [Fact]
     public void Bought_together_only_uses_purchases_over_a_longer_window()
     {
         var q = RecommendationSql.Build(RecommendationSql.BoughtTogether, Project, Now);
@@ -70,8 +95,11 @@ public class RecommendationSqlTests
         var testFrom = Now - RecommendationSql.EvaluationWindow;
 
         Assert.Contains(q.Parameters, p => p.Value is DateTime t && t == testFrom - RecommendationSql.CoViewedWindow);
-        Assert.Equal(2, q.Parameters.Count(p => p.Value is DateTime t && t == testFrom));
+        Assert.Equal(3, q.Parameters.Count(p => p.Value is DateTime t && t == testFrom));
         Assert.Contains("a.rn = 1 AND n.rn = 2", q.Sql);
+        Assert.Contains("FROM w_ranked WHERE rn <= 10", q.Sql);
+        Assert.Contains("FROM s_ranked WHERE rn <= 10", q.Sql);
+        Assert.Equal(3, q.Parameters.Count(p => p.Value is DateTime t && t == testFrom - RecommendationSql.CoViewedWindow));
         Assert.Contains("rn <= 10", q.Sql);
     }
 
