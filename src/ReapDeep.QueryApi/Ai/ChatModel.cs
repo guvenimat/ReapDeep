@@ -5,7 +5,8 @@ using System.Text.Json.Nodes;
 
 namespace ReapDeep.QueryApi.Ai;
 
-public sealed record AiOptions(string Provider, string BaseUrl, string Model, string? ApiKey, int DailyCallsPerProject, TimeSpan CacheTtl, int MaxOutputTokens)
+public sealed record AiOptions(string Provider, string BaseUrl, string Model, string? ApiKey, int DailyCallsPerProject, TimeSpan CacheTtl, int MaxOutputTokens,
+    string? Effort = null)
 {
     public const string Fake = "fake";
     public const string OpenAiCompatible = "openai";
@@ -21,11 +22,12 @@ public sealed record AiOptions(string Provider, string BaseUrl, string Model, st
         return new AiOptions(
             provider,
             (cfg["Ai:BaseUrl"] ?? "https://api.deepseek.com").TrimEnd('/'),
-            cfg["Ai:Model"] ?? "deepseek-chat",
+            cfg["Ai:Model"] ?? "deepseek-flash",
             key,
             int.TryParse(cfg["Ai:DailyCallsPerProject"], out var calls) && calls > 0 ? calls : 200,
             TimeSpan.FromHours(int.TryParse(cfg["Ai:CacheHours"], out var hours) && hours >= 0 ? hours : 24),
-            int.TryParse(cfg["Ai:MaxOutputTokens"], out var tokens) && tokens > 0 ? tokens : 1500);
+            int.TryParse(cfg["Ai:MaxOutputTokens"], out var tokens) && tokens > 0 ? tokens : 4000,
+            string.IsNullOrWhiteSpace(cfg["Ai:Effort"]) ? null : cfg["Ai:Effort"]!.Trim().ToLowerInvariant());
     }
 }
 
@@ -46,10 +48,12 @@ public sealed class OpenAiCompatibleChatModel(HttpClient http, AiOptions options
             ["temperature"] = 0.2,
             ["max_tokens"] = options.MaxOutputTokens,
             ["response_format"] = new JsonObject { ["type"] = "json_object" },
+            ["reasoning_effort"] = options.Effort,
             ["messages"] = new JsonArray(
                 new JsonObject { ["role"] = "system", ["content"] = system },
                 new JsonObject { ["role"] = "user", ["content"] = user }),
         };
+        if (options.Effort is null) body.Remove("reasoning_effort");
         using var req = new HttpRequestMessage(HttpMethod.Post, $"{options.BaseUrl}/chat/completions")
         {
             Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json"),
@@ -60,7 +64,10 @@ public sealed class OpenAiCompatibleChatModel(HttpClient http, AiOptions options
         if (!res.IsSuccessStatusCode)
             throw new AiUnavailableException($"The model provider answered {(int)res.StatusCode}");
         using var doc = JsonDocument.Parse(text);
-        return doc.RootElement.GetProperty("choices")[0].GetProperty("message").GetProperty("content").GetString()
+        var choice = doc.RootElement.GetProperty("choices")[0];
+        if (choice.TryGetProperty("finish_reason", out var reason) && reason.ValueKind == JsonValueKind.String && reason.GetString() == "length")
+            throw new AiUnavailableException("The model's answer was cut off at the output limit (Ai__MaxOutputTokens); try again or raise the limit");
+        return choice.GetProperty("message").GetProperty("content").GetString()
             ?? throw new AiUnavailableException("The model returned an empty answer");
     }
 }

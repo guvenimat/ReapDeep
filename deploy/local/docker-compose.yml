@@ -20,7 +20,8 @@ x-query-api-environment: &query-api-environment
   Ai__Provider: ${AI_PROVIDER:-fake}
   Ai__ApiKey: ${DEEPSEEK_API_KEY:-}
   Ai__BaseUrl: ${AI_BASE_URL:-https://api.deepseek.com}
-  Ai__Model: ${AI_MODEL:-deepseek-chat}
+  Ai__Model: ${AI_MODEL:-deepseek-flash}
+  Ai__Effort: ${AI_EFFORT:-low}
   Ai__DailyCallsPerProject: ${AI_DAILY_CALLS:-200}
   ForwardedHeaders__TrustedNetworks: 172.16.0.0/12
   OTEL_EXPORTER_OTLP_ENDPOINT: *otel-endpoint
