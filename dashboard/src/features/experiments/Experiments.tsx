@@ -4,6 +4,7 @@ import type { Experiment, ExperimentComparison, ExperimentInput, ExperimentMetri
 import { SuggestInput } from '../../components/editors'
 import { Icon } from '../../components/icons'
 import { Badge, Card, FormMessage, IconButton, Segmented, StatTile, Status } from '../../components/ui'
+import { downloadCsv, experimentCsv } from '../../lib/csv'
 import { ago, dateTime, duration, num } from '../../lib/format'
 import { useQuery } from '../../lib/hooks'
 import { ExplainCard } from '../ai/AiAnswer'
@@ -164,7 +165,12 @@ function ExperimentResultsCard({ experiment, version }: { experiment: Experiment
   const exposed = r?.variants.reduce((s, v) => s + v.persons, 0) ?? 0
 
   return (
-    <Card testId="experiment-results" title="Results" meta={r && `${r.test === 'welch_t' ? "Welch's t-test" : 'Two-proportion z-test'} against ${r.control_variant} · 95% confidence intervals · ${dateTime(r.date_from)} – ${dateTime(r.date_to)}`}>
+    <Card testId="experiment-results" title="Results"
+      meta={r && `${r.test === 'welch_t' ? "Welch's t-test" : 'Two-proportion z-test'} against ${r.control_variant} · 95% confidence intervals · ${dateTime(r.date_from)} – ${dateTime(r.date_to)}`}
+      actions={r && (
+        <button type="button" className="icon-button" onClick={() => downloadCsv(experimentCsv(r))}
+          aria-label="Download CSV" title="Download CSV" data-testid="experiment-export-csv"><Icon name="download" /></button>
+      )}>
       <Status state={results} empty={exposed === 0} emptyTitle="No exposures yet"
         emptyText={`Persons are counted from their first $feature_flag_called event for ${experiment.flag_key} in the experiment's dates.`}>
         {r && (

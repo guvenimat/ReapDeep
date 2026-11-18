@@ -111,7 +111,7 @@ export interface AuthTokenInfo { email: string; purpose: AuthTokenPurpose }
 export type KeyScope = 'read' | 'catalog_write' | 'server'
 export interface ApiKey { id: number; name: string; prefix: string; scope: KeyScope; created_by: string | null; created_at: string; revoked_at: string | null }
 
-export type InsightKind = 'trends' | 'funnels' | 'retention' | 'paths' | 'rfm' | 'lifecycle'
+export type InsightKind = 'trends' | 'funnels' | 'retention' | 'paths' | 'rfm' | 'lifecycle' | 'stickiness' | 'web'
 export interface Annotation { id: number; day: string; content: string; created_by: string | null; created_at: string }
 export interface Insight {
   id: number; name: string; kind: InsightKind; query: Record<string, unknown>
