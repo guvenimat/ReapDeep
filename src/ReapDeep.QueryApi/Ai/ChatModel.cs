@@ -97,7 +97,8 @@ public sealed class FakeChatModel : IChatModel
     static string FakeQuery(string question, JsonElement data)
     {
         var events = data.GetProperty("events").EnumerateArray().Select(e => e.GetString()!).ToList();
-        var mentioned = events.Where(e => question.Contains(e, StringComparison.OrdinalIgnoreCase)).ToList();
+        var mentioned = events.Where(e => question.Contains(e, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(e => question.IndexOf(e, StringComparison.OrdinalIgnoreCase)).ToList();
         if (mentioned.Count >= 2 && question.Contains("funnel", StringComparison.OrdinalIgnoreCase))
             return new JsonObject
             {

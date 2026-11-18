@@ -543,3 +543,7 @@ button.link.active { text-decoration: underline; }
 .platform-org { display: grid; gap: 10px; padding: 14px 0; border-top: 1px solid var(--border); }
 .platform-org:first-child { border-top: 0; padding-top: 0; }
 .platform-org-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+
+.ai-schedule-form { flex-wrap: wrap; }
+.ai-schedule-form input { flex: 1; min-width: 220px; }
+.ai-card select[aria-label="Earlier notes"] { max-width: 100%; }
