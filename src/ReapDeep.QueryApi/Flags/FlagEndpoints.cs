@@ -1,7 +1,9 @@
 using System.Security.Cryptography;
 using ReapDeep.Analytics;
+using ReapDeep.Analytics.Experiments;
 using ReapDeep.Analytics.Flags;
 using ReapDeep.QueryApi.Auth;
+using ReapDeep.QueryApi.Experiments;
 using ReapDeep.QueryApi.Infrastructure;
 
 namespace ReapDeep.QueryApi.Flags;
@@ -40,18 +42,30 @@ public static class FlagEndpoints
             : ApiResults.Conflict($"A flag with the key '{key}' already exists in this project");
     }
 
-    static async Task<IResult> Update(long id, FlagBody req, ProjectContext project, FlagRepository flags, CancellationToken ct)
+    static async Task<IResult> Update(long id, FlagBody req, ProjectContext project, FlagRepository flags, ExperimentRepository experiments, CancellationToken ct)
     {
         if (await flags.GetAsync(project.ProjectId, id, ct) is not { } current) return ApiResults.NotFound("Flag not found");
         Ensure.That(req.Key is null || req.Key.Trim() == current.Key, "key cannot be changed; create a new flag instead");
         var values = Values(req, current.Key, current);
-        return await flags.UpdateAsync(project.ProjectId, id, values, project.UserId!.Value, ct) is { } updated
-            ? ApiResults.Ok(updated, AppJsonContext.Default.FeatureFlag)
+        var variantsChanged = !ExperimentRules.SameVariants(FlagRules.ParseVariants(values.Variants), current.Variants);
+        if (variantsChanged && await experiments.NamesForFlagAsync(project.ProjectId, id, runningOnly: true, ct) is [var running, ..])
+            return VariantsLocked(current.Key, running);
+        if (await flags.UpdateAsync(project.ProjectId, id, values, project.UserId!.Value, ct) is { } updated)
+            return ApiResults.Ok(updated, AppJsonContext.Default.FeatureFlag);
+        return await experiments.NamesForFlagAsync(project.ProjectId, id, runningOnly: true, ct) is [var started, ..]
+            ? VariantsLocked(current.Key, started)
             : ApiResults.NotFound("Flag not found");
     }
 
-    static async Task<IResult> Delete(long id, ProjectContext project, FlagRepository flags, CancellationToken ct) =>
-        await flags.DeleteAsync(project.ProjectId, id, ct) ? Results.NoContent() : ApiResults.NotFound("Flag not found");
+    static IResult VariantsLocked(string key, string experiment) =>
+        ApiResults.Conflict($"The variants of '{key}' are locked while the experiment '{experiment}' is running; stop the experiment to change them");
+
+    static async Task<IResult> Delete(long id, ProjectContext project, FlagRepository flags, ExperimentRepository experiments, CancellationToken ct)
+    {
+        if (await experiments.NamesForFlagAsync(project.ProjectId, id, runningOnly: false, ct) is { Count: > 0 } names)
+            return ApiResults.Conflict($"The flag is used by the experiment{(names.Count > 1 ? "s" : "")} {string.Join(", ", names.Select(n => $"'{n}'"))}; delete them first");
+        return await flags.DeleteAsync(project.ProjectId, id, ct) ? Results.NoContent() : ApiResults.NotFound("Flag not found");
+    }
 
     static FlagRepository.FlagValues Values(FlagBody req, string key, FeatureFlag? current)
     {

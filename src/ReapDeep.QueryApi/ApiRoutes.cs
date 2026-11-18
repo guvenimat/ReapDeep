@@ -4,6 +4,7 @@ using ReapDeep.QueryApi.Auth;
 using ReapDeep.QueryApi.Catalog;
 using ReapDeep.QueryApi.Cohorts;
 using ReapDeep.QueryApi.Deletion;
+using ReapDeep.QueryApi.Experiments;
 using ReapDeep.QueryApi.Flags;
 using ReapDeep.QueryApi.Health;
 using ReapDeep.QueryApi.Insights;
@@ -34,5 +35,6 @@ public static class ApiRoutes
         api.MapCatalog();
         api.MapAlerts();
         api.MapFlags();
+        api.MapExperiments();
     }
 }

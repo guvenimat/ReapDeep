@@ -29,7 +29,7 @@ public readonly record struct TimeRange(DateTime FromUtc, DateTime ToUtc, DateTi
         return tz.GetUtcOffset(toUtc) == offset ? (int)offset.TotalSeconds : null;
     }
 
-    static DateTime ParseBoundary(string s, TimeZoneInfo tz, bool isEnd, string name)
+    public static DateTime ParseBoundary(string s, TimeZoneInfo tz, bool isEnd, string name)
     {
         if (DateTime.TryParseExact(s, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var day))
             return LocalToUtc(isEnd ? day.AddDays(1) : day, tz);

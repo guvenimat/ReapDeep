@@ -337,6 +337,16 @@ Personalized recommendations (`for_you`) are the exception, and they are built a
 | Person properties come from the request | look up the person in PostgreSQL, or keep every person's properties in memory | no database read per request and no cache that grows with the number of persons; the identity is anonymous, so it often has no stored person yet; client-side flags are not a security boundary anyway |
 | Exposure as an ordinary event with `$feature_flag` and `$feature_flag_response` in `properties` | dedicated columns | no schema or Routine Load change; experiment queries can move them to columns later if JSON extraction turns out to be slow |
 
+### Experiments
+
+| Decision | Alternative | Why |
+|---|---|---|
+| One StarRocks query per result: exposures and goal events in one scan, first exposure per person, goal events joined after it | pre-aggregated exposure tables | no new tables or jobs; exposure and goal share the same person resolution (`LEFT JOIN person_distinct_ids`) and the same tenant and time filter from `SqlBuilder` |
+| Persons with more than one variant are excluded and counted | assign them to their first variant | their outcome cannot be attributed to one variant; the count makes a broken integration visible |
+| Pooled two-proportion z-test, Welch's t-test, delta-method interval for the relative lift | Bayesian or sequential tests | simple, well known and checkable against reference values; the limits (peeking, several variants) are documented |
+| Distribution functions written in C# (Lanczos log-gamma, incomplete gamma and beta by continued fractions) | a statistics package | no dependency for four functions; unit tests compare them with scipy to 1e-9 relative |
+| Variants and percentages are locked while an experiment runs; rollout, targeting and on/off are not | lock the whole flag | rollout and variant use separate hashes, so changing who is in the rollout never moves anyone between variants; turning a broken feature off must stay possible |
+
 ### RFM and lifecycle
 
 RFM scores every person who bought in a 90, 180 or 365-day window on recency (time since the last
@@ -476,11 +486,12 @@ The system is verified end to end against the real stack rather than with mocks:
 | `alerts-test.ps1` | alert validation, firing and resolving against known values, signed webhooks received by a local listener, change and formula conditions, error states, cascade on insight deletion |
 | `rfm-lifecycle-test.ps1` | one customer per RFM segment with known scores (ties, merged identities, orders without `order_id`, invalid amounts), `rfm_segment` cohorts, every lifecycle state per day and the look-back |
 | `auth-test.ps1`, `settings-test.ps1` | sessions, roles, API keys, CORS, forwarded headers, StarRocks grants |
+| `experiments-test.ps1` | conversion, funnel, window and revenue results against hand-built data with z, t, p and intervals from scipy, excluded persons, conversions before exposure, SRM on skewed data, the variant lock, access and project isolation |
 | `dashboard-test.ps1`, `insights-test.ps1` | headless Chrome over the DevTools Protocol, every tab and dashboards |
 | `load-test.ps1` | throughput, latency, loss and freshness; the 100M-event query benchmark |
 
 Unit tests cover the pure logic: the SQL builder's mandatory filters and parameterization, the cohort rule
-compiler and its validation, the RFM segment map and the RFM and lifecycle SQL, time range
+compiler and its validation, the experiment statistics against scipy reference values, the RFM segment map and the RFM and lifecycle SQL, time range
 parsing and bucketing, password hashing and user agent parsing. CI builds everything and runs the SDK and
 unit tests on every push.
 

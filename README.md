@@ -14,6 +14,7 @@ retention, path and person questions over hundreds of millions of events.
 - **Recommendations:** a product catalog plus popular, trending, viewed-together and bought-together suggestions, served to your site by a public endpoint from memory, measured offline with a hit-rate check and live with impression and click events.
 - **Alerts:** a saved trend notifies a webhook, a Slack channel or e-mail addresses when it goes above or below a threshold, or grows or drops by a percentage against the previous window; webhook payloads are signed with HMAC-SHA256 and failed deliveries are retried.
 - **Feature flags:** on/off flags and multivariate flags with a rollout percentage and person property targeting, evaluated from memory by the public Recommender; every read in the SDK sends a `$feature_flag_called` exposure event with the flag key and variant.
+- **Experiments:** an A/B test on a multivariate flag with an event conversion, funnel or revenue-per-person goal, counted after each person's first exposure; a two-proportion z-test or Welch's t-test against the control with 95% confidence intervals, and a sample ratio mismatch check.
 - **Cohorts:** segments defined by behavior ("viewed a product 3+ times in 30 days but did not buy") or person properties, or uploaded as a list; every analysis can filter or break down by them.
 - **Fast ingestion:** 50K events/s on a single machine with p99 under 10 ms; a `202` response means the event is durably in Kafka.
 - **Fresh data:** events are queryable in 4-11 s (Kafka -> StarRocks Routine Load).
@@ -153,7 +154,7 @@ cd deploy/local
 .\demo-data.ps1     # ~50K events from 3,000 visitors over 8 weeks plus a year of purchase history, sent through the ingestion API
 ```
 
-The seed creates a **Demo Shop** project with a deterministic store scenario: traffic sources, desktop and mobile browsers, product pages, a cart and checkout funnel, sign-ups that merge anonymous history, and returning visitors over the following weeks. Repeat buyers and a group of past customers who bought up to 11 months ago give the RFM segments a realistic spread. It also creates a "Demo Shop overview" dashboard and sample cohorts (Champions, Customers at risk, Window shoppers, Pro plan), plus three alerts created through the Query API (a webhook and a Slack alert that post to `example.com`, and an email alert to `example.com` addresses that the local stack delivers to Mailpit); alerts that already exist by name are left alone. `-Reset` regenerates the project from scratch. Pick the project in the top bar and choose "Last 30 days".
+The seed creates a **Demo Shop** project with a deterministic store scenario: traffic sources, desktop and mobile browsers, product pages, a cart and checkout funnel, sign-ups that merge anonymous history, and returning visitors over the following weeks. Repeat buyers and a group of past customers who bought up to 11 months ago give the RFM segments a realistic spread. It also creates a running A/B test on a `one-page-checkout` flag whose test variant really converts better (a conversion and a revenue-per-visitor experiment), a "Demo Shop overview" dashboard and sample cohorts (Champions, Customers at risk, Window shoppers, Pro plan), plus three alerts created through the Query API (a webhook and a Slack alert that post to `example.com`, and an email alert to `example.com` addresses that the local stack delivers to Mailpit); alerts that already exist by name are left alone. `-Reset` regenerates the project from scratch. Pick the project in the top bar and choose "Last 30 days".
 
 ![Demo Shop dashboard](docs/images/dashboard.png)
 
@@ -219,6 +220,22 @@ await rd.loadFlags({ plan: 'pro' })
 if (rd.getFlag('new-checkout') === 'test') showNewCheckout()
 if (rd.isEnabled('free-shipping-banner')) showBanner()
 ```
+
+### Experiments
+
+An experiment ties a multivariate flag to a goal and a date range. Owners and admins manage experiments on the *Experiments* tab or through `/api/v1/experiments` (`GET`, `POST`, `PUT /{id}`, `DELETE /{id}`, `POST /{id}/start`, `POST /{id}/stop`); members and read keys can list them and read `GET /api/v1/experiments/{id}/results`.
+
+```json
+{ "name": "One-page checkout", "flag_id": 12, "control_variant": "control", "start_date": "2026-11-01",
+  "metric": { "kind": "conversion", "event": "purchase", "window_seconds": 86400 } }
+```
+
+- **Goals:** `conversion` (did the person do `event` after the first exposure, optionally within `window_seconds`), `funnel` (2-8 ordered `steps` after the first exposure, completed within `window_seconds`, 7 days by default) and `revenue` (sum of the numeric `property` of `event` per person; persons who did not buy count as 0).
+- **Exposure:** a person enters the variant of their first `$feature_flag_called` event for the flag inside the experiment's dates; persons are merged identities, so an anonymous exposure followed by sign-in and purchase counts once. Responses that are not a variant (`false`, `true`) are ignored, and persons who saw more than one variant are left out and reported as excluded.
+- **Statistics:** each variant is compared with the control (the first variant unless chosen): a pooled two-proportion z-test for conversion and funnel goals, Welch's t-test for revenue, two-sided p-values, 95% confidence intervals for the absolute difference and for the relative lift (delta method), significant when p < 0.05. A chi-square goodness-of-fit test compares exposed persons with the flag's percentages and warns about a sample ratio mismatch when p < 0.001. The distributions are implemented in C# and unit tested against scipy reference values.
+- **Lifecycle:** `draft` -> `running` (start; the start date defaults to now) -> `stopped` (the end date becomes now). While an experiment runs, its flag's variants and percentages cannot change (`409`) and neither the flag nor the experiment can be deleted; on/off, rollout and targeting can still change. Results are cached like other analyses (`Cache-Control: no-cache` skips the cache).
+
+![Experiment results: conversion per variant, difference and relative lift with 95% confidence intervals, p-value and the sample ratio check](docs/images/experiment-results.png)
 
 ### Cohorts
 
@@ -412,7 +429,7 @@ The 1.1 s runs of the filtered RFM query overlapped with the person worker's 30 
 ## Tests
 
 ```powershell
-dotnet test tests/ReapDeep.UnitTests   # SQL builder tenancy and parameters, cohort, RFM, lifecycle and recommendation SQL, recommender selection, time ranges, passwords, user agents, migrations, and contract tests (below)
+dotnet test tests/ReapDeep.UnitTests   # SQL builder tenancy and parameters, experiment statistics against scipy values, cohort, RFM, lifecycle and recommendation SQL, recommender selection, time ranges, passwords, user agents, migrations, and contract tests (below)
 
 cd deploy/local
 .\identity-test.ps1     # identity resolution, 12 end-to-end scenarios including property order after a worker backlog
@@ -425,6 +442,7 @@ cd deploy/local
 .\alerts-test.ps1       # alerts: validation, firing and resolving, signed webhooks to a local receiver, change and formula conditions, errors
 .\recommender-test.ps1  # catalog, key scopes, models from real events, the public Recommender, stock changes, signed for_you requests
 .\flags-test.ps1       # feature flags: validation, access, variant and rollout shares over 6,000 identities, stable assignment, disabled flags, targeting, project isolation, exposure events
+.\experiments-test.ps1  # experiments: known-answer conversion, funnel, window and revenue results (z, t, p, CI), excluded persons, conversions before exposure, SRM warning, variant lock, access, project isolation
 .\query-test.ps1        # Query API: trends, funnels, retention, paths, events, persons, EXPLAIN, latency
 .\durability-test.ps1   # duplicate retries, Redis and Kafka outages without loss, dead letters, de-duplicated event list, ingestion quota, health check
 .\observability-test.ps1  # health checks, metrics, traces and logs in Grafana, the routine load watchdog, rows StarRocks filters out, person worker backlog
@@ -485,7 +503,8 @@ ReapDeep is an early v1. It runs end to end locally but has not been operated in
 - Retention and paths read raw events and join persons on every query; they are fast on the demo and test data but were not part of the 100M-event benchmark.
 - RFM scores are relative to the customers in the report: a filter re-ranks only the matching customers. Amounts are summed without currency conversion (the report warns when it sees several currencies).
 - Cohort membership is the current membership: a 90-day trend filtered by a cohort uses who is in the cohort now, not who was in it on each day. Behavioral windows are limited to 90 days.
-- Not in v1: session replay, mobile SDKs, autocapture, experiment analysis (feature flags and exposure events are in place). Flags cannot target cohorts yet and are evaluated only in the browser SDK.
+- Not in v1: session replay, mobile SDKs, autocapture. Flags cannot target cohorts yet and are evaluated only in the browser SDK.
+- Experiments use fixed-horizon frequentist tests: looking at the results repeatedly while an experiment runs inflates false positives, and several variants are each compared with the control without a multiple-comparison correction. There are no secondary metrics, sample size planner or metric filters yet.
 - Behind a load balancer, set `ForwardedHeaders__TrustedNetworks` (CIDR list) on the ingestion and Query APIs; `X-Forwarded-For` is ignored otherwise. The Query API sends no CORS headers unless `QueryApi__CorsOrigins` is set.
 - The deletion job runs every 30 s in the local compose file so tests finish quickly; the default is once a day (`Deletion__IntervalSeconds`). Raw events also stay in Kafka for its 7-day retention.
 

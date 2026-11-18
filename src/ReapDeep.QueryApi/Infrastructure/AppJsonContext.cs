@@ -5,6 +5,7 @@ using ReapDeep.QueryApi.Auth;
 using ReapDeep.QueryApi.Catalog;
 using ReapDeep.QueryApi.Cohorts;
 using ReapDeep.QueryApi.Deletion;
+using ReapDeep.QueryApi.Experiments;
 using ReapDeep.QueryApi.Flags;
 using ReapDeep.QueryApi.Health;
 using ReapDeep.QueryApi.Insights;
@@ -90,4 +91,9 @@ namespace ReapDeep.QueryApi.Infrastructure;
 [JsonSerializable(typeof(FlagBody))]
 [JsonSerializable(typeof(FeatureFlag))]
 [JsonSerializable(typeof(FeatureFlagsResponse))]
+[JsonSerializable(typeof(ExperimentBody))]
+[JsonSerializable(typeof(Experiment))]
+[JsonSerializable(typeof(ExperimentsResponse))]
+[JsonSerializable(typeof(ExperimentResultsKey))]
+[JsonSerializable(typeof(ExperimentResults))]
 internal partial class AppJsonContext : JsonSerializerContext;

@@ -492,3 +492,15 @@ button.link.active { text-decoration: underline; }
 .flag-toggle { gap: 8px; }
 .flag-editor .segmented { align-self: flex-start; }
 .flag-targeting .cell-sub { white-space: nowrap; }
+
+.experiment-description { margin: 0 0 6px; color: var(--text-2); }
+.experiment-table td { vertical-align: top; }
+.lift { display: grid; grid-template-columns: 64px minmax(120px, 1fr); align-items: center; column-gap: 10px; }
+.lift .cell-sub { grid-column: 2; }
+.lift-value { font-variant-numeric: tabular-nums; font-weight: 600; text-align: right; }
+.lift-track { position: relative; height: 14px; border-radius: 7px; background: color-mix(in srgb, var(--axis) 45%, transparent); }
+.lift-zero { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--muted); }
+.lift-range { position: absolute; top: 4px; height: 6px; border-radius: 3px; background: var(--muted); }
+.lift-point { position: absolute; top: 2px; width: 10px; height: 10px; margin-left: -5px; border-radius: 50%; background: var(--muted); border: 2px solid var(--surface, #fff); }
+.lift-range.good, .lift-point.good { background: var(--good); }
+.lift-range.bad, .lift-point.bad { background: var(--critical); }
