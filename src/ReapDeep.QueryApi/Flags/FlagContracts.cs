@@ -7,6 +7,6 @@ public sealed record FlagBody(
 
 public sealed record FeatureFlag(
     long Id, string Key, string Name, string Description, bool Enabled, int RolloutPercentage, List<FlagVariant> Variants, List<FlagCondition> Conditions,
-    string? CreatedBy, string? UpdatedBy, DateTime CreatedAt, DateTime UpdatedAt);
+    string? CreatedBy, string? UpdatedBy, DateTime CreatedAt, DateTime UpdatedAt, string? LockedByExperiment);
 
 public sealed record FeatureFlagsResponse(List<FeatureFlag> Flags);

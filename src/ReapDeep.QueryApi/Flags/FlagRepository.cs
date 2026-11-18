@@ -8,17 +8,18 @@ public sealed class FlagRepository(NpgsqlDataSource db)
 {
     internal sealed record FlagRecord(
         long Id, string Key, string Name, string Description, bool Enabled, int RolloutPercentage, string Variants, string Conditions,
-        string? CreatedBy, string? UpdatedBy, DateTime CreatedAt, DateTime UpdatedAt)
+        string? CreatedBy, string? UpdatedBy, DateTime CreatedAt, DateTime UpdatedAt, string? LockedByExperiment)
     {
         public FeatureFlag ToContract() => new(Id, Key, Name, Description, Enabled, RolloutPercentage, FlagRules.ParseVariants(Variants),
-            FlagRules.ParseConditions(Conditions), CreatedBy, UpdatedBy, CreatedAt, UpdatedAt);
+            FlagRules.ParseConditions(Conditions), CreatedBy, UpdatedBy, CreatedAt, UpdatedAt, LockedByExperiment);
     }
 
     public sealed record FlagValues(string Name, string Description, bool Enabled, int RolloutPercentage, string Variants, string Conditions);
 
     const string Select = """
         SELECT f.id, f.key, f.name, f.description, f.enabled, f.rollout_percentage, f.variants::text AS variants, f.conditions::text AS conditions,
-               c.email AS created_by, u.email AS updated_by, f.created_at, f.updated_at
+               c.email AS created_by, u.email AS updated_by, f.created_at, f.updated_at,
+               (SELECT x.name FROM experiments x WHERE x.flag_id = f.id AND x.status = 'running' ORDER BY x.id LIMIT 1) AS locked_by_experiment
         FROM feature_flags f
         LEFT JOIN users c ON c.id = f.created_by
         LEFT JOIN users u ON u.id = f.updated_by
