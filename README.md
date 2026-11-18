@@ -257,6 +257,16 @@ An experiment ties a multivariate flag to a goal and a date range. Owners and ad
 
 ![Experiment results: conversion per variant, difference and relative lift with 95% confidence intervals, p-value and the sample ratio check](docs/images/experiment-results.png)
 
+### AI insights
+
+ReapDeep can ask a language model to read its results. Any OpenAI-compatible chat API works; the local stack is set up for DeepSeek (`AI_PROVIDER=openai`, `DEEPSEEK_API_KEY` in `deploy/local/.env`, optional `AI_BASE_URL` and `AI_MODEL`). Without a key, or with `AI_PROVIDER=fake`, a built-in fake model answers so the features and their tests run offline. Owners and admins turn AI on per project in Settings; it is off by default.
+
+- **Explain:** experiments, trends, funnels and retention have an "Explain" card (`POST /api/v1/experiments/{id}/explain`, `POST /api/v1/ai/explain`). For experiments, the decision (ship, stop, keep running, no clear difference, investigate) comes from fixed rules on ReapDeep's own statistics: a sample ratio warning means investigate, fewer than 100 persons in a variant means keep running, a variant whose 95% interval is above zero ships, and so on. The model only explains that decision and its numbers, and suggests follow-up experiments.
+- **Ask a question** (AI insights tab, `POST /api/v1/ai/query`): a question in any language becomes a trend or funnel request that opens in its tab. The model writes the request JSON, never SQL; ReapDeep checks that every event exists in the project and then runs the request through the same validated query builder as the editors.
+- **Weekly strategy note** (`POST /api/v1/ai/digest`): last week's traffic, sources, devices, RFM segments, recommendation performance and experiments become a short note with up to three experiment ideas. "Create draft experiment" makes a disabled 50/50 flag and a draft experiment on the suggested goal event; nothing reaches the site until someone enables and starts it.
+
+What leaves ReapDeep is aggregated: counts, rates, statistics and event, property and segment names, never a person, a distinct id or a property value of a person. Event names and labels come from visitors, so the prompt marks everything in the data as data and tells the model not to follow instructions found in it; strings are shortened and control characters removed, and the model can only produce text or a query that ReapDeep validates. Answers are cached for 24 hours by what the model would see, and each project can make 200 model calls a day (`Ai__DailyCallsPerProject`).
+
 ### Cohorts
 
 ![Cohort](docs/images/cohort.png)
@@ -484,6 +494,7 @@ cd deploy/local
 .\auth-test.ps1         # sign-in, sessions, project access, CORS, X-Forwarded-For, StarRocks grants
 .\deletion-test.ps1     # deletion requests and the batch job, end to end
 .\settings-test.ps1     # members, roles, password change, API keys, projects, IP anonymization, project deletion
+.\ai-test.ps1           # AI switch per project, explanations, the rule-based experiment decision, questions to trends and funnels, the weekly note, caching (fake model only)
 .\server-test.ps1       # server keys, /batch with historical timestamps and duplicates, flag definitions, the .NET SDK sample run inside the compose network, revocation
 .\account-test.ps1      # invitation and password reset emails through Mailpit: single use, expiry, no account enumeration, rate limits
 .\insights-test.ps1     # saved insights and dashboards, API and browser
@@ -556,6 +567,7 @@ ReapDeep is an early v1. It runs end to end locally but has not been operated in
 - RFM scores are relative to the customers in the report: a filter re-ranks only the matching customers. Amounts are summed without currency conversion (the report warns when it sees several currencies).
 - Cohort membership is the current membership: a 90-day trend filtered by a cohort uses who is in the cohort now, not who was in it on each day. Behavioral windows are limited to 90 days.
 - Web analytics has no country breakdown (it would need a GeoIP database and a new column). A session that started before the selected range is counted from its first event inside it in the tables, while the tiles count it in the period in which it started; sessions are split only by the SDK's session id, not by a change of source.
+- AI answers are only as good as the model and the numbers behind them; on the generated demo data they are illustrative. The AI query builder knows trends and funnels only.
 - Not in v1: session replay, mobile SDKs, autocapture. The server SDK exists only for .NET; other back ends call `POST /batch` directly.
 - Experiments use fixed-horizon frequentist tests: looking at the results repeatedly while an experiment runs inflates false positives, and several variants are each compared with the control without a multiple-comparison correction. There are no secondary metrics, sample size planner or metric filters yet.
 - Behind a load balancer, set `ForwardedHeaders__TrustedNetworks` (CIDR list) on the ingestion and Query APIs; `X-Forwarded-For` is ignored otherwise. The Query API sends no CORS headers unless `QueryApi__CorsOrigins` is set.

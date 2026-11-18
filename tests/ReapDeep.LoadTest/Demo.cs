@@ -141,6 +141,7 @@ static class Demo
             if (Interlocked.Add(ref sent, s.Events.Count) % 5000 < s.Events.Count) Console.WriteLine($"  {sent:N0} / {events:N0}");
         });
         Console.WriteLine($"Sent in {sw.Elapsed.TotalSeconds:0.0} s.");
+        await WriteDefinitions(db, sessions.SelectMany(x => x.Events));
 
         await CreateDashboard(db);
         await CreateCohorts(db);
@@ -447,6 +448,47 @@ static class Demo
             await Task.Delay(res.Headers.RetryAfter?.Delta ?? TimeSpan.FromSeconds(1));
         }
     }
+
+    static async Task WriteDefinitions(NpgsqlDataSource db, IEnumerable<Ev> events)
+    {
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        var eventProps = new Dictionary<string, string?>(StringComparer.Ordinal);
+        var personProps = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (var e in events)
+        {
+            names.Add(e.Event);
+            foreach (var (key, value) in e.Props)
+            {
+                eventProps.TryAdd(key, TypeOf(value));
+                if (key is "$set" or "$set_once" && value is Dictionary<string, object?> set)
+                    foreach (var (name, v) in set) personProps.TryAdd(name, TypeOf(v));
+            }
+        }
+        await using var cmd = db.CreateCommand("""
+            INSERT INTO event_definitions (project_id, name) SELECT @id, unnest(@names)
+            ON CONFLICT (project_id, name) DO UPDATE SET last_seen_at = now();
+            INSERT INTO property_definitions (project_id, scope, name, property_type) SELECT @id, 'event', n, t FROM unnest(@en, @et) AS x(n, t)
+            ON CONFLICT (project_id, scope, name) DO UPDATE SET last_seen_at = now();
+            INSERT INTO property_definitions (project_id, scope, name, property_type) SELECT @id, 'person', n, t FROM unnest(@pn, @pt) AS x(n, t)
+            ON CONFLICT (project_id, scope, name) DO UPDATE SET last_seen_at = now();
+            """);
+        cmd.Parameters.AddWithValue("id", ProjectId);
+        cmd.Parameters.AddWithValue("names", names.ToArray());
+        cmd.Parameters.AddWithValue("en", eventProps.Keys.ToArray());
+        cmd.Parameters.AddWithValue("et", eventProps.Values.ToArray());
+        cmd.Parameters.AddWithValue("pn", personProps.Keys.ToArray());
+        cmd.Parameters.AddWithValue("pt", personProps.Values.ToArray());
+        await cmd.ExecuteNonQueryAsync();
+        Console.WriteLine($"Recorded {names.Count} event names and {eventProps.Count + personProps.Count} property names for the editors' suggestions.");
+    }
+
+    static string? TypeOf(object? value) => value switch
+    {
+        string => "string",
+        bool => "boolean",
+        int or long or double or decimal or float => "number",
+        _ => null,
+    };
 
     static async Task Reset(NpgsqlDataSource db, string sr)
     {

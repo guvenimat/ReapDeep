@@ -1,4 +1,5 @@
 using ReapDeep.QueryApi.Actions;
+using ReapDeep.QueryApi.Ai;
 using ReapDeep.QueryApi.Alerts;
 using ReapDeep.QueryApi.Annotations;
 using ReapDeep.QueryApi.Analytics;
@@ -30,6 +31,7 @@ public static class ApiRoutes
         api.MapInsights();
         api.MapAnnotations();
         api.MapActions();
+        api.MapAi();
         api.MapDashboards();
         api.MapMembers();
         api.MapApiKeys();
