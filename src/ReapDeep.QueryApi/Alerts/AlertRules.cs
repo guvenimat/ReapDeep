@@ -17,8 +17,20 @@ public static class AlertRules
     public const string Firing = "firing";
     public const string Error = "error";
 
+    public const string Test = "test";
+
     public const string Fired = "fired";
     public const string Resolved = "resolved";
+
+    public static string RetryRefusal(string? deliveryStatus) => deliveryStatus switch
+    {
+        null => EventNotFound,
+        DeliveryPending => "This delivery is still being retried automatically",
+        DeliveryDelivered => "This delivery already succeeded",
+        _ => "This event has no notification to resend",
+    };
+
+    public const string EventNotFound = "Alert event not found";
 
     public static bool ComparesPeriods(string condition) => condition is Increase or Decrease;
 

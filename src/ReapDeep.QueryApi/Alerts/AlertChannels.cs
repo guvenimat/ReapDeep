@@ -24,13 +24,22 @@ public static class AlertMessages
         _ => WebhookSender.Serialize(p),
     };
 
-    public static string Subject(AlertWebhookPayload p) => $"[ReapDeep] {p.AlertName} is {p.State}";
+    public const string TestMessage = "This is a test notification from ReapDeep; the alert's state did not change.";
 
-    public static string SlackText(AlertWebhookPayload p) =>
-        $"*{Escape(p.AlertName)}* is {(p.State == AlertRules.Firing ? "firing" : "resolved")}: {Escape(p.Message)}\n" +
-        $"Trend: {Escape(p.Insight.Name)} · window: {p.Window} · checked {Time(p.CheckedAt)}";
+    public static AlertWebhookPayload TestPayload(long alertId, string alertName, long projectId, DateTime now) =>
+        new(alertId, alertName, projectId, AlertRules.Test, AlertRules.Above, 0, "day", 0, null, TestMessage, new AlertWebhookInsight(0, "Test"), now);
 
-    public static string EmailText(AlertWebhookPayload p) => string.Join("\n",
+    public static string Subject(AlertWebhookPayload p) =>
+        p.State == AlertRules.Test ? $"[ReapDeep] Test notification for {p.AlertName}" : $"[ReapDeep] {p.AlertName} is {p.State}";
+
+    public static string SlackText(AlertWebhookPayload p) => p.State == AlertRules.Test
+        ? $"*{Escape(p.AlertName)}*: {Escape(p.Message)}"
+        : $"*{Escape(p.AlertName)}* is {(p.State == AlertRules.Firing ? "firing" : "resolved")}: {Escape(p.Message)}\n" +
+          $"Trend: {Escape(p.Insight.Name)} · window: {p.Window} · checked {Time(p.CheckedAt)}";
+
+    public static string EmailText(AlertWebhookPayload p) => p.State == AlertRules.Test
+        ? string.Join("\n", $"Test notification for {p.AlertName}.", "", p.Message, "", $"Sent: {Time(p.CheckedAt)}", "", "Sent by ReapDeep alerts.")
+        : string.Join("\n",
         $"{p.AlertName} is {p.State}.",
         "",
         p.Message,

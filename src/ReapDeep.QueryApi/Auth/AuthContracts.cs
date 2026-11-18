@@ -6,3 +6,7 @@ public sealed record PasswordChangeRequest(string? CurrentPassword, string? NewP
 public sealed record UserInfo(long Id, string Email, string Name);
 public sealed record ProjectInfo(long Id, string Name, long OrganizationId, string OrganizationName, string Role, string Timezone);
 public sealed record MeResponse(UserInfo User, List<ProjectInfo> Projects);
+public sealed record ForgotPasswordRequest(string? Email);
+public sealed record AuthTokenRequest(string? Token);
+public sealed record ResetPasswordRequest(string? Token, string? NewPassword);
+public sealed record AuthTokenInfo(string Email, string Purpose);

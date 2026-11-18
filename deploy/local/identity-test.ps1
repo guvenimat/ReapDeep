@@ -1,4 +1,5 @@
-﻿$ErrorActionPreference = "Stop"
+﻿param([switch]$SkipBacklog)
+$ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
 Add-Type -AssemblyName System.Net.Http
 
@@ -116,6 +117,7 @@ $plan = Sr "EXPLAIN SELECT count(*) FROM analytics.events e LEFT JOIN analytics.
 Check "LEFT JOIN runs colocated" ($plan -match "COLOCATE")
 Check "outbox drained" ((Pg "SELECT count(*) FROM person_outbox") -eq "0")
 
+if ($SkipBacklog) { Write-Host "`n11-12) Skipped: they stop and start the person worker (-SkipBacklog)" -ForegroundColor Yellow } else {
 Write-Host "`n11) Person properties keep their order after a backlog (events keyed by distinct_id in Kafka)"
 $ord = "ord_$t"
 $pairs = 40
@@ -156,6 +158,7 @@ $merged = "SELECT count(*) FROM person_distinct_ids a JOIN person_distinct_ids u
 WaitFor "30 anonymous ids merged into their users" { (Pg $merged) -eq "30" } 60
 $props = Pg "SELECT string_agg(k || '=' || n, ',' ORDER BY k) FROM (SELECT (p.properties->>'plan') || '/' || (p.properties->>'theme') AS k, count(*) AS n FROM person_distinct_ids d JOIN persons p ON p.id = d.person_id WHERE d.project_id = 1 AND d.distinct_id LIKE '${x}_user_%' GROUP BY 1) s"
 Check "the newer plan wins and the older theme is kept for all 30 (got $props)" ($props -eq "pro/dark=30")
+}
 
 $old = [DateTime]::UtcNow.AddDays(-2).ToString("yyyy-MM-ddTHH:mm:ssZ")
 Send @(@{ event = '$set'; distinct_id = "backfill_$t"; timestamp = $old; properties = @{ '$set' = @{ plan = "old" } } })
@@ -166,6 +169,44 @@ Send @((Ev '$set' "backfill_$t" @{ '$set' = @{ plan = "new" } }))
 Send @(@{ event = '$set'; distinct_id = "backfill_$t"; timestamp = $old; properties = @{ '$set' = @{ plan = "stale"; region = "eu" } } })
 WaitFor "late region arrives" { (PersonOf "backfill_$t") -like "*region*" } 30
 Check "a late event cannot overwrite a newer value but adds properties it does not know yet" ((PersonOf "backfill_$t") -like "*""plan"": ""new""*" -and (PersonOf "backfill_$t") -like "*""region"": ""eu""*")
+
+
+Write-Host "`n13) `$set_once and `$unset follow event time and reach StarRocks"
+$so = "once_$t"
+function At([int]$minutesAgo) { [DateTime]::UtcNow.AddMinutes(-$minutesAgo).ToString("yyyy-MM-ddTHH:mm:ss.fffZ") }
+Send @(@{ event = '$set'; distinct_id = $so; timestamp = (At 30); properties = @{ '$set_once' = @{ first_source = "newsletter"; signup = "web" }; '$set' = @{ plan = "free" } } })
+WaitFor "person for $so" { (PersonOf $so) -ne "" }
+Send @(@{ event = '$set'; distinct_id = $so; timestamp = (At 20); properties = @{ '$set_once' = @{ first_source = "ads"; plan = "trial" }; '$unset' = @("signup") } })
+WaitFor "signup removed" { (PersonOf $so) -notlike "*signup*" }
+$p = PersonOf $so
+Check "a later `$set_once does not overwrite (first_source=newsletter, plan=free kept)" ($p -like "*""first_source"": ""newsletter""*" -and $p -like "*""plan"": ""free""*")
+Check "`$unset removes the property" ($p -notlike "*signup*")
+Send @(@{ event = '$set'; distinct_id = $so; timestamp = (At 40); properties = @{ '$set_once' = @{ first_source = "organic" }; '$set' = @{ signup = "stale" } } })
+WaitFor "earliest first_source wins" { (PersonOf $so) -like "*""first_source"": ""organic""*" } 30
+$p = PersonOf $so
+Check "an earlier `$set_once arriving late wins (first_source=organic)" ($p -like "*""first_source"": ""organic""*")
+Check "a `$set older than the `$unset does not bring the property back" ($p -notlike "*signup*")
+Send @(@{ event = '$set'; distinct_id = $so; timestamp = (At 10); properties = @{ '$set' = @{ signup = "app" } } })
+WaitFor "newer set after unset" { (PersonOf $so) -like "*""signup"": ""app""*" } 30
+Check "a `$set newer than the `$unset sets it again" ((PersonOf $so) -like "*""signup"": ""app""*")
+Send @(@{ event = '$set'; distinct_id = $so; timestamp = (At 5); properties = @{ '$unset' = @("plan", "missing") } })
+WaitFor "plan removed" { (PersonOf $so) -notlike "*plan*" } 30
+$soId = PersonId $so
+$srSql = "SELECT concat_ws('/', ifnull(get_json_string(properties, '$.first_source'), '-'), ifnull(get_json_string(properties, '$.signup'), '-'), ifnull(get_json_string(properties, '$.plan'), '-')) FROM analytics.persons WHERE project_id = 1 AND person_id = '$soId'"
+WaitFor "StarRocks person synced" { (Sr $srSql) -eq "organic/app/-" } 40
+Check "StarRocks persons has first_source=organic, signup=app and no plan ($(Sr $srSql))" ((Sr $srSql) -eq "organic/app/-")
+
+$mu = "mergeu_$t"; $ma = "mergea_$t"
+Send @((Identify $mu $null @{ email = "mu@example.com"; theme = "light" }))
+WaitFor "person for $mu" { (PersonOf $mu) -ne "" }
+Send @(@{ event = '$set'; distinct_id = $mu; properties = @{ '$unset' = @("theme") } })
+WaitFor "theme unset on $mu" { (PersonOf $mu) -notlike "*theme*" }
+Send @((Ev '$set' $ma @{ '$set' = @{ theme = "dark"; device = "mobile" } }))
+WaitFor "person for $ma" { (PersonOf $ma) -ne "" }
+Send @((Identify $mu $ma $null))
+WaitFor "$ma merged into $mu" { (PersonId $ma) -eq (PersonId $mu) }
+$p = PersonOf $mu
+Check "merge keeps the identified person's `$unset (no theme) and adds the anonymous person's other properties" ($p -notlike "*theme*" -and $p -like "*""device"": ""mobile""*")
 
 function J($a, $b) { "jsonb_build_object('a', $a, 'b', $b)" }
 Check "person_props_set keeps a newer value" ((Pg "SELECT person_props_set($(J 1 1), $(J 5 5), $(J 2 2), 3)->>'a'") -eq "1")

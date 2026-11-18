@@ -11,13 +11,15 @@ public static class MemberEndpoints
         api.MapGet("/members", List).RequireUser();
         api.MapPost("/members", Add).RequireManager();
         api.MapPatch("/members/{userId:long}", ChangeRole).RequireManager();
+        api.MapPost("/members/{userId:long}/invite", Resend).RequireManager();
         api.MapDelete("/members/{userId:long}", Remove).RequireUser();
     }
 
     static async Task<IResult> List(ProjectContext project, MemberRepository members, CancellationToken ct) =>
         ApiResults.Ok(new MembersResponse(await members.ListAsync(project.ProjectId, ct)), AppJsonContext.Default.MembersResponse);
 
-    static async Task<IResult> Add(AddMemberRequest req, ProjectContext project, MemberRepository members, SessionService sessions, CancellationToken ct)
+    static async Task<IResult> Add(AddMemberRequest req, ProjectContext project, MemberRepository members, SessionService sessions, AccountMailer mailer,
+        CancellationToken ct)
     {
         var email = SessionService.NormalizeEmail(req.Email ?? "");
         Ensure.That(email.Length is >= 3 and <= 254 && email.Contains('@'), "A valid email is required");
@@ -27,14 +29,27 @@ public static class MemberEndpoints
         if (req.Password is not null) Ensure.That(PasswordHasher.IsValidLength(req.Password), PasswordHasher.LengthRule);
 
         var hash = req.Password is null ? null : PasswordHasher.Hash(req.Password);
-        var (result, userId) = await members.AddAsync(project.ProjectId, email, name, hash, role, ct);
+        var (result, userId) = await members.AddAsync(project.ProjectId, email, name, hash, role, mailer.CanSend, ct);
         switch (result)
         {
-            case AddMemberResult.PasswordRequired: return ApiResults.BadRequest(PasswordHasher.LengthRule);
+            case AddMemberResult.PasswordRequired: return ApiResults.BadRequest($"No SMTP server is configured for invitations; set a temporary password. {PasswordHasher.LengthRule}");
             case AddMemberResult.AlreadyMember: return ApiResults.Conflict("This user is already a member");
         }
         await sessions.InvalidateUserAsync(userId);
-        return ApiResults.Created((await members.GetAsync(project.ProjectId, userId, ct))!, AppJsonContext.Default.MemberRow);
+        var row = (await members.GetAsync(project.ProjectId, userId, ct))!;
+        if (row.Pending && await mailer.SendInviteAsync(project.ProjectId, project.UserId!.Value, userId, row.Email, ct) is { } error)
+            return ApiResults.Error(StatusCodes.Status502BadGateway, $"The member was added but the invitation email failed ({error}); use Resend invitation");
+        return ApiResults.Created(row, AppJsonContext.Default.MemberRow);
+    }
+
+    static async Task<IResult> Resend(long userId, ProjectContext project, MemberRepository members, AccountMailer mailer, CancellationToken ct)
+    {
+        if (await members.GetAsync(project.ProjectId, userId, ct) is not { } row) return ApiResults.NotFound("Member not found");
+        if (!row.Pending) return ApiResults.Conflict("This member has already set a password");
+        if (!mailer.CanSend) return ApiResults.Error(StatusCodes.Status503ServiceUnavailable, "No SMTP server is configured for invitations");
+        return await mailer.SendInviteAsync(project.ProjectId, project.UserId!.Value, userId, row.Email, ct) is { } error
+            ? ApiResults.Error(StatusCodes.Status502BadGateway, $"The invitation email failed ({error})")
+            : Results.NoContent();
     }
 
     static async Task<IResult> ChangeRole(long userId, RoleChangeRequest req, ProjectContext project, MemberRepository members, SessionService sessions,

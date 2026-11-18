@@ -1,5 +1,3 @@
-using System.Security.Cryptography;
-using System.Text;
 using ReapDeep.QueryApi.Infrastructure;
 
 namespace ReapDeep.QueryApi.Auth;
@@ -35,11 +33,16 @@ public sealed class SessionService(AccountRepository accounts, AuthCache cache, 
         var ct = ctx.RequestAborted;
         var credentials = await accounts.FindCredentialsAsync(NormalizeEmail(email), ct);
         if (!PasswordHasher.Verify(password, credentials?.PasswordHash) || credentials is null) return null;
+        return await SignInUserAsync(ctx, credentials.Id);
+    }
 
-        var token = Base64Url(RandomNumberGenerator.GetBytes(32));
-        var hash = Hash(token);
+    public async Task<MeResponse?> SignInUserAsync(HttpContext ctx, long userId)
+    {
+        var ct = ctx.RequestAborted;
+        var token = AuthTokens.NewToken();
+        var hash = AuthTokens.Hash(token);
         var expires = DateTime.UtcNow + Lifetime;
-        await accounts.CreateSessionAsync(credentials.Id, hash, expires, ct);
+        await accounts.CreateSessionAsync(userId, hash, expires, ct);
         ctx.Response.Cookies.Append(CookieName, token, CookieOptions(expires));
         return await accounts.FindSessionAsync(hash, ct);
     }
@@ -76,9 +79,6 @@ public sealed class SessionService(AccountRepository accounts, AuthCache cache, 
     };
 
     static string? TokenHash(HttpRequest req) =>
-        req.Cookies.TryGetValue(CookieName, out var token) && token is { Length: > 0 and <= MaxTokenLength } ? Hash(token) : null;
+        req.Cookies.TryGetValue(CookieName, out var token) && token is { Length: > 0 and <= MaxTokenLength } ? AuthTokens.Hash(token) : null;
 
-    static string Hash(string token) => Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(token)));
-
-    static string Base64Url(byte[] bytes) => Convert.ToBase64String(bytes).TrimEnd('=').Replace('+', '-').Replace('/', '_');
 }

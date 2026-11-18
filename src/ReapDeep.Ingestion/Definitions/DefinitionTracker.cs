@@ -38,7 +38,7 @@ public sealed class DefinitionTracker(ILogger<DefinitionTracker> log)
         foreach (var (name, value) in properties)
         {
             Touch(new DefinitionKey(projectId, DefinitionScope.EventProperty, name), value, now);
-            if (name == "$set" && value.ValueKind == JsonValueKind.Object)
+            if (name is "$set" or "$set_once" && value.ValueKind == JsonValueKind.Object)
                 foreach (var p in value.EnumerateObject())
                     Touch(new DefinitionKey(projectId, DefinitionScope.PersonProperty, p.Name), p.Value, now);
         }

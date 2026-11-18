@@ -175,8 +175,9 @@ Routine Load, so no separate consumer service is needed.
 ## 5. Identity resolution
 
 The SDK sends `$identify` with the new user ID as `distinct_id` and the previous anonymous ID in
-`$anon_distinct_id`, and `$set` for property updates. The person worker consumes the events topic and
-only processes those two events.
+`$anon_distinct_id`, and `$set` for property updates. Any event may also carry `$set_once`
+(properties to set only when missing) and `$unset` (a list of names to remove). The person worker
+consumes the events topic and only processes `$identify` and events that carry one of these.
 
 **PostgreSQL is the source of truth** for persons and mappings. Each event is handled in one
 transaction with advisory locks on the involved distinct IDs. The rules:
@@ -201,7 +202,15 @@ the event time of every property in `property_times` (microseconds), and the SQL
 `person_props_set`, `person_times_set` and `person_times_merge` only let a value
 replace another one with an older or equal time. A merge keeps the identified person's value where
 both have one, with its time, and takes the anonymous person's other properties with theirs. A late
-event still adds properties the person does not have yet. Properties written before this change
+event still adds properties the person does not have yet.
+
+`$set_once` and `$unset` use the same times (migration 0009, `person_props_apply` /
+`person_times_apply`). Within one event the order is `$set_once`, `$set`, `$unset`. A value written by
+`$set_once` stores its time negated: any `$set` replaces it, and an earlier `$set_once` that arrives
+late replaces it too, so the first one wins whatever the processing order. `$unset` removes a
+property whose time is not newer and leaves its time as a tombstone, so an older `$set` or
+`$set_once` arriving later does not bring it back while a newer one does. In a merge the identified
+person's tombstones also drop the anonymous person's value for that property. Properties written before this change
 have no time and lose to any timed value. A person's `created_at` is the time of its first identity
 event, so backfilled data gets its real date.
 
@@ -407,6 +416,15 @@ above the current value produces a "resolved" notification instead of silently r
 - **Dashboard sessions:** email and password (PBKDF2-SHA256, 600K iterations; unknown emails still
   compute a hash so timing does not reveal accounts), a random token in an HttpOnly, `SameSite=Strict`
   cookie, stored hashed in a `sessions` table. Sign-in is rate limited per client IP.
+- **Invitations and password reset:** a member added without a password gets an invitation email;
+  "Forgot your password?" emails a reset link. Both carry a random 256-bit token that is stored only as
+  a SHA-256 hash in `auth_tokens` (migration 0010), works once, and expires (invitation 7 days, reset 1
+  hour). Using one sets the password, revokes the user's other open tokens, signs out every session and
+  signs in. The reset request always answers `202` and does the lookup and the sending in a background
+  queue, so neither the answer nor its timing reveals whether an account exists; at most 3 reset emails
+  per user and hour. The token, reset and forgot endpoints share a per-IP limit of 10 per minute, like
+  sign-in but in their own window. Mail goes through the alert SMTP settings; links point at
+  `Auth__PublicUrl`.
 - **Project selection:** session requests name the project in `X-Project-Id`; membership comes from
   `organization_members` (owner, admin, member). Role changes, removals and password changes invalidate
   the cached session immediately.

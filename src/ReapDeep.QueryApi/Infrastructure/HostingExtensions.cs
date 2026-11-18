@@ -55,6 +55,9 @@ public static class HostingExtensions
             o.AddPolicy(AuthEndpoints.LoginRateLimit, ctx => RateLimitPartition.GetFixedWindowLimiter(
                 ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
                 _ => new FixedWindowRateLimiterOptions { PermitLimit = LoginAttemptsPerMinute, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
+            o.AddPolicy(AuthEndpoints.AccountRateLimit, ctx => RateLimitPartition.GetFixedWindowLimiter(
+                ctx.Connection.RemoteIpAddress?.ToString() ?? "unknown",
+                _ => new FixedWindowRateLimiterOptions { PermitLimit = LoginAttemptsPerMinute, Window = TimeSpan.FromMinutes(1), QueueLimit = 0 }));
         });
 
         var pg = new NpgsqlSlimDataSourceBuilder(cfg.GetConnectionString("Postgres"));
@@ -96,6 +99,9 @@ public static class HostingExtensions
         services.AddSingleton<AlertRepository>();
         services.AddSingleton<WebhookSender>();
         services.AddSingleton<EmailSender>();
+        services.AddSingleton<AuthTokenRepository>();
+        services.AddSingleton<AccountMailer>();
+        services.AddHostedService(sp => sp.GetRequiredService<AccountMailer>());
         services.AddSingleton<AlertService>();
         services.AddSingleton<FlagRepository>();
         services.AddSingleton<ExperimentRepository>();

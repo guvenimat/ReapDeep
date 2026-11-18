@@ -103,7 +103,9 @@ export interface User { id: number; email: string; name: string }
 export interface Project { id: number; name: string; organization_id: number; organization_name: string; role: 'owner' | 'admin' | 'member'; timezone: string }
 export interface Me { user: User; projects: Project[] }
 export type Role = Project['role']
-export interface Member { user_id: number; email: string; name: string; role: Role; created_at: string }
+export interface Member { user_id: number; email: string; name: string; role: Role; created_at: string; pending: boolean }
+export type AuthTokenPurpose = 'invite' | 'reset'
+export interface AuthTokenInfo { email: string; purpose: AuthTokenPurpose }
 export type KeyScope = 'read' | 'catalog_write'
 export interface ApiKey { id: number; name: string; prefix: string; scope: KeyScope; created_by: string | null; created_at: string; revoked_at: string | null }
 
@@ -171,6 +173,8 @@ export interface Alert {
   last_value: number | null; previous_value: number | null; last_error: string | null; last_checked_at: string | null
   next_check_at: string; created_by: string | null; created_at: string
 }
+export interface AlertTestInput { alert_id?: number; name?: string; channel: AlertChannel; webhook_url?: string; email_to?: string[] }
+export interface AlertTestResult { delivered: boolean; response_status: number | null; error: string | null }
 export interface AlertEvent {
   id: number; kind: 'fired' | 'resolved' | 'error'; value: number | null; previous_value: number | null; message: string
   response_status: number | null; delivery_error: string | null

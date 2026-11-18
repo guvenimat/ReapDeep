@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { api } from '../../api/client'
-import type { KeyScope, Me, Project, Role } from '../../api/types'
+import type { KeyScope, Me, Member, Project, Role } from '../../api/types'
 import { Icon } from '../../components/icons'
 import { Badge, Card, FormMessage, Status } from '../../components/ui'
 import { dateTime, initials, num } from '../../lib/format'
@@ -175,11 +175,16 @@ function Members({ me, project, canManage, onAccessChanged }: { me: Me; project:
 
   const add = async (e: FormEvent) => {
     e.preventDefault()
-    if (await action.run(() => api.addMember({ ...form, name: form.name || undefined, password: form.password || undefined }))) {
+    setNotice(undefined)
+    let added: Member | undefined
+    if (await action.run(async () => { added = await api.addMember({ ...form, name: form.name || undefined, password: form.password || undefined }) }) && added) {
+      setNotice(added.pending ? `Invitation sent to ${added.email}` : `${added.email} was added`)
       setForm({ email: '', name: '', password: '', role: 'member' })
-      refresh(false)
     }
+    refresh(false)
   }
+  const [notice, setNotice] = useState<string>()
+  const resend = (m: Member) => action.run(() => api.resendInvite(m.user_id).then(() => setNotice(`Invitation sent again to ${m.email}`)))
   const changeRole = (userId: number, role: Role) => action.run(() => api.changeRole(userId, role).then(() => refresh(userId === me.user.id)))
   const remove = (userId: number, email: string) => {
     const self = userId === me.user.id
@@ -204,7 +209,7 @@ function Members({ me, project, canManage, onAccessChanged }: { me: Me; project:
                         <span className="avatar sm" aria-hidden>{initials(m.name || m.email)}</span>
                         <div>
                           <div className="strong">{m.name || m.email.split('@')[0]}{self && <span className="muted small"> (you)</span>}</div>
-                          <div className="muted small">{m.email}</div>
+                          <div className="muted small">{m.email}{m.pending && <> · <Badge tone="accent">Invited</Badge></>}</div>
                         </div>
                       </div>
                     </td>
@@ -217,6 +222,9 @@ function Members({ me, project, canManage, onAccessChanged }: { me: Me; project:
                     </td>
                     <td className="nowrap tabular muted">{dateTime(m.created_at)}</td>
                     <td className="num">
+                      {canManage && m.pending && (
+                        <button className="link resend-invite" data-email={m.email} onClick={() => resend(m)} disabled={action.busy}>Resend invitation</button>
+                      )}
                       {(editable || self) && (
                         <button className="link danger-link" onClick={() => remove(m.user_id, m.email)} disabled={action.busy}>
                           {self ? 'Leave' : 'Remove'}
@@ -230,14 +238,14 @@ function Members({ me, project, canManage, onAccessChanged }: { me: Me; project:
           </table>
         </div>
       </Status>
-      <FormMessage error={action.error} />
+      <div data-testid="members-message"><FormMessage error={action.error} success={action.error ? undefined : notice} /></div>
       {canManage && (
         <form className="inline-form" onSubmit={add} data-testid="add-member">
           <div className="editor-title">Invite a member</div>
           <div className="row">
             <input type="email" required placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} aria-label="Email" />
             <input placeholder="Name (optional)" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} aria-label="Name" />
-            <input type="password" autoComplete="new-password" placeholder="Temporary password (new users)" value={form.password}
+            <input type="password" autoComplete="new-password" placeholder="Password (optional, else email invite)" value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })} aria-label="Temporary password" />
             <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Role })} aria-label="Role">
               {assignable.map((r) => <option key={r} value={r}>{r}</option>)}

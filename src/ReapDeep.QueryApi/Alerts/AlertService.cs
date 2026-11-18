@@ -78,6 +78,38 @@ public sealed class AlertService(AlertRepository alerts, InsightRepository insig
         return new AlertCheckResponse(state, value, previous, text, evt);
     }
 
+    public async Task<(AlertEventRow? Event, string? Error)> RetryAsync(ProjectContext project, long alertId, long eventId, CancellationToken ct)
+    {
+        if (await alerts.ClaimFailedAsync(project.ProjectId, alertId, eventId, DateTime.UtcNow + AlertJob.Lease, ct) is not { } d)
+            return (null, AlertRules.RetryRefusal(await alerts.DeliveryStatusAsync(project.ProjectId, alertId, eventId, ct)));
+        return (await DeliverAsync(d.EventId, d.AlertId, d.Channel, d.WebhookUrl, d.EmailTo, d.Secret, d.Payload, d.Attempts + 1, ct), null);
+    }
+
+    public async Task<AlertTestResponse?> SendTestAsync(ProjectContext project, AlertTestRequest req, CancellationToken ct)
+    {
+        AlertRepository.AlertRecord? alert = null;
+        if (req.AlertId is { } id && (alert = await alerts.GetAsync(project.ProjectId, id, ct)) is null) return null;
+        var channel = Ensure.OneOf(req.Channel ?? alert?.Channel ?? AlertChannels.Webhook, "channel", AlertChannels.All);
+        var sameChannel = alert?.Channel == channel;
+        var name = string.IsNullOrWhiteSpace(req.Name) ? alert?.Name ?? "New alert" : Ensure.NotBlank(req.Name, "name");
+        var body = AlertMessages.Render(channel, AlertMessages.TestPayload(alert?.Id ?? 0, name, project.ProjectId, DateTime.UtcNow));
+        WebhookResult result;
+        if (channel == AlertChannels.Email)
+        {
+            Ensure.That(email.Configured, "Email alerts need an SMTP server (Alerts__Smtp__Host)");
+            var to = EmailSender.ParseRecipients(req.EmailTo ?? (sameChannel ? alert!.EmailTo?.ToList() : null));
+            result = await email.SendAsync(to, body, ct);
+        }
+        else
+        {
+            var url = WebhookSender.ParseUrl(req.WebhookUrl ?? (sameChannel ? alert!.WebhookUrl : null));
+            await webhooks.CheckDestinationAsync(url, ct);
+            var secret = alert?.Secret ?? "whsec_test_" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
+            result = await webhooks.SendAsync(url, secret, body, alert?.Id ?? 0, 0, 1, ct);
+        }
+        return new AlertTestResponse(result.Error is null, result.Status, result.Error);
+    }
+
     internal async Task<AlertEventRow> DeliverAsync(long eventId, long alertId, string channel, string? url, string[]? emailTo, string secret,
         string payload, int attempt, CancellationToken ct)
     {

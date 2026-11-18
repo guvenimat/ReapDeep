@@ -91,6 +91,19 @@ public partial class ContractTests
     }
 
     [Fact]
+    public void The_person_operations_the_SDK_sends_are_the_ones_the_person_worker_applies()
+    {
+        var sdk = Source("sdk", "js", "src", "index.ts");
+        var sent = Regex.Matches(sdk, @"(\$set_once|\$unset|\$set)\s*:").Select(m => m.Groups[1].Value).ToHashSet();
+        string[] applied = [ReapDeep.PersonWorker.Identity.IdentityEvent.Set, ReapDeep.PersonWorker.Identity.IdentityEvent.SetOnce, ReapDeep.PersonWorker.Identity.IdentityEvent.Unset];
+        Assert.Equal(applied.Order(), sent.Order());
+        var migrations = string.Join("\n", Migrations.Where(m => m.Target == MigrationCatalog.Postgres).Select(m => m.Sql));
+        var worker = Source("src", "ReapDeep.PersonWorker", "Identity", "PersonTransaction.cs");
+        foreach (var fn in Regex.Matches(worker, @"(person_[a-z_]+)\(").Select(m => m.Groups[1].Value).Distinct())
+            Assert.Contains($"FUNCTION {fn}(", migrations);
+    }
+
+    [Fact]
     public void The_SDK_sends_only_fields_the_ingestion_API_reads()
     {
         static HashSet<string> JsonNames(Type t) =>

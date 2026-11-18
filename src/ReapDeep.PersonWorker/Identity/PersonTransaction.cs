@@ -30,14 +30,15 @@ public sealed class PersonTransaction(NpgsqlConnection conn, NpgsqlTransaction t
         WHERE d.project_id = @ProjectId AND d.distinct_id = @DistinctId
         """, new { ProjectId = projectId, DistinctId = distinctId }, tx);
 
-    public async Task<Guid> CreateAsync(bool identified, string? set)
+    public async Task<Guid> CreateAsync(bool identified, PersonChanges set)
     {
         var id = Guid.CreateVersion7();
         await conn.ExecuteAsync("""
             INSERT INTO persons (id, project_id, properties, property_times, is_identified, version, created_at)
-            VALUES (@Id, @ProjectId, person_props_set('{}', '{}', @Set::jsonb, @Ts), person_times_set('{}', @Set::jsonb, @Ts), @Identified, 1,
+            VALUES (@Id, @ProjectId, person_props_apply('{}', '{}', @Set::jsonb, @SetOnce::jsonb, @Unset::jsonb, @Ts),
+                    person_times_apply('{}', '{}', @Set::jsonb, @SetOnce::jsonb, @Unset::jsonb, @Ts), @Identified, 1,
                     to_timestamp(@Ts / 1000000.0))
-            """, new { Id = id, ProjectId = projectId, Set = set, Identified = identified, Ts = eventMicros }, tx);
+            """, new { Id = id, ProjectId = projectId, set.Set, set.SetOnce, set.Unset, Identified = identified, Ts = eventMicros }, tx);
         _changedPersons.Add(id);
         return id;
     }
@@ -54,24 +55,24 @@ public sealed class PersonTransaction(NpgsqlConnection conn, NpgsqlTransaction t
         if (changed > 0) _changedDistinctIds.Add(distinctId);
     }
 
-    public async Task UpdateAsync(Guid personId, string? set, bool identify)
+    public async Task UpdateAsync(Guid personId, PersonChanges set, bool identify)
     {
-        if (set is null && !identify) return;
+        if (set.IsEmpty && !identify) return;
         var changed = await conn.ExecuteAsync("""
-            UPDATE persons SET properties = person_props_set(properties, property_times, @Set::jsonb, @Ts),
-                               property_times = person_times_set(property_times, @Set::jsonb, @Ts),
+            UPDATE persons SET properties = person_props_apply(properties, property_times, @Set::jsonb, @SetOnce::jsonb, @Unset::jsonb, @Ts),
+                               property_times = person_times_apply(properties, property_times, @Set::jsonb, @SetOnce::jsonb, @Unset::jsonb, @Ts),
                                is_identified = is_identified OR @Identify,
                                created_at = LEAST(created_at, to_timestamp(@Ts / 1000000.0)),
                                version = version + 1, updated_at = now()
-            WHERE id = @Id AND (person_props_set(properties, property_times, @Set::jsonb, @Ts) <> properties
-                                OR person_times_set(property_times, @Set::jsonb, @Ts) <> property_times
+            WHERE id = @Id AND (person_props_apply(properties, property_times, @Set::jsonb, @SetOnce::jsonb, @Unset::jsonb, @Ts) <> properties
+                                OR person_times_apply(properties, property_times, @Set::jsonb, @SetOnce::jsonb, @Unset::jsonb, @Ts) <> property_times
                                 OR (@Identify AND NOT is_identified)
                                 OR created_at > to_timestamp(@Ts / 1000000.0))
-            """, new { Id = personId, Set = set, Identify = identify, Ts = eventMicros }, tx);
+            """, new { Id = personId, set.Set, set.SetOnce, set.Unset, Identify = identify, Ts = eventMicros }, tx);
         if (changed > 0) _changedPersons.Add(personId);
     }
 
-    public async Task MergeAsync(Guid from, Guid into, string? set)
+    public async Task MergeAsync(Guid from, Guid into, PersonChanges set)
     {
         var moved = await conn.QueryAsync<string>("""
             UPDATE person_distinct_ids SET person_id = @Into, version = version + 1, updated_at = now()
@@ -81,14 +82,17 @@ public sealed class PersonTransaction(NpgsqlConnection conn, NpgsqlTransaction t
 
         await conn.ExecuteAsync("""
             UPDATE persons u SET
-                properties = person_props_set(f.properties || u.properties,
-                                              person_times_merge(f.property_times, u.properties, u.property_times), @Set::jsonb, @Ts),
-                property_times = person_times_set(person_times_merge(f.property_times, u.properties, u.property_times), @Set::jsonb, @Ts),
+                properties = person_props_apply(person_props_merge(f.properties, u.properties, u.property_times),
+                                                person_times_merge(f.property_times, u.properties, u.property_times),
+                                                @Set::jsonb, @SetOnce::jsonb, @Unset::jsonb, @Ts),
+                property_times = person_times_apply(person_props_merge(f.properties, u.properties, u.property_times),
+                                                    person_times_merge(f.property_times, u.properties, u.property_times),
+                                                    @Set::jsonb, @SetOnce::jsonb, @Unset::jsonb, @Ts),
                 created_at = LEAST(u.created_at, f.created_at, to_timestamp(@Ts / 1000000.0)),
                 is_identified = true, version = u.version + 1, updated_at = now()
             FROM persons f WHERE u.id = @Into AND f.id = @From;
             UPDATE persons SET is_deleted = true, properties = '{}', property_times = '{}', version = version + 1, updated_at = now() WHERE id = @From;
-            """, new { From = from, Into = into, Set = set, Ts = eventMicros }, tx);
+            """, new { From = from, Into = into, set.Set, set.SetOnce, set.Unset, Ts = eventMicros }, tx);
         _changedPersons.Add(from);
         _changedPersons.Add(into);
     }

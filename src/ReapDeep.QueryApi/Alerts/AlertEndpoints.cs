@@ -13,7 +13,21 @@ public static class AlertEndpoints
         api.MapDelete("/alerts/{id:long}", Delete).RequireManager();
         api.MapPost("/alerts/{id:long}/check", Check).RequireManager();
         api.MapGet("/alerts/{id:long}/events", Events).RequireUser();
+        api.MapPost("/alerts/{id:long}/events/{eventId:long}/retry", Retry).RequireManager();
+        api.MapPost("/alerts/test", Test).RequireManager();
     }
+
+    static async Task<IResult> Retry(long id, long eventId, ProjectContext project, AlertService service, CancellationToken ct)
+    {
+        var (row, error) = await service.RetryAsync(project, id, eventId, ct);
+        if (row is not null) return ApiResults.Ok(row, AppJsonContext.Default.AlertEventRow);
+        return error == AlertRules.EventNotFound ? ApiResults.NotFound(error) : ApiResults.Conflict(error!);
+    }
+
+    static async Task<IResult> Test(AlertTestRequest req, ProjectContext project, AlertService service, CancellationToken ct) =>
+        await service.SendTestAsync(project, req, ct) is { } result
+            ? ApiResults.Ok(result, AppJsonContext.Default.AlertTestResponse)
+            : ApiResults.NotFound("Alert not found");
 
     static async Task<IResult> List(ProjectContext project, AlertRepository alerts, CancellationToken ct) =>
         ApiResults.Ok(new AlertsResponse((await alerts.ListAsync(project.ProjectId, ct)).Select(a => a.ToContract(project.CanManage)).ToList()),

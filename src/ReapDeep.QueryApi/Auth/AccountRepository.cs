@@ -5,7 +5,7 @@ namespace ReapDeep.QueryApi.Auth;
 
 public sealed class AccountRepository(NpgsqlDataSource db)
 {
-    public sealed record Credentials(long Id, string PasswordHash);
+    public sealed record Credentials(long Id, string? PasswordHash);
 
     public async Task<Credentials?> FindCredentialsAsync(string email, CancellationToken ct)
     {
