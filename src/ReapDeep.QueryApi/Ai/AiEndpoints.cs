@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using ReapDeep.Analytics;
 using ReapDeep.Analytics.Sql;
 using ReapDeep.QueryApi.Actions;
+using ReapDeep.QueryApi.Alerts;
 using ReapDeep.QueryApi.Analytics;
 using ReapDeep.QueryApi.Auth;
 using ReapDeep.QueryApi.Catalog;
@@ -29,6 +30,9 @@ public static class AiEndpoints
         api.MapPost("/ai/explain", ExplainInsight).RequireUser();
         api.MapPost("/ai/query", Query).RequireUser();
         api.MapPost("/ai/digest", Digest).RequireUser();
+        api.MapGet("/ai/notes", Notes);
+        api.MapGet("/ai/schedule", GetSchedule);
+        api.MapPut("/ai/schedule", SetSchedule).RequireManager();
     }
 
     static async Task<IResult> ExplainExperiment(long id, ProjectContext project, ExperimentRepository experiments, ExperimentService service, AiGateway ai,
@@ -170,57 +174,37 @@ public static class AiEndpoints
             AppJsonContext.Default.AiQueryAnswer);
     }
 
-    static async Task<IResult> Digest(ProjectContext project, WebAnalyticsService web, RfmService rfm, CatalogService catalog, ExperimentRepository experiments,
-        MetadataRepository metadata, AiGateway ai, ILoggerFactory loggers, CancellationToken ct)
+    static async Task<IResult> Digest(ProjectContext project, DigestService digests, CancellationToken ct)
     {
-        var log = loggers.CreateLogger("ReapDeep.QueryApi.Ai.Digest");
-        var from = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, project.TimeZone).Date.AddDays(-6).ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
-        async Task<JsonNode?> Part<T>(string name, Func<Task<T>> run, Func<T, JsonNode?> map)
-        {
-            try
-            {
-                return map(await run());
-            }
-            catch (Exception ex) when (ex is ValidationException or InvalidOperationException or MySqlConnector.MySqlException)
-            {
-                log.LogInformation("Digest part {Part} skipped: {Error}", name, ex.Message);
-                return null;
-            }
-        }
-
-        var meta = await metadata.GetAsync(project.ProjectId, ct);
-        var data = new JsonObject
-        {
-            ["period"] = $"last 7 days from {from}, compared with the 7 days before",
-            ["web"] = await Part("web", () => web.RunAsync(project, new WebAnalyticsRequest(from, null, "day", null, 5, false), ct),
-                r => JsonSerializer.SerializeToNode(r with { TookMs = 0, Series = [] }, AppJsonContext.Default.WebAnalyticsResponse)),
-            ["rfm_segments"] = await Part("rfm", () => rfm.RunAsync(project, new RfmRequest(90, null, null, null, false), ct),
-                r => new JsonArray(r.Segments.Where(s => s.Persons > 0).Select(s => (JsonNode?)new JsonObject
-                {
-                    ["segment"] = s.Name, ["persons"] = s.Persons, ["share"] = Math.Round(s.Share, 3), ["revenue_share"] = Math.Round(s.RevenueShare, 3),
-                }).ToArray())),
-            ["recommendations"] = await Part("recommendations", () => catalog.PerformanceAsync(project, 30, ct),
-                r => JsonSerializer.SerializeToNode(r.Rows, AppJsonContext.Default.ListRecommendationPerformance)),
-            ["experiments"] = new JsonArray((await experiments.ListAsync(project.ProjectId, ct)).Take(20).Select(x => (JsonNode?)new JsonObject
-            {
-                ["name"] = x.Name, ["status"] = x.Status, ["flag"] = x.FlagKey, ["goal"] = x.Metric.Event ?? x.Metric.Kind,
-            }).ToArray()),
-            ["events"] = new JsonArray(meta.Events.OrderByDescending(e => e.LastSeenAt).Take(80).Select(e => (JsonNode?)e.Name).ToArray()),
-        };
-        var reply = await ai.AskAsync(project, AiFeatures.Digest, AiTasks.Digest, """
-            Task: write a weekly strategy note for the store team from these numbers: traffic and its sources, devices, top pages, customer
-            segments (RFM), how recommendations perform, and the experiments that exist. Findings name the biggest changes and risks; the
-            recommendation is the single most valuable thing to do next. Also propose up to 3 A/B experiments that are not already running:
-            each must be a change on the website that a feature flag can switch between a control and a test version (a page, a component,
-            a message, an offer shown on the site); campaigns sent outside the site, such as emails, are not experiments here.
-            JSON schema of your reply: {"summary": string, "findings": [string, at most 5], "recommendation": string, "caveats": [string, at most 3],
-            "next_steps": [string, at most 3], "experiments": [{"name": string, "hypothesis": string, "goal_event": one name from data.events,
-            "flag_key": short lowercase key with letters, digits and "-"}]}.
-            """, data, null, ct);
-        var answer = AiParse.Answer(reply, withExperiments: true);
-        var known = meta.Events.Select(e => e.Name).ToHashSet(StringComparer.Ordinal);
-        return ApiResults.Ok(answer with { Experiments = answer.Experiments?.Where(i => known.Contains(i.GoalEvent)).ToList() }, AppJsonContext.Default.AiAnswer);
+        var today = DateOnly.FromDateTime(TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, project.TimeZone));
+        var (answer, _) = await digests.WriteAsync(project, DigestRules.OnDemand(today), "manual", ct);
+        return ApiResults.Ok(answer, AppJsonContext.Default.AiAnswer);
     }
+
+    static async Task<IResult> Notes(ProjectContext project, DigestRepository notes, CancellationToken ct) =>
+        ApiResults.Ok(new AiNotesResponse(await notes.ListNotesAsync(project.ProjectId, 20, ct)), AppJsonContext.Default.AiNotesResponse);
+
+    static async Task<IResult> GetSchedule(ProjectContext project, DigestRepository schedules, EmailSender email, CancellationToken ct) =>
+        ApiResults.Ok(ScheduleResponse(project, await schedules.GetScheduleAsync(project.ProjectId, ct), email), AppJsonContext.Default.DigestScheduleResponse);
+
+    static async Task<IResult> SetSchedule(DigestScheduleBody req, ProjectContext project, DigestRepository schedules, EmailSender email, CancellationToken ct)
+    {
+        var (frequency, weekday, monthDay, hour) = DigestRules.Validate(req);
+        if (frequency == DigestRules.Off)
+        {
+            await schedules.DeleteScheduleAsync(project.ProjectId, ct);
+            return await GetSchedule(project, schedules, email, ct);
+        }
+        string[] to = req.EmailTo is { Count: > 0 } list ? EmailSender.ParseRecipients(list) : [];
+        Ensure.That(to.Length == 0 || email.Configured, "E-mail delivery needs an SMTP server (Alerts__Smtp__Host); leave email_to empty to keep notes in the app");
+        var next = DigestRules.NextRunUtc(frequency, weekday, monthDay, hour, project.TimeZone, DateTime.UtcNow);
+        await schedules.SaveScheduleAsync(project.ProjectId, frequency, weekday, monthDay, hour, to, next, ct);
+        return await GetSchedule(project, schedules, email, ct);
+    }
+
+    static DigestScheduleResponse ScheduleResponse(ProjectContext project, DigestRepository.ScheduleRecord? s, EmailSender email) => s is null
+        ? new(DigestRules.Off, 1, 1, 9, [], null, null, null, project.TimeZoneId, email.Configured)
+        : new(s.Frequency, s.Weekday, s.MonthDay, s.Hour, DigestRepository.Split(s.EmailTo), s.NextRunAt, s.LastRunAt, s.LastError, project.TimeZoneId, email.Configured);
 
     static T Parse<T>(string json, System.Text.Json.Serialization.Metadata.JsonTypeInfo<T> type)
     {

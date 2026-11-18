@@ -108,6 +108,8 @@ public static class HostingExtensions
         services.AddSingleton<IChatModel>(_ => ai.Provider == AiOptions.Fake ? new FakeChatModel() : new OpenAiCompatibleChatModel(new HttpClient { Timeout = TimeSpan.FromSeconds(100) }, ai));
         services.AddSingleton<AiGateway>();
         services.AddSingleton<AiAccessRepository>();
+        services.AddSingleton<DigestRepository>();
+        services.AddSingleton<DigestService>();
         services.AddSingleton<PlatformAdmins>();
         services.AddSingleton<EmailSender>();
         services.AddSingleton<AuthTokenRepository>();
@@ -117,7 +119,11 @@ public static class HostingExtensions
         services.AddSingleton<FlagRepository>();
         services.AddSingleton<ExperimentRepository>();
         services.AddSingleton<ExperimentService>();
-        if (cfg.GetValue("Alerts:RunJob", true)) services.AddHostedService<AlertJob>();
+        if (cfg.GetValue("Alerts:RunJob", true))
+        {
+            services.AddHostedService<AlertJob>();
+            services.AddHostedService<DigestJob>();
+        }
         return builder;
     }
 

@@ -143,4 +143,42 @@ public class AiTests
         Assert.False(admins.IsAdmin("customer@example.com"));
         Assert.False(new PlatformAdmins(new ConfigurationBuilder().Build()).IsAdmin("ops@example.com"));
     }
+
+    static readonly TimeZoneInfo Istanbul = TimeZoneInfo.FindSystemTimeZoneById("Europe/Istanbul");
+    static DateTime Utc(int y, int m, int d, int h, int min = 0) => new(y, m, d, h, min, 0, DateTimeKind.Utc);
+
+    [Fact]
+    public void Daily_notes_run_at_the_chosen_local_hour_today_or_tomorrow()
+    {
+        Assert.Equal(Utc(2026, 11, 18, 6), DigestRules.NextRunUtc(DigestRules.Daily, 1, 1, 9, Istanbul, Utc(2026, 11, 18, 5)));
+        Assert.Equal(Utc(2026, 11, 19, 6), DigestRules.NextRunUtc(DigestRules.Daily, 1, 1, 9, Istanbul, Utc(2026, 11, 18, 6)));
+    }
+
+    [Fact]
+    public void Weekly_and_monthly_notes_wait_for_their_day()
+    {
+        Assert.Equal(Utc(2026, 11, 23, 6), DigestRules.NextRunUtc(DigestRules.Weekly, 1, 1, 9, Istanbul, Utc(2026, 11, 18, 12)));
+        Assert.Equal(Utc(2026, 11, 22, 17), DigestRules.NextRunUtc(DigestRules.Weekly, 7, 1, 20, Istanbul, Utc(2026, 11, 18, 12)));
+        Assert.Equal(Utc(2026, 12, 1, 6), DigestRules.NextRunUtc(DigestRules.Monthly, 1, 1, 9, Istanbul, Utc(2026, 11, 18, 12)));
+        Assert.Equal(Utc(2026, 11, 28, 6), DigestRules.NextRunUtc(DigestRules.Monthly, 1, 28, 9, Istanbul, Utc(2026, 11, 18, 12)));
+    }
+
+    [Fact]
+    public void Each_frequency_summarizes_its_own_period()
+    {
+        var day = new DateOnly(2026, 11, 18);
+        Assert.Equal((new DateOnly(2026, 11, 17), (DateOnly?)new DateOnly(2026, 11, 17)), (DigestRules.PeriodFor(DigestRules.Daily, day).From, DigestRules.PeriodFor(DigestRules.Daily, day).To));
+        Assert.Equal((new DateOnly(2026, 11, 11), (DateOnly?)new DateOnly(2026, 11, 17)), (DigestRules.PeriodFor(DigestRules.Weekly, day).From, DigestRules.PeriodFor(DigestRules.Weekly, day).To));
+        Assert.Equal((new DateOnly(2026, 10, 1), (DateOnly?)new DateOnly(2026, 10, 31)), (DigestRules.PeriodFor(DigestRules.Monthly, day).From, DigestRules.PeriodFor(DigestRules.Monthly, day).To));
+        Assert.Null(DigestRules.OnDemand(day).To);
+    }
+
+    [Fact]
+    public void Schedule_input_is_checked()
+    {
+        Assert.Equal(("weekly", 3, 1, 8), DigestRules.Validate(new DigestScheduleBody("weekly", 3, null, 8, null)));
+        Assert.Throws<ReapDeep.Analytics.ValidationException>(() => DigestRules.Validate(new DigestScheduleBody("hourly", null, null, null, null)));
+        Assert.Throws<ReapDeep.Analytics.ValidationException>(() => DigestRules.Validate(new DigestScheduleBody("monthly", null, 31, null, null)));
+        Assert.Throws<ReapDeep.Analytics.ValidationException>(() => DigestRules.Validate(new DigestScheduleBody("daily", null, null, 24, null)));
+    }
 }

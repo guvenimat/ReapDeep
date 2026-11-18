@@ -1,11 +1,13 @@
 import { useState, type FormEvent } from 'react'
 import { api, errorMessage } from '../../api/client'
-import type { AiAnswer, AiExperimentIdea, AiQueryAnswer } from '../../api/types'
+import type { AiExperimentIdea, AiNote, AiQueryAnswer, DigestFrequency, DigestSchedule } from '../../api/types'
 import { ACTION_PREFIX } from '../../components/editors'
 import { Icon } from '../../components/icons'
 import { Card } from '../../components/ui'
 import { AiAnswerView } from './AiAnswer'
 import { useAiFeature } from './AiAccess'
+import { useQuery } from '../../lib/hooks'
+import { dateTime } from '../../lib/format'
 
 type Item = { event?: string; action?: string; metric?: string; property?: string }
 const ref = (i: Item) => (i.action ? ACTION_PREFIX + i.action : i.event ?? '')
@@ -100,15 +102,37 @@ function Idea({ idea, canManage }: { idea: AiExperimentIdea; canManage: boolean 
   )
 }
 
-function Digest({ canManage }: { canManage: boolean }) {
-  const [answer, setAnswer] = useState<AiAnswer>()
+const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+const FREQUENCIES: { id: DigestFrequency; label: string }[] = [
+  { id: 'off', label: 'Off' }, { id: 'daily', label: 'Every day' }, { id: 'weekly', label: 'Once a week' }, { id: 'monthly', label: 'Once a month' },
+]
+
+function describeSchedule(s: DigestSchedule) {
+  const at = `${String(s.hour).padStart(2, '0')}:00 (${s.timezone})`
+  if (s.frequency === 'daily') return `every day at ${at}, about the day before`
+  if (s.frequency === 'weekly') return `every ${WEEKDAYS[s.weekday - 1]} at ${at}, about the last 7 days`
+  if (s.frequency === 'monthly') return `on day ${s.month_day} of each month at ${at}, about the previous month`
+  return 'not scheduled'
+}
+
+function ScheduleEditor({ canManage }: { canManage: boolean }) {
+  const [version, setVersion] = useState(0)
+  const schedule = useQuery((signal) => api.aiSchedule(signal), [version])
+  const [draft, setDraft] = useState<{ frequency: DigestFrequency; weekday: number; month_day: number; hour: number; email: string }>()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
-  const run = async () => {
+  const s = schedule.data
+  const d = draft ?? (s && { frequency: s.frequency, weekday: s.weekday, month_day: s.month_day, hour: s.hour, email: s.email_to.join(', ') })
+  if (!s || !d) return null
+  const set = (patch: Partial<NonNullable<typeof draft>>) => setDraft({ ...d, ...patch })
+  const save = async () => {
     setBusy(true)
     setError(undefined)
     try {
-      setAnswer(await api.aiDigest())
+      const email_to = d.email.split(/[,;\s]+/).map((x) => x.trim()).filter(Boolean)
+      await api.setAiSchedule({ frequency: d.frequency, weekday: d.weekday, month_day: d.month_day, hour: d.hour, email_to })
+      setDraft(undefined)
+      setVersion((v) => v + 1)
     } catch (err) {
       setError(errorMessage(err))
     } finally {
@@ -116,22 +140,93 @@ function Digest({ canManage }: { canManage: boolean }) {
     }
   }
   return (
-    <Card className="ai-card" title={<><Icon name="sparkles" />Weekly strategy note</>}
-      meta="Traffic, customer segments, recommendations and experiments of the last 7 days, with experiment ideas"
-      actions={<button type="button" className="primary" onClick={run} disabled={busy}>{busy ? 'Writing…' : answer ? 'Write again' : 'Write the note'}</button>}>
+    <div className="ai-section ai-schedule" data-ai-schedule={s.frequency}>
+      <div className="eyebrow">Schedule</div>
+      <p className="muted small">
+        {s.frequency === 'off' ? 'Notes are written only when someone asks.' : `A note is written ${describeSchedule(s)}`}
+        {s.next_run_at && ` · next: ${dateTime(s.next_run_at)}`}
+        {s.email_to.length > 0 && ` · e-mailed to ${s.email_to.join(', ')}`}
+      </p>
+      {s.last_error && <p className="form-message error">Last run: {s.last_error}</p>}
+      {canManage && (
+        <div className="row ai-schedule-form">
+          <select aria-label="Frequency" value={d.frequency} onChange={(e) => set({ frequency: e.target.value as DigestFrequency })}>
+            {FREQUENCIES.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+          </select>
+          {d.frequency === 'weekly' && (
+            <select aria-label="Day of the week" value={d.weekday} onChange={(e) => set({ weekday: Number(e.target.value) })}>
+              {WEEKDAYS.map((w, k) => <option key={w} value={k + 1}>{w}</option>)}
+            </select>
+          )}
+          {d.frequency === 'monthly' && (
+            <select aria-label="Day of the month" value={d.month_day} onChange={(e) => set({ month_day: Number(e.target.value) })}>
+              {Array.from({ length: 28 }, (_, k) => <option key={k} value={k + 1}>Day {k + 1}</option>)}
+            </select>
+          )}
+          {d.frequency !== 'off' && (
+            <>
+              <select aria-label="Hour" value={d.hour} onChange={(e) => set({ hour: Number(e.target.value) })}>
+                {Array.from({ length: 24 }, (_, h) => <option key={h} value={h}>{String(h).padStart(2, '0')}:00</option>)}
+              </select>
+              {s.email_available
+                ? <input aria-label="E-mail recipients" placeholder="E-mail to (optional), comma separated" value={d.email} onChange={(e) => set({ email: e.target.value })} />
+                : <span className="muted small">No SMTP server: notes stay in the app.</span>}
+            </>
+          )}
+          <button type="button" className="primary" onClick={save} disabled={busy}>{busy ? 'Saving…' : 'Save schedule'}</button>
+        </div>
+      )}
       {error && <p className="form-message error" role="alert">{error}</p>}
-      {answer ? (
+    </div>
+  )
+}
+
+function Digest({ canManage }: { canManage: boolean }) {
+  const [version, setVersion] = useState(0)
+  const notes = useQuery((signal) => api.aiNotes(signal), [version])
+  const [selected, setSelected] = useState<number>()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string>()
+  const list = notes.data?.notes ?? []
+  const note = list.find((n) => n.id === selected) ?? list[0]
+  const run = async () => {
+    setBusy(true)
+    setError(undefined)
+    try {
+      await api.aiDigest()
+      setSelected(undefined)
+      setVersion((v) => v + 1)
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+  const label = (n: AiNote) => `${dateTime(n.created_at)} · ${n.period_from} to ${n.period_to} · ${n.trigger === 'schedule' ? 'scheduled' : 'on request'}${n.emailed_to.length ? ' · e-mailed' : ''}`
+  return (
+    <Card className="ai-card" title={<><Icon name="sparkles" />Strategy note</>}
+      meta="Traffic, customer segments, recommendations and experiments, with experiment ideas"
+      actions={<button type="button" className="primary" onClick={run} disabled={busy}>{busy ? 'Writing…' : 'Write a note now'}</button>}>
+      <ScheduleEditor canManage={canManage} />
+      {error && <p className="form-message error" role="alert">{error}</p>}
+      {list.length > 1 && (
+        <select aria-label="Earlier notes" value={note?.id} onChange={(e) => setSelected(Number(e.target.value))} data-ai-notes={list.length}>
+          {list.map((n) => <option key={n.id} value={n.id}>{label(n)}</option>)}
+        </select>
+      )}
+      {note ? (
         <>
-          <AiAnswerView answer={answer} />
-          {(answer.experiments?.length ?? 0) > 0 && (
+          {list.length === 1 && <p className="muted small">{label(note)}</p>}
+          <AiAnswerView answer={note.answer} />
+          {(note.answer.experiments?.length ?? 0) > 0 && (
             <div className="ai-section">
               <div className="eyebrow">Experiment ideas</div>
-              <ul className="ai-ideas">{answer.experiments!.map((i) => <Idea key={i.flag_key + i.name} idea={i} canManage={canManage} />)}</ul>
+              <ul className="ai-ideas">{note.answer.experiments!.map((i) => <Idea key={`${note.id}-${i.flag_key}-${i.name}`} idea={i} canManage={canManage} />)}</ul>
               <p className="footnote">A draft creates a disabled 50/50 flag and an experiment on the goal event; nothing changes on the site until you enable the flag and start the experiment.</p>
             </div>
           )}
         </>
-      ) : !error && <p className="editor-hint">Gathers this week's numbers and asks the model for a short note. Only aggregates leave ReapDeep.</p>}
+      ) : !error && <p className="editor-hint">No note yet. Write one now or set a schedule; every note is kept here (the last 50).</p>}
     </Card>
   )
 }

@@ -24,6 +24,7 @@ x-query-api-environment: &query-api-environment
   Ai__Model: ${AI_MODEL:-deepseek-flash}
   Ai__Effort: ${AI_EFFORT:-low}
   Ai__DailyCallsPerProject: ${AI_DAILY_CALLS:-200}
+  Ai__DigestPollSeconds: "10"
   ForwardedHeaders__TrustedNetworks: 172.16.0.0/12
   OTEL_EXPORTER_OTLP_ENDPOINT: *otel-endpoint
   OTEL_METRIC_EXPORT_INTERVAL: "10000"

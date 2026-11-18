@@ -109,6 +109,28 @@ try {
     $d = S POST "/ai/digest"
     Check "the note has a summary, a recommendation and next steps" ($d.Status -eq 200 -and $d.Json.summary -like "[[]fake]*" -and $d.Json.recommendation -and @($d.Json.next_steps).Count -ge 1)
     Check "experiment ideas only use events the project has" (@($d.Json.experiments | Where-Object { $_.goal_event -ne "purchase" }).Count -eq 0)
+    $notes = (S GET "/ai/notes").Json.notes
+    Check "the note is kept in the project's archive as an on-request note" (@($notes).Count -ge 1 -and $notes[0].trigger -eq "manual" -and $notes[0].answer.summary -like "[[]fake]*")
+
+    Write-Host "`n6) Scheduled notes"
+    Check "no schedule by default -> off" ((S GET "/ai/schedule").Json.frequency -in "off", "daily", "weekly", "monthly")
+    Check "invalid frequency or hour -> 400" ((S PUT "/ai/schedule" @{ frequency = "hourly" }).Status -eq 400 -and (S PUT "/ai/schedule" @{ frequency = "daily"; hour = 24 }).Status -eq 400)
+    Check "an invalid e-mail address -> 400" ((S PUT "/ai/schedule" @{ frequency = "weekly"; email_to = @("not-an-address") }).Status -eq 400)
+    Check "a member cannot change the schedule -> 403" ((Send $memberClient PUT "/ai/schedule" @{ frequency = "daily" }).Status -eq 403)
+    $recipient = "notes_$tag@example.com"
+    $sch = S PUT "/ai/schedule" @{ frequency = "weekly"; weekday = 1; hour = 9; email_to = @($recipient) }
+    Check "a weekly Monday 09:00 schedule with an e-mail recipient is saved with its next run in the future" ($sch.Status -eq 200 -and $sch.Json.frequency -eq "weekly" -and ([DateTime]$sch.Json.next_run_at).ToUniversalTime() -gt [DateTime]::UtcNow -and $sch.Json.email_to[0] -eq $recipient)
+    $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+    & docker compose exec -T postgres psql -U reapdeep -d reapdeep -tAc "UPDATE ai_digest_schedules SET next_run_at = now() - interval '1 minute' WHERE project_id = 1" 2>&1 | Out-Null
+    $ErrorActionPreference = $prev
+    $deadline = (Get-Date).AddSeconds(90)
+    do { Start-Sleep 3; $scheduled = @((S GET "/ai/notes").Json.notes | Where-Object { $_.trigger -eq "schedule" -and $_.emailed_to -contains $recipient }) } until ($scheduled.Count -gt 0 -or (Get-Date) -gt $deadline)
+    Check "the scheduler writes the note when it is due and records the e-mail" ($scheduled.Count -gt 0)
+    $mail = (Invoke-RestMethod -Uri "http://localhost:8026/api/v1/search?query=to:$recipient" -UseBasicParsing).messages
+    Check "the note reaches the recipient by e-mail (Mailpit)" (@($mail).Count -ge 1 -and $mail[0].Subject -like "Strategy note for *")
+    $after = (S GET "/ai/schedule").Json
+    Check "the next run moves to the following Monday at 09:00 and the run has no error" (([DateTime]$after.next_run_at).ToUniversalTime() -gt [DateTime]::UtcNow -and -not $after.last_error -and $after.last_run_at)
+    Check "turning the schedule off" ((S PUT "/ai/schedule" @{ frequency = "off" }).Json.frequency -eq "off")
 }
 finally {
     if ($before) {
