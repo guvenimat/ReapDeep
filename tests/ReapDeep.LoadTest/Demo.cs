@@ -38,6 +38,13 @@ static class Demo
 
     static int _signups;
 
+    public const string ExperimentFlag = "one-page-checkout";
+    const string ControlVariant = "control";
+    const string TestVariant = "one-page";
+    const int ExperimentDays = 21;
+    static DateTime _experimentStart = DateTime.MaxValue;
+    static Random _experimentRng = new(0);
+
     public static async Task Run(string captureUrl, string pg, int visitors, int days, int seed, string? resetStarRocks)
     {
         await using var db = NpgsqlDataSource.Create(pg);
@@ -74,6 +81,8 @@ static class Demo
 
         var rng = new Random(seed);
         var now = DateTime.UtcNow;
+        _experimentStart = now.Date.AddDays(-ExperimentDays);
+        _experimentRng = new Random(seed + 1);
         var start = now.Date.AddDays(-(days - 1));
         var sessions = new List<(Device Device, List<Ev> Events)>();
         var dayWeights = Enumerable.Range(0, days).Select(d =>
@@ -135,7 +144,8 @@ static class Demo
 
         await CreateDashboard(db);
         await CreateCohorts(db);
-        Console.WriteLine("Created the 'Demo Shop overview' dashboard and sample cohorts. Select the 'Demo Shop' project and the last 30 days in the dashboard.");
+        await CreateExperiments(db);
+        Console.WriteLine("Created the 'Demo Shop overview' dashboard, sample cohorts and the one-page checkout experiment. Select the 'Demo Shop' project and the last 30 days in the dashboard.");
     }
 
     sealed class Visitor(string anonId, Device device, Source source)
@@ -145,6 +155,7 @@ static class Demo
         public Source Source { get; } = source;
         public string? UserId { get; set; }
         public DateTime? FirstPurchase { get; set; }
+        public string Variant { get; } = Fnv(anonId) % 2 == 0 ? ControlVariant : TestVariant;
         public string DistinctId => UserId ?? AnonId;
     }
 
@@ -206,6 +217,13 @@ static class Demo
 
         var page = first ? v.Source.Landing : rng.NextDouble() < 0.5 ? "/" : "/account";
         var intent = v.UserId is not null ? 1.4 : 1.0;
+        var onePage = false;
+        if (t >= _experimentStart && t <= now)
+        {
+            var variant = !first && _experimentRng.NextDouble() < 0.03 ? (v.Variant == TestVariant ? ControlVariant : TestVariant) : v.Variant;
+            list.Add(new Ev("$feature_flag_called", v.DistinctId, t, Props(page, new() { ["$feature_flag"] = ExperimentFlag, ["$feature_flag_response"] = variant })));
+            onePage = variant == TestVariant;
+        }
         for (var step = 0; step < 9 && page != "exit"; step++)
         {
             if (page.StartsWith("/products/", StringComparison.Ordinal))
@@ -217,12 +235,12 @@ static class Demo
                 if (rng.NextDouble() < 0.32 * intent)
                 {
                     Add("add_to_cart", page, item);
-                    if (rng.NextDouble() < 0.62 * intent)
+                    if (rng.NextDouble() < (onePage ? 0.8 : 0.62) * intent)
                     {
                         Add("$pageview", "/checkout");
                         Identify("/checkout");
                         Add("checkout_started", "/checkout", new() { ["cart_value"] = product.Price, ["items"] = 1 });
-                        if (rng.NextDouble() < 0.71)
+                        if (rng.NextDouble() < (onePage ? 0.88 : 0.71))
                         {
                             Add("purchase", "/checkout", new() { ["amount"] = product.Price, ["currency"] = "EUR", ["item_id"] = product.Id, ["category"] = product.Category, ["order_id"] = $"o-{Guid.CreateVersion7():N}" });
                             v.FirstPurchase ??= day;
@@ -441,13 +459,47 @@ static class Demo
                 await cmd.ExecuteNonQueryAsync();
             }
         }
-        foreach (var table in new[] { "dashboards", "insights", "cohorts", "item_recommendations", "recommendation_runs", "items",
+        foreach (var table in new[] { "experiments", "feature_flags", "dashboards", "insights", "cohorts", "item_recommendations", "recommendation_runs", "items",
                      "person_distinct_ids", "persons", "event_definitions", "property_definitions" })
         {
             await using var cmd = db.CreateCommand($"DELETE FROM {table} WHERE project_id = {ProjectId}");
             await cmd.ExecuteNonQueryAsync();
         }
         Console.WriteLine("Removed the previous demo data (project 4).");
+    }
+
+    static uint Fnv(string text)
+    {
+        var hash = 2166136261u;
+        foreach (var c in text) hash = (hash ^ c) * 16777619u;
+        return hash;
+    }
+
+    static async Task CreateExperiments(NpgsqlDataSource db)
+    {
+        await using var conn = await db.OpenConnectionAsync();
+        await using var cmd = new NpgsqlCommand("""
+            WITH owner AS (SELECT user_id FROM organization_members WHERE organization_id = 1 AND role = 'owner' ORDER BY user_id LIMIT 1),
+            flag AS (
+                INSERT INTO feature_flags (project_id, key, name, description, enabled, rollout_percentage, variants, salt, created_by, updated_by)
+                SELECT @p, @key, 'One-page checkout', 'Replaces the three-step checkout with a single page', true, 100, @variants::jsonb, @salt, user_id, user_id FROM owner
+                RETURNING id, created_by
+            )
+            INSERT INTO experiments (project_id, flag_id, name, description, status, metric, control_variant, start_date, created_by, updated_by)
+            SELECT @p, flag.id, x.name, x.description, 'running', x.metric::jsonb, @control, @start, flag.created_by, flag.created_by
+            FROM flag, (VALUES
+                ('One-page checkout: purchase conversion', 'Visitors who see the one-page checkout buy more often', '{"kind":"conversion","event":"purchase"}', 1),
+                ('One-page checkout: revenue per visitor', 'Revenue per exposed visitor, including those who do not buy', '{"kind":"revenue","event":"purchase","property":"amount"}', 2)
+            ) AS x(name, description, metric, ord)
+            ORDER BY x.ord DESC
+            """, conn);
+        cmd.Parameters.AddWithValue("p", ProjectId);
+        cmd.Parameters.AddWithValue("key", ExperimentFlag);
+        cmd.Parameters.AddWithValue("variants", $"[{{\"key\":\"{ControlVariant}\",\"percentage\":50}},{{\"key\":\"{TestVariant}\",\"percentage\":50}}]");
+        cmd.Parameters.AddWithValue("salt", "0d3e5f7a9b1c2d4e");
+        cmd.Parameters.AddWithValue("control", ControlVariant);
+        cmd.Parameters.AddWithValue("start", _experimentStart);
+        await cmd.ExecuteNonQueryAsync();
     }
 
     static async Task CreateCohorts(NpgsqlDataSource db)
