@@ -444,11 +444,11 @@ The 1.1 s runs of the filtered RFM query overlapped with the person worker's 30 
 dotnet test tests/ReapDeep.UnitTests   # SQL builder tenancy and parameters, experiment statistics against scipy values, cohort, RFM, lifecycle and recommendation SQL, recommender selection, time ranges, passwords, user agents, migrations, and contract tests (below)
 
 cd deploy/local
-.\identity-test.ps1     # identity resolution, 12 end-to-end scenarios including property order after a worker backlog
+.\identity-test.ps1     # identity resolution, 13 end-to-end scenarios including property order after a worker backlog
 .\auth-test.ps1         # sign-in, sessions, project access, CORS, X-Forwarded-For, StarRocks grants
 .\deletion-test.ps1     # deletion requests and the batch job, end to end
 .\settings-test.ps1     # members, roles, password change, API keys, projects, IP anonymization
-.ccount-test.ps1      # invitation and password reset emails through Mailpit: single use, expiry, no account enumeration, rate limits
+.\account-test.ps1      # invitation and password reset emails through Mailpit: single use, expiry, no account enumeration, rate limits
 .\insights-test.ps1     # saved insights and dashboards, API and browser
 .\cohort-test.ps1       # cohorts: rules, identity merge, static lists, filters and breakdowns, recalculation, deletion
 .\rfm-lifecycle-test.ps1  # RFM scores and segments with known answers, rfm_segment cohorts, lifecycle states and look-back
