@@ -50,6 +50,12 @@ public static class HostingExtensions
             sp.GetRequiredService<CohortOptions>(),
             sp.GetRequiredService<ILogger<CohortRefreshJob>>()));
 
+        services.AddHostedService(sp => new FlagCohortSyncJob(
+            sp.GetRequiredService<NpgsqlDataSource>(),
+            sp.GetService<StarRocksStore>(),
+            cfg,
+            sp.GetRequiredService<ILogger<FlagCohortSyncJob>>()));
+
         services.AddSingleton<RecommendationRepository>();
         services.AddSingleton(RecommendationOptions.From(cfg));
         services.AddHostedService(sp => new RecommendationRefreshJob(

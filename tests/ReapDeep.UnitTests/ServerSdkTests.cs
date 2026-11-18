@@ -14,7 +14,8 @@ public class ServerSdkTests
           {"key":"new-checkout","salt":"s1","rollout_percentage":40,"variants":[],"conditions":[]},
           {"key":"similar-model","salt":"s2","rollout_percentage":100,"variants":[{"key":"co_viewed","percentage":50},{"key":"co_viewed_weighted","percentage":50}],"conditions":[]},
           {"key":"vip","salt":"s3","rollout_percentage":100,"variants":[],"conditions":[
-            {"property":"plan","op":"in","value":["pro","Team"]},{"property":"orders","op":"gte","value":3},{"property":"email","op":"not_contains","value":"@example.test"}]}
+            {"property":"plan","op":"in","value":["pro","Team"]},{"property":"orders","op":"gte","value":3},{"property":"email","op":"not_contains","value":"@example.test"}]},
+          {"key":"not-beta","salt":"s4","rollout_percentage":50,"variants":[],"conditions":[{"property":"$cohort","op":"not_in_cohort","value":7}]}
         ]}
         """;
 
@@ -25,6 +26,7 @@ public class ServerSdkTests
         new("new-checkout", "s1", 40, "[]", "[]"),
         new("similar-model", "s2", 100, """[{"key":"co_viewed","percentage":50},{"key":"co_viewed_weighted","percentage":50}]""", "[]"),
         new("vip", "s3", 100, "[]", """[{"property":"plan","op":"in","value":["pro","Team"]},{"property":"orders","op":"gte","value":3},{"property":"email","op":"not_contains","value":"@example.test"}]"""),
+        new("not-beta", "s4", 50, "[]", """[{"property":"$cohort","op":"not_in_cohort","value":7}]"""),
     ];
 
     [Fact]
@@ -201,7 +203,7 @@ public class ServerSdkTests
         Assert.Null(client.GetFlag("unknown", "user-1"));
         var variant = client.GetFlag("similar-model", "user-1")!.Value.Variant;
         Assert.Contains(variant, new[] { "co_viewed", "co_viewed_weighted" });
-        Assert.Equal(3, client.GetAllFlags("user-1").Count);
+        Assert.Equal(4, client.GetAllFlags("user-1").Count);
         await client.FlushAsync();
 
         var exposures = handler.Requests.Where(r => r.Request.Method == HttpMethod.Post)

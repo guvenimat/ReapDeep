@@ -52,6 +52,13 @@ public static class CohortSql
         return b.Build($"SELECT COUNT(DISTINCT {PersonOfMember}) FROM {MemberRows(b, projectId, cohortId, version)}");
     }
 
+    public static SqlQuery DistinctIds(long projectId, long cohortId, long version, int limit)
+    {
+        var b = Builder(projectId, DateTime.UtcNow);
+        return b.Build($"SELECT DISTINCT cm.distinct_id FROM {Members} cm " +
+                       $"WHERE cm.project_id = {b.P(projectId)} AND cm.cohort_id = {b.P(cohortId)} AND cm.version = {b.P(version)} LIMIT {limit}");
+    }
+
     public static SqlQuery PersonsPage(long projectId, long cohortId, long version, string? after, int limit)
     {
         var b = Builder(projectId, DateTime.UtcNow);

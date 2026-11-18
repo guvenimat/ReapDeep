@@ -66,6 +66,8 @@ var model = reapdeep.GetFlag("similar-model", "customer-42")?.Variant ?? "co_vie
 
 `LoadFlagsAsync` downloads the enabled flags once and then refreshes them every `FlagRefreshInterval` (30 s); until the first load, `GetFlag` returns `null`. Evaluation happens in process with the same hashing and rules as the Recommender and the browser SDK, so a person gets the same answer everywhere when the same identity is used. In the browser, flags are keyed by the visitor's first anonymous id; to agree with it, evaluate with that id.
 
+Cohort conditions (`in_cohort`, `not_in_cohort`) need the cohort's members, which only the Recommender holds; the SDK treats every identity as outside the cohort, so a flag that targets a cohort is off here unless it uses `not_in_cohort`.
+
 `GetFlag` and `IsEnabled` send a `$feature_flag_called` event the first time a person sees a value, which experiments use to count exposures. Set `SendFlagExposures = false` to turn that off, or use `GetAllFlags`, which never sends exposures.
 
 ## Sample

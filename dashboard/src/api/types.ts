@@ -189,7 +189,7 @@ export interface AlertInput {
   channel: AlertChannel; webhook_url?: string; email_to?: string[]
 }
 
-export type FlagOp = 'eq' | 'neq' | 'contains' | 'not_contains' | 'in' | 'not_in' | 'gt' | 'gte' | 'lt' | 'lte' | 'is_set' | 'is_not_set'
+export type FlagOp = 'eq' | 'neq' | 'contains' | 'not_contains' | 'in' | 'not_in' | 'gt' | 'gte' | 'lt' | 'lte' | 'is_set' | 'is_not_set' | 'in_cohort' | 'not_in_cohort'
 export type FlagScalar = string | number | boolean
 export interface FlagVariant { key: string; percentage: number }
 export interface FlagCondition { property: string; op: FlagOp; value?: FlagScalar | FlagScalar[] | null }

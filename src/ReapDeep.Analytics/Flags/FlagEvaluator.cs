@@ -10,6 +10,11 @@ public readonly record struct FlagResult(bool Enabled, string? Variant)
     public static readonly FlagResult Off = new(false, null);
 }
 
+public interface IFlagCohorts
+{
+    bool Contains(long cohortId, string distinctId);
+}
+
 public static class FlagHashing
 {
     public const int Buckets = 10_000;
@@ -37,6 +42,8 @@ public sealed class CompiledFlag
 
     public string Key { get; }
 
+    public IEnumerable<long> CohortIds => _conditions.Select(c => c.CohortId).OfType<long>();
+
     public CompiledFlag(string key, string salt, int rolloutPercentage, IReadOnlyList<FlagVariant> variants, IReadOnlyList<FlagCondition> conditions)
     {
         Key = key;
@@ -47,10 +54,10 @@ public sealed class CompiledFlag
         _conditions = conditions.Select(c => new CompiledCondition(c)).ToArray();
     }
 
-    public FlagResult Evaluate(string identity, IReadOnlyDictionary<string, string> properties)
+    public FlagResult Evaluate(string identity, IReadOnlyDictionary<string, string> properties, IFlagCohorts? cohorts = null)
     {
         foreach (var c in _conditions)
-            if (!c.Matches(properties)) return FlagResult.Off;
+            if (!c.Matches(properties, identity, cohorts)) return FlagResult.Off;
         if (FlagHashing.Bucket(Key, _salt, FlagHashing.RolloutPurpose, identity) >= _rolloutBuckets) return FlagResult.Off;
         if (_variants.Length == 0) return new FlagResult(true, null);
 
@@ -68,18 +75,26 @@ public sealed class CompiledCondition
     readonly string[] _values;
     readonly double? _number;
 
+    public long? CohortId { get; }
+
     public CompiledCondition(FlagCondition c)
     {
         _property = c.Property;
         _op = c.Op;
+        CohortId = FlagOps.IsCohort(c.Op) ? FlagRules.CohortId(c.Value) : null;
         _values = c.Value is not { } v ? []
             : v.ValueKind == JsonValueKind.Array ? v.EnumerateArray().Select(FlagRules.Text).ToArray()
             : [FlagRules.Text(v)];
         _number = c.Value is { } n && FlagOps.IsNumeric(c.Op) ? FlagRules.Number(n) : null;
     }
 
-    public bool Matches(IReadOnlyDictionary<string, string> properties)
+    public bool Matches(IReadOnlyDictionary<string, string> properties, string identity = "", IFlagCohorts? cohorts = null)
     {
+        if (CohortId is { } cohortId)
+        {
+            var member = cohorts?.Contains(cohortId, identity) == true;
+            return _op == FlagOps.InCohort ? member : !member;
+        }
         var found = properties.TryGetValue(_property, out var actual);
         return _op switch
         {
