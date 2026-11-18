@@ -42,6 +42,8 @@ namespace ReapDeep.QueryApi.Infrastructure;
 [JsonSerializable(typeof(RfmPersonResponse))]
 [JsonSerializable(typeof(LifecycleRequest))]
 [JsonSerializable(typeof(LifecycleResponse))]
+[JsonSerializable(typeof(WebAnalyticsRequest))]
+[JsonSerializable(typeof(WebAnalyticsResponse))]
 [JsonSerializable(typeof(EventsResponse))]
 [JsonSerializable(typeof(PersonRow))]
 [JsonSerializable(typeof(PersonsResponse))]

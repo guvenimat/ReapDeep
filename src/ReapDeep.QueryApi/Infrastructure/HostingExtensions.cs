@@ -77,6 +77,7 @@ public static class HostingExtensions
         services.AddSingleton<PathService>();
         services.AddSingleton<RfmService>();
         services.AddSingleton<LifecycleService>();
+        services.AddSingleton<WebAnalyticsService>();
         services.AddSingleton<EventService>();
         services.AddSingleton<AnalyticsCache>();
 

@@ -17,6 +17,7 @@ public static class AnalyticsEndpoints
         api.MapPost("/query/rfm/migration", RfmMigration);
         api.MapGet("/persons/{personId}/rfm", PersonRfm);
         api.MapPost("/query/lifecycle", Lifecycle);
+        api.MapPost("/query/web", Web);
         api.MapGet("/events", Events);
     }
 
@@ -71,6 +72,13 @@ public static class AnalyticsEndpoints
         : ApiResults.Ok(await cache.GetOrRunAsync(http, project, "lifecycle", req, AppJsonContext.Default.LifecycleRequest, req.Filters, null,
             AppJsonContext.Default.LifecycleResponse, () => lifecycle.RunAsync(project, req, ct), (r, ms) => r with { TookMs = ms }, ct),
             AppJsonContext.Default.LifecycleResponse);
+
+    static async Task<IResult> Web(WebAnalyticsRequest req, ProjectContext project, WebAnalyticsService web, AnalyticsCache cache, HttpContext http,
+        CancellationToken ct) => req.Explain
+        ? ApiResults.Ok(await web.ExplainAsync(project, req, ct), AppJsonContext.Default.ExplainResponse)
+        : ApiResults.Ok(await cache.GetOrRunAsync(http, project, "web", req, AppJsonContext.Default.WebAnalyticsRequest, req.Filters, null,
+            AppJsonContext.Default.WebAnalyticsResponse, () => web.RunAsync(project, req, ct), (r, ms) => r with { TookMs = ms }, ct),
+            AppJsonContext.Default.WebAnalyticsResponse);
 
     static async Task<IResult> Events(ProjectContext project, EventService events,
         [FromQuery(Name = "event")] string? eventName, [FromQuery(Name = "distinct_id")] string? distinctId,
