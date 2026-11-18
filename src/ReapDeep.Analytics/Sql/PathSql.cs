@@ -5,22 +5,22 @@ public static class PathSql
     public const string Separator = "\u001f";
     static readonly string[] Excluded = ["$identify", "$set"];
 
-    public static SqlQuery Steps(SqlBuilder b, string startEvent, int depth, int windowSeconds, bool pageviewPaths) =>
-        b.Build(Ctes(b, startEvent, windowSeconds, pageviewPaths) +
+    public static SqlQuery Steps(SqlBuilder b, string startEvent, IReadOnlyList<string>? startEvents, int depth, int windowSeconds, bool pageviewPaths) =>
+        b.Build(Ctes(b, startEvent, startEvents, windowSeconds, pageviewPaths) +
                 $"SELECT rn, node, COUNT(*) AS n FROM ranked WHERE rn <= {depth} GROUP BY rn, node");
 
-    public static SqlQuery Sequences(SqlBuilder b, string startEvent, int depth, int windowSeconds, bool pageviewPaths, int limit) =>
-        b.Build(Ctes(b, startEvent, windowSeconds, pageviewPaths) +
+    public static SqlQuery Sequences(SqlBuilder b, string startEvent, IReadOnlyList<string>? startEvents, int depth, int windowSeconds, bool pageviewPaths, int limit) =>
+        b.Build(Ctes(b, startEvent, startEvents, windowSeconds, pageviewPaths) +
                 $"SELECT path, COUNT(*) AS n FROM (SELECT person, group_concat(node ORDER BY rn SEPARATOR '{Separator}') AS path " +
                 $"FROM ranked WHERE rn <= {depth} GROUP BY person) x GROUP BY path ORDER BY n DESC, path LIMIT {limit}");
 
-    static string Ctes(SqlBuilder b, string startEvent, int windowSeconds, bool pageviewPaths)
+    static string Ctes(SqlBuilder b, string startEvent, IReadOnlyList<string>? startEvents, int windowSeconds, bool pageviewPaths)
     {
         b.Where($"e.event NOT IN ({string.Join(", ", Excluded.Select(x => b.P(x)))})");
         var node = pageviewPaths
             ? $"IF(e.event = {b.P("$pageview")}, concat({b.P("$pageview ")}, COALESCE(e.pathname, '')), e.event)"
             : "e.event";
-        var ev = b.Select($"{b.Person()} AS person, e.timestamp AS ts, e.event_id AS eid, {node} AS node, e.event = {b.P(startEvent)} AS is_start");
+        var ev = b.Select($"{b.Person()} AS person, e.timestamp AS ts, e.event_id AS eid, {node} AS node, {SqlFragments.EventIs(b, startEvent, startEvents)} AS is_start");
         const string order = "ORDER BY ts, is_start DESC, eid";
         return $"WITH ev AS ({ev}), " +
                "s AS (SELECT person, MIN(ts) AS t0 FROM ev WHERE is_start GROUP BY person), " +

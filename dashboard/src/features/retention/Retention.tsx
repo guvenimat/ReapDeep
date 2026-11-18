@@ -1,7 +1,7 @@
 import { api } from '../../api/client'
 import type { Filter, RetentionResponse } from '../../api/types'
 import { readState, toDateRange, type Range } from '../../app/route'
-import { completeFilters, EditorSection, FilterEditor, SuggestInput } from '../../components/editors'
+import { completeFilters, EditorSection, eventOrAction, FilterEditor, SuggestInput } from '../../components/editors'
 import { Card, Segmented, StatTile, Status } from '../../components/ui'
 import { dateTime, ms, num, pct } from '../../lib/format'
 import { useDebounced, useQuery } from '../../lib/hooks'
@@ -14,9 +14,13 @@ export interface RetentionState { start_event: string; return_event: string; per
 export const RETENTION_DEFAULT: RetentionState = { start_event: '$identify', return_event: '$pageview', period: 'week', periods: 6, filters: [] }
 
 export function retentionBody(state: RetentionState, range: Range) {
+  const start = eventOrAction(state.start_event.trim())
+  const ret = eventOrAction(state.return_event.trim())
   return {
-    start_event: state.start_event.trim(),
-    return_event: state.return_event.trim() || undefined,
+    start_event: 'event' in start ? start.event : undefined,
+    start_action: 'action' in start ? start.action : undefined,
+    return_event: 'event' in ret ? ret.event : undefined,
+    return_action: 'action' in ret ? ret.action : undefined,
     period: state.period,
     periods: state.periods,
     filters: completeFilters(state.filters),
@@ -78,7 +82,7 @@ export function Retention({ params, range, onChange, onInsight }: {
   const request = useDebounced(JSON.stringify(retentionBody(state, range)))
   const q = useQuery((signal) => {
     const body = JSON.parse(request)
-    return body.start_event ? api.retention(body, signal) : Promise.reject(new Error('Choose a start event'))
+    return body.start_event || body.start_action ? api.retention(body, signal) : Promise.reject(new Error('Choose a start event'))
   }, [request])
 
   const unit = state.period === 'week' ? 'Week' : 'Day'
@@ -90,10 +94,10 @@ export function Retention({ params, range, onChange, onInsight }: {
       <aside className="panel">
         <EditorSection title="Cohort">
           <label className="field" htmlFor="retention-start-event"><span>People who did</span>
-            <SuggestInput id="retention-start-event" list="events" value={state.start_event} onChange={(v) => set({ start_event: v })} aria-label="Start event" />
+            <SuggestInput id="retention-start-event" list="events-actions" value={state.start_event} placeholder="event or action" onChange={(v) => set({ start_event: v })} aria-label="Start event" />
           </label>
           <label className="field" htmlFor="retention-return-event"><span>and came back to do</span>
-            <SuggestInput id="retention-return-event" list="events" value={state.return_event} placeholder="same event" onChange={(v) => set({ return_event: v })} aria-label="Return event" />
+            <SuggestInput id="retention-return-event" list="events-actions" value={state.return_event} placeholder="same event or action" onChange={(v) => set({ return_event: v })} aria-label="Return event" />
           </label>
         </EditorSection>
         <EditorSection title="Periods" hint="Cohorts are formed from the first time a person did the start event in the selected date range.">

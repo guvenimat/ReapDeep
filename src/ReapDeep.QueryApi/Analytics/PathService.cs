@@ -1,13 +1,14 @@
 using System.Diagnostics;
 using ReapDeep.Analytics;
 using ReapDeep.Analytics.Sql;
+using ReapDeep.QueryApi.Actions;
 using ReapDeep.QueryApi.Auth;
 using ReapDeep.QueryApi.Cohorts;
 using ReapDeep.QueryApi.Infrastructure;
 
 namespace ReapDeep.QueryApi.Analytics;
 
-public sealed class PathService(StarRocksClient starRocks, CohortService cohorts)
+public sealed class PathService(StarRocksClient starRocks, CohortService cohorts, ActionRepository actions)
 {
     const int NodesPerStep = 8;
     const int MaxPaths = 25;
@@ -44,7 +45,8 @@ public sealed class PathService(StarRocksClient starRocks, CohortService cohorts
 
     async Task<Plan> BuildPlanAsync(ProjectContext project, PathsRequest req, CancellationToken ct)
     {
-        var startEvent = Ensure.NotBlank(req.StartEvent, "start_event");
+        var start = (await actions.ApplyAsync(project.ProjectId, [new Series(req.StartEvent ?? "", null, null, req.StartAction, null)], ct))[0];
+        var startEvent = Ensure.NotBlank(start.Event, "start_event");
         var depth = Ensure.InRange(req.Depth ?? 4, 2, 6, "depth");
         var window = Ensure.InRange(req.WindowSeconds ?? 86_400, 60, 7 * 86_400, "window_seconds");
         var pageviewPaths = req.PageviewPaths ?? true;
@@ -58,7 +60,7 @@ public sealed class PathService(StarRocksClient starRocks, CohortService cohorts
             return b;
         }
         return new Plan(startEvent, depth,
-            PathSql.Steps(NewBuilder(), startEvent, depth, window, pageviewPaths),
-            PathSql.Sequences(NewBuilder(), startEvent, depth, window, pageviewPaths, MaxPaths));
+            PathSql.Steps(NewBuilder(), startEvent, start.Events, depth, window, pageviewPaths),
+            PathSql.Sequences(NewBuilder(), startEvent, start.Events, depth, window, pageviewPaths, MaxPaths));
     }
 }

@@ -45,6 +45,35 @@ public class ActionSqlTests
     }
 
     [Fact]
+    public void Retention_matches_the_events_of_start_and_return_actions()
+    {
+        var q = RetentionSql.Build(Builder(), "Signed up", ["$identify"], "Bought", ["purchase", "order_completed"], "week", 6, Range(), "UTC", To);
+
+        Assert.Matches(@"e\.event IN \(@p\d+, @p\d+, @p\d+\)", q.Sql);
+        Assert.Matches(@"e\.event IN \(@p\d+\) AND e\.timestamp < @p\d+ AS is_start", q.Sql);
+        Assert.Matches(@"e\.event IN \(@p\d+, @p\d+\) AS is_ret", q.Sql);
+        Assert.DoesNotContain(q.Parameters, p => (p.Value as string) is "Signed up" or "Bought");
+    }
+
+    [Fact]
+    public void Paths_start_from_any_event_of_an_action()
+    {
+        var q = PathSql.Steps(Builder(), "Browsing", ["product_viewed", "category_viewed"], 4, 3600, true);
+
+        Assert.Matches(@"e\.event IN \(@p\d+, @p\d+\) AS is_start", q.Sql);
+        Assert.DoesNotContain(q.Parameters, p => (p.Value as string) == "Browsing");
+    }
+
+    [Fact]
+    public void Lifecycle_follows_the_events_of_an_action()
+    {
+        var q = LifecycleSql.Build(Builder(), "Buying", ["purchase", "order_completed"], "week", Range(), "UTC", 1, 2);
+
+        Assert.Matches(@"e\.event IN \(@p\d+, @p\d+\)", q.Sql);
+        Assert.DoesNotContain(q.Parameters, p => (p.Value as string) == "Buying");
+    }
+
+    [Fact]
     public void Stickiness_counts_active_periods_per_person_with_tenant_filters_and_actions()
     {
         var q = StickinessSql.Build(Builder(), "Engaged", ["product_viewed", "purchase"], "day", Range(), "UTC");

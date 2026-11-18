@@ -1,7 +1,7 @@
 import { api } from '../../api/client'
 import type { Filter, PathsResponse } from '../../api/types'
 import { readState, toDateRange, type Range } from '../../app/route'
-import { completeFilters, EditorSection, FilterEditor, SuggestInput } from '../../components/editors'
+import { completeFilters, EditorSection, eventOrAction, FilterEditor, SuggestInput } from '../../components/editors'
 import { Icon } from '../../components/icons'
 import { Card, Segmented, Status } from '../../components/ui'
 import { ms, num, pct } from '../../lib/format'
@@ -17,8 +17,10 @@ const WINDOWS = [{ id: 1800, label: '30m' }, { id: 3600, label: '1h' }, { id: 86
 const DEPTHS = [2, 3, 4, 5, 6].map((d) => ({ id: d, label: String(d) }))
 
 export function pathsBody(state: PathsState, range: Range) {
+  const start = eventOrAction(state.start_event.trim())
   return {
-    start_event: state.start_event.trim(),
+    start_event: 'event' in start ? start.event : undefined,
+    start_action: 'action' in start ? start.action : undefined,
     depth: state.depth,
     window_seconds: state.window_seconds,
     pageview_paths: state.pageview_paths,
@@ -84,14 +86,14 @@ export function Paths({ params, range, onChange, onInsight }: {
   const request = useDebounced(JSON.stringify(pathsBody(state, range)))
   const q = useQuery((signal) => {
     const body = JSON.parse(request)
-    return body.start_event ? api.paths(body, signal) : Promise.reject(new Error('Choose a start event'))
+    return body.start_event || body.start_action ? api.paths(body, signal) : Promise.reject(new Error('Choose a start event'))
   }, [request])
 
   return (
     <div className="layout">
       <aside className="panel">
         <EditorSection title="Start">
-          <SuggestInput list="events" value={state.start_event} onChange={(v) => set({ start_event: v })} aria-label="Start event" />
+          <SuggestInput list="events-actions" value={state.start_event} placeholder="event or action" onChange={(v) => set({ start_event: v })} aria-label="Start event" />
           <label className="switch">
             <input type="checkbox" checked={state.pageview_paths} onChange={(e) => set({ pageview_paths: e.target.checked })} />
             <span className="switch-track" aria-hidden />

@@ -8,9 +8,9 @@ public static class LifecycleSql
     public const string Dormant = "dormant";
     public static readonly string[] Periods = ["day", "week", "month"];
 
-    public static SqlQuery Build(SqlBuilder b, string? eventName, string period, TimeRange scanned, string tz, long firstIndex, long lastIndex)
+    public static SqlQuery Build(SqlBuilder b, string? eventName, IReadOnlyList<string>? events, string period, TimeRange scanned, string tz, long firstIndex, long lastIndex)
     {
-        if (eventName is not null) b.Where($"e.event = {b.P(eventName)}");
+        if (eventName is not null) b.Where(SqlFragments.EventIs(b, eventName, events));
         var active = b.EventsOnly($"e.project_id, e.distinct_id, {PeriodIndex(period, SqlFragments.LocalTime(b, scanned, tz))} AS p", "1, 2, 3");
         var (first, last) = (b.P(firstIndex), b.P(lastIndex));
         const string byPerson = "PARTITION BY a.person ORDER BY a.p";
