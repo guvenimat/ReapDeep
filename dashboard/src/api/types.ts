@@ -104,7 +104,8 @@ export interface User { id: number; email: string; name: string }
 export interface Project { id: number; name: string; organization_id: number; organization_name: string; role: 'owner' | 'admin' | 'member'; timezone: string }
 export interface Me { user: User; projects: Project[]; platform_admin?: boolean; platform_role?: 'admin' | 'viewer' | null }
 export type Role = Project['role']
-export interface Member { user_id: number; email: string; name: string; role: Role; created_at: string; pending: boolean }
+export interface Member { user_id: number; email: string; name: string; role: Role; created_at: string; pending: boolean; invite_link?: string | null }
+export interface MemberLink { purpose: 'invite' | 'reset'; link: string; expires_at: string }
 export type AuthTokenPurpose = 'invite' | 'reset'
 export interface AuthTokenInfo { email: string; purpose: AuthTokenPurpose }
 export type KeyScope = 'read' | 'catalog_write' | 'server'

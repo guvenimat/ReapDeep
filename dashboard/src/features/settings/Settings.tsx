@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { api } from '../../api/client'
-import type { KeyScope, Me, Member, Project, Role } from '../../api/types'
+import type { KeyScope, Me, Member, Project, Role, MemberLink } from '../../api/types'
 import { Icon } from '../../components/icons'
 import { Badge, Card, FormMessage, Status } from '../../components/ui'
 import { dateTime, initials, num } from '../../lib/format'
@@ -196,12 +196,16 @@ function Members({ me, project, canManage, onAccessChanged }: { me: Me; project:
     setNotice(undefined)
     let added: Member | undefined
     if (await action.run(async () => { added = await api.addMember({ ...form, name: form.name || undefined, password: form.password || undefined }) }) && added) {
-      setNotice(added.pending ? `Invitation sent to ${added.email}` : `${added.email} was added`)
+      setNotice(added.invite_link ? `${added.email} was added; share the invite link below` : added.pending ? `Invitation sent to ${added.email}` : `${added.email} was added`)
+      if (added.invite_link) setShared({ email: added.email, purpose: 'invite', link: added.invite_link })
       setForm({ email: '', name: '', password: '', role: 'member' })
     }
     refresh(false)
   }
   const [notice, setNotice] = useState<string>()
+  const [shared, setShared] = useState<Omit<MemberLink, 'expires_at'> & { email: string; expires_at?: string }>()
+  const [copied, setCopied] = useState(false)
+  const makeLink = (m: Member) => action.run(() => api.memberLink(m.user_id).then((l) => { setCopied(false); setShared({ ...l, email: m.email }) }))
   const resend = (m: Member) => action.run(() => api.resendInvite(m.user_id).then(() => setNotice(`Invitation sent again to ${m.email}`)))
   const changeRole = (userId: number, role: Role) => action.run(() => api.changeRole(userId, role).then(() => refresh(userId === me.user.id)))
   const remove = (userId: number, email: string) => {
@@ -243,6 +247,11 @@ function Members({ me, project, canManage, onAccessChanged }: { me: Me; project:
                       {canManage && m.pending && (
                         <button className="link resend-invite" data-email={m.email} onClick={() => resend(m)} disabled={action.busy}>Resend invitation</button>
                       )}
+                      {editable && !self && (
+                        <button className="link member-link" data-email={m.email} onClick={() => makeLink(m)} disabled={action.busy}>
+                          {m.pending ? 'Invite link' : 'Reset link'}
+                        </button>
+                      )}
                       {(editable || self) && (
                         <button className="link danger-link" onClick={() => remove(m.user_id, m.email)} disabled={action.busy}>
                           {self ? 'Leave' : 'Remove'}
@@ -257,13 +266,26 @@ function Members({ me, project, canManage, onAccessChanged }: { me: Me; project:
         </div>
       </Status>
       <div data-testid="members-message"><FormMessage error={action.error} success={action.error ? undefined : notice} /></div>
+      {shared && (
+        <div className="share-link" data-share-purpose={shared.purpose}>
+          <div className="muted small">
+            {shared.purpose === 'invite' ? `Invite link for ${shared.email}` : `Password reset link for ${shared.email}`}: single use, {shared.expires_at ? `valid until ${dateTime(shared.expires_at)}` : 'valid for 7 days'}.
+            Send it over a channel you trust; anyone with the link can {shared.purpose === 'invite' ? 'join as this member' : "set this member's password"}.
+          </div>
+          <div className="row">
+            <input readOnly value={shared.link} aria-label="Share link" onFocus={(e) => e.target.select()} />
+            <button type="button" onClick={() => void navigator.clipboard?.writeText(shared.link).then(() => setCopied(true))}><Icon name="copy" />{copied ? 'Copied' : 'Copy'}</button>
+            <button type="button" className="icon-button" aria-label="Close" onClick={() => setShared(undefined)}><Icon name="close" /></button>
+          </div>
+        </div>
+      )}
       {canManage && (
         <form className="inline-form" onSubmit={add} data-testid="add-member">
           <div className="editor-title">Invite a member</div>
           <div className="row">
             <input type="email" required placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} aria-label="Email" />
             <input placeholder="Name (optional)" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} aria-label="Name" />
-            <input type="password" autoComplete="new-password" placeholder="Password (optional, else email invite)" value={form.password}
+            <input type="password" autoComplete="new-password" placeholder="Password (optional, else an invite)" value={form.password}
               onChange={(e) => setForm({ ...form, password: e.target.value })} aria-label="Temporary password" />
             <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Role })} aria-label="Role">
               {assignable.map((r) => <option key={r} value={r}>{r}</option>)}

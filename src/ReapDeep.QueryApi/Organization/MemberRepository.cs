@@ -7,7 +7,6 @@ public enum AddMemberResult
 {
     Added,
     AlreadyMember,
-    PasswordRequired,
 }
 
 public sealed class MemberRepository(NpgsqlDataSource db)
@@ -33,7 +32,7 @@ public sealed class MemberRepository(NpgsqlDataSource db)
     }
 
     public async Task<(AddMemberResult Result, long UserId)> AddAsync(long projectId, string email, string name, string? passwordHash, string role,
-        bool allowInvite, CancellationToken ct)
+        CancellationToken ct)
     {
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
@@ -41,7 +40,6 @@ public sealed class MemberRepository(NpgsqlDataSource db)
         var userId = await conn.ExecuteScalarAsync<long?>("SELECT id FROM users WHERE email = @Email", new { Email = email }, tx);
         if (userId is null)
         {
-            if (passwordHash is null && !allowInvite) return (AddMemberResult.PasswordRequired, 0);
             userId = await conn.ExecuteScalarAsync<long>(
                 "INSERT INTO users (email, name, password_hash) VALUES (@Email, @Name, @Hash) RETURNING id",
                 new { Email = email, Name = name, Hash = passwordHash }, tx);

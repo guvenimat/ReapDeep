@@ -12,6 +12,7 @@ public static class MemberEndpoints
         api.MapPost("/members", Add).RequireManager();
         api.MapPatch("/members/{userId:long}", ChangeRole).RequireManager();
         api.MapPost("/members/{userId:long}/invite", Resend).RequireManager();
+        api.MapPost("/members/{userId:long}/link", Link).RequireManager();
         api.MapDelete("/members/{userId:long}", Remove).RequireUser();
     }
 
@@ -29,17 +30,19 @@ public static class MemberEndpoints
         if (req.Password is not null) Ensure.That(PasswordHasher.IsValidLength(req.Password), PasswordHasher.LengthRule);
 
         var hash = req.Password is null ? null : PasswordHasher.Hash(req.Password);
-        var (result, userId) = await members.AddAsync(project.ProjectId, email, name, hash, role, mailer.CanSend, ct);
-        switch (result)
-        {
-            case AddMemberResult.PasswordRequired: return ApiResults.BadRequest($"No SMTP server is configured for invitations; set a temporary password. {PasswordHasher.LengthRule}");
-            case AddMemberResult.AlreadyMember: return ApiResults.Conflict("This user is already a member");
-        }
+        var (result, userId) = await members.AddAsync(project.ProjectId, email, name, hash, role, ct);
+        if (result == AddMemberResult.AlreadyMember) return ApiResults.Conflict("This user is already a member");
         await sessions.InvalidateUserAsync(userId);
         var row = (await members.GetAsync(project.ProjectId, userId, ct))!;
-        if (row.Pending && await mailer.SendInviteAsync(project.ProjectId, project.UserId!.Value, userId, row.Email, ct) is { } error)
-            return ApiResults.Error(StatusCodes.Status502BadGateway, $"The member was added but the invitation email failed ({error}); use Resend invitation");
-        return ApiResults.Created(row, AppJsonContext.Default.MemberRow);
+        if (!row.Pending) return ApiResults.Created(row, AppJsonContext.Default.MemberRow);
+        if (mailer.CanSend)
+        {
+            if (await mailer.SendInviteAsync(project.ProjectId, project.UserId!.Value, userId, row.Email, ct) is { } error)
+                return ApiResults.Error(StatusCodes.Status502BadGateway, $"The member was added but the invitation email failed ({error}); use the invite link instead");
+            return ApiResults.Created(row, AppJsonContext.Default.MemberRow);
+        }
+        var link = await mailer.CreateLinkAsync(userId, AuthTokens.Invite, ct);
+        return ApiResults.Created(row with { InviteLink = link.Link }, AppJsonContext.Default.MemberRow);
     }
 
     static async Task<IResult> Resend(long userId, ProjectContext project, MemberRepository members, AccountMailer mailer, CancellationToken ct)
@@ -50,6 +53,18 @@ public static class MemberEndpoints
         return await mailer.SendInviteAsync(project.ProjectId, project.UserId!.Value, userId, row.Email, ct) is { } error
             ? ApiResults.Error(StatusCodes.Status502BadGateway, $"The invitation email failed ({error})")
             : Results.NoContent();
+    }
+
+    static async Task<IResult> Link(long userId, ProjectContext project, MemberRepository members, AccountMailer mailer, CancellationToken ct)
+    {
+        if (userId == project.UserId) return ApiResults.BadRequest("Change your own password in Account instead");
+        if (await members.GetAsync(project.ProjectId, userId, ct) is not { } row) return ApiResults.NotFound("Member not found");
+        if (row.Role == Roles.Owner && project.Role != Roles.Owner) return ApiResults.Forbidden("Only owners can create links for owners");
+        var purpose = row.Pending ? AuthTokens.Invite : AuthTokens.Reset;
+        var link = await mailer.CreateLinkAsync(userId, purpose, ct);
+        return link.Link is null
+            ? ApiResults.Error(StatusCodes.Status429TooManyRequests, "Too many links for this member in the last hour; try again later")
+            : ApiResults.Ok(new MemberLink(purpose, link.Link, link.ExpiresAt), AppJsonContext.Default.MemberLink);
     }
 
     static async Task<IResult> ChangeRole(long userId, RoleChangeRequest req, ProjectContext project, MemberRepository members, SessionService sessions,
