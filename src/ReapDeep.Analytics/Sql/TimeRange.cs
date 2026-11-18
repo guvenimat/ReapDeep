@@ -11,8 +11,8 @@ public readonly record struct TimeRange(DateTime FromUtc, DateTime ToUtc, DateTi
 
     public static TimeRange Parse(string? from, string? to, TimeZoneInfo tz, TimeSpan defaultSpan)
     {
-        var toUtc = to is null ? DateTime.UtcNow : ParseBoundary(to, tz, isEnd: true, nameof(to));
-        var fromUtc = from is null ? toUtc - defaultSpan : ParseBoundary(from, tz, isEnd: false, nameof(from));
+        var toUtc = to is null ? DateTime.UtcNow : ParseBoundary(to, tz, isEnd: true, "date_to");
+        var fromUtc = from is null ? toUtc - defaultSpan : ParseBoundary(from, tz, isEnd: false, "date_from");
         if (fromUtc >= toUtc) throw new ValidationException("date_from must be before date_to");
         if (toUtc - fromUtc > TimeSpan.FromDays(MaxDays)) throw new ValidationException($"Date range can be at most {MaxDays} days");
         return Between(fromUtc, toUtc, tz);
@@ -35,7 +35,7 @@ public readonly record struct TimeRange(DateTime FromUtc, DateTime ToUtc, DateTi
             return LocalToUtc(isEnd ? day.AddDays(1) : day, tz);
         if (DateTimeOffset.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal, out var dto))
             return dto.UtcDateTime;
-        throw new ValidationException($"Invalid date_{name}: '{s}' (expected YYYY-MM-DD or ISO-8601)");
+        throw new ValidationException($"Invalid {name}: '{s}' (expected YYYY-MM-DD or ISO-8601)");
     }
 
     public static DateTime LocalToUtc(DateTime local, TimeZoneInfo tz)
