@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { api, errorMessage } from '../../api/client'
 import type { FeatureFlag, FlagCondition, FlagOp, FlagScalar, FlagVariant } from '../../api/types'
 import { SuggestInput } from '../../components/editors'
+import { Icon } from '../../components/icons'
 import { Badge, Card, FormMessage, IconButton, Segmented, Status } from '../../components/ui'
 import { ago } from '../../lib/format'
 import { useQuery } from '../../lib/hooks'
@@ -98,6 +99,7 @@ export function Flags({ canManage }: { canManage: boolean }) {
                       {f.variants.length === 0
                         ? <span className="muted">On / off</span>
                         : <span className="path-chips">{f.variants.map((v) => <span key={v.key} className="chip">{v.key} {v.percentage}%</span>)}</span>}
+                      {f.locked_by_experiment && <span className="cell-sub flag-lock" title={`Locked by experiment ${f.locked_by_experiment}`}>Locked by {f.locked_by_experiment}</span>}
                     </td>
                     <td className="flag-targeting">
                       {f.conditions.length === 0
@@ -152,6 +154,7 @@ function FlagEditor({ flag, onSaved, onCancel }: { flag?: FeatureFlag; onSaved: 
   const [enabled, setEnabled] = useState(flag?.enabled ?? false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
+  const lockedBy = flag?.locked_by_experiment ?? null
   const total = variants.reduce((s, v) => s + (Number(v.percentage) || 0), 0)
   const valid = key.trim() !== '' && rollout !== '' && (kind === 'boolean' || total === 100) && conditions.every((c) => c.property.trim() !== '')
 
@@ -222,21 +225,29 @@ function FlagEditor({ flag, onSaved, onCancel }: { flag?: FeatureFlag; onSaved: 
           </div>
 
           <div className="editor-block">
-            <Segmented label="Flag type" value={kind} onChange={setKind}
-              options={[{ id: 'boolean', label: 'On / off' }, { id: 'multivariate', label: 'Variants' }]} />
+            {lockedBy && (
+              <div className="notice warn" role="status" data-testid="flag-locked">
+                <Icon name="flask" />
+                <span><strong>Locked by experiment {lockedBy}.</strong> Variant keys and percentages cannot change while it runs; stop the experiment to edit them. On/off, rollout and targeting can still change.</span>
+              </div>
+            )}
+            {lockedBy
+              ? <span className="muted small">{kind === 'multivariate' ? 'Variants' : 'On / off'}</span>
+              : <Segmented label="Flag type" value={kind} onChange={setKind}
+                options={[{ id: 'boolean', label: 'On / off' }, { id: 'multivariate', label: 'Variants' }]} />}
             {kind === 'multivariate' && (
               <>
                 {variants.map((v, i) => (
                   <div className="row" key={i}>
-                    <input value={v.key} onChange={(e) => setVariant(i, { key: e.target.value })} maxLength={50} aria-label="Variant key" placeholder="variant" />
-                    <input type="number" min={0} max={100} className="narrow" value={v.percentage} aria-label="Variant percentage"
+                    <input value={v.key} onChange={(e) => setVariant(i, { key: e.target.value })} maxLength={50} aria-label="Variant key" placeholder="variant" disabled={!!lockedBy} />
+                    <input type="number" min={0} max={100} className="narrow" value={v.percentage} aria-label="Variant percentage" disabled={!!lockedBy}
                       onChange={(e) => setVariant(i, { percentage: e.target.value === '' ? 0 : Number(e.target.value) })} />
                     <span>%</span>
-                    {variants.length > 2 && <IconButton icon="close" label="Remove variant" onClick={() => setVariants(variants.filter((_, j) => j !== i))} />}
+                    {variants.length > 2 && !lockedBy && <IconButton icon="close" label="Remove variant" onClick={() => setVariants(variants.filter((_, j) => j !== i))} />}
                   </div>
                 ))}
                 <div className="row">
-                  {variants.length < 10 && (
+                  {variants.length < 10 && !lockedBy && (
                     <button type="button" className="add-button" onClick={() => setVariants([...variants, { key: `variant-${variants.length + 1}`, percentage: 0 }])}>+ Add variant</button>
                   )}
                   <span className={total === 100 ? 'muted small' : 'form-message error'}>Total {total}%{total === 100 ? '' : ', must be 100%'}</span>

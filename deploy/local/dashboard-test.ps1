@@ -165,6 +165,29 @@ $html = Dom "#/flags" "document.querySelector('[data-testid=flags-card]') && !do
 Check "Feature flags tab renders for the owner with a 'New flag' action" ($html -match 'data-testid="flags-card"' -and $html -match 'data-testid="new-flag"')
 $html = Dom "#/flags" "(function(){const b=document.querySelector('[data-testid=new-flag]');if(b&&!window.__f){window.__f=1;b.click();return false}const a=document.querySelector('[data-testid=flag-editor] .add-button');if(a&&window.__f===1){window.__f=2;a.click()}return false})() || document.querySelector('[data-testid=flag-editor] .suggest input')"
 Check "the flag editor opens with a person property field that suggests names" ((Section $html "flag-editor") -match 'role="combobox"' -and (Section $html "flag-editor") -match 'Create flag')
+$ownerHandler = New-Object System.Net.Http.HttpClientHandler
+$ownerHandler.CookieContainer = New-Object System.Net.CookieContainer
+$ownerHttp = New-Object System.Net.Http.HttpClient($ownerHandler)
+function Owner([string]$method, [string]$path, $body = $null) {
+    $req = New-Object System.Net.Http.HttpRequestMessage((New-Object System.Net.Http.HttpMethod($method)), "$dash/api/v1$path")
+    $req.Headers.TryAddWithoutValidation("X-Project-Id", "1") | Out-Null
+    if ($null -ne $body) { $req.Content = New-Object System.Net.Http.StringContent((ConvertTo-Json $body -Depth 6 -Compress), [Text.Encoding]::UTF8, "application/json") }
+    $r = $ownerHttp.SendAsync($req).Result
+    $t = $r.Content.ReadAsStringAsync().Result
+    [pscustomobject]@{ Status = [int]$r.StatusCode; Json = $(if ($t) { try { $t | ConvertFrom-Json } catch { $null } } else { $null }) }
+}
+$null = Owner POST "/auth/login" @{ email = $envValues.ADMIN_EMAIL; password = $envValues.ADMIN_PASSWORD }
+$lockFlag = (Owner POST "/flags" @{ key = "lock-$tag"; name = "Lock check $tag"; enabled = $true; rollout_percentage = 100; variants = @(@{ key = "control"; percentage = 50 }, @{ key = "test"; percentage = 50 }) }).Json
+$lockExperiment = (Owner POST "/experiments" @{ name = "Lock experiment $tag"; flag_id = $lockFlag.id; metric = @{ kind = "conversion"; event = "step3_$tag" } }).Json
+$started = (Owner POST "/experiments/$($lockExperiment.id)/start").Status
+$html = Dom "#/flags" "(function(){const b=document.querySelector('button[aria-label=`"Edit lock-$tag`"]');if(b&&!window.__l){window.__l=1;b.click()}return false})() || document.querySelector('[data-testid=flag-locked]')"
+$lockedInputs = ([regex]::Matches($html, '<input[^>]*aria-label="Variant (key|percentage)"[^>]*disabled=""')).Count
+Check "a flag used by a running experiment shows 'Locked by experiment' in its editor ($started)" ($started -eq 200 -and (Section $html "flag-locked") -match "Locked by experiment Lock experiment $tag")
+Check "its variant keys and percentages are disabled, rollout stays editable ($lockedInputs of 4 disabled)" ($lockedInputs -eq 4 -and $html -notmatch '<input[^>]*aria-label="Rollout percentage"[^>]*disabled=""')
+Check "the flags table marks the locked flag" ($html -match "flag-lock[^>]*>Locked by Lock experiment $tag<")
+$null = Owner POST "/experiments/$($lockExperiment.id)/stop"
+$cleaned = (Owner DELETE "/experiments/$($lockExperiment.id)").Status -eq 204 -and (Owner DELETE "/flags/$($lockFlag.id)").Status -eq 204
+Check "the lock check's experiment and flag are deleted" $cleaned
 $html = Dom "#/experiments" "document.querySelector('[data-testid=experiments-card]') && !document.querySelector('.skeleton')"
 Check "Experiments tab renders for the owner with a 'New experiment' action" ($html -match 'data-testid="experiments-card"' -and $html -match 'data-testid="new-experiment"')
 $html = Dom "#/experiments/new" "document.querySelector('[data-testid=experiment-editor] .suggest input') && !document.querySelector('.skeleton')"

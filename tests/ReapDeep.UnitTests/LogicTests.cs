@@ -38,6 +38,25 @@ public class TimeRangeTests
         Assert.Throws<ValidationException>(() => TimeRange.Parse(from, to, Istanbul, TimeSpan.FromDays(7)));
     }
 
+    [Theory]
+    [InlineData("yesterday", "2026-10-07", "Invalid date_from: 'yesterday'")]
+    [InlineData("2026-10-01", "soon", "Invalid date_to: 'soon'")]
+    public void Invalid_dates_name_the_query_parameter(string from, string to, string expected)
+    {
+        var ex = Assert.Throws<ValidationException>(() => TimeRange.Parse(from, to, Istanbul, TimeSpan.FromDays(7)));
+        Assert.StartsWith(expected, ex.Message);
+    }
+
+    [Theory]
+    [InlineData("start_date")]
+    [InlineData("end_date")]
+    public void Invalid_boundaries_name_the_field_once(string field)
+    {
+        var ex = Assert.Throws<ValidationException>(() => TimeRange.ParseBoundary("not-a-date", Istanbul, isEnd: false, field));
+        Assert.StartsWith($"Invalid {field}: 'not-a-date'", ex.Message);
+        Assert.DoesNotContain("date_" + field, ex.Message);
+    }
+
     [Fact]
     public void Week_buckets_start_on_monday()
     {

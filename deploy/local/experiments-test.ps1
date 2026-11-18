@@ -180,9 +180,12 @@ try {
 
     Write-Host "`n8) Lock: variants are fixed while an experiment runs"
     Check "while all experiments are drafts the variants can change" ((S PUT "/flags/$idA" @{ variants = @(@{ key = "control"; percentage = 40 }, @{ key = "test"; percentage = 60 }) }).Status -eq 200 -and (S PUT "/flags/$idA" @{ variants = @(@{ key = "control"; percentage = 50 }, @{ key = "test"; percentage = 50 }) }).Status -eq 200)
+    Check "a flag with only draft experiments is not locked" ($null -eq (S GET "/flags/$idA").Json.locked_by_experiment)
     $s = S POST "/experiments/$($x1.id)/start"
     Check "start -> running, the explicit start date is kept" ($s.Status -eq 200 -and $s.Json.status -eq "running" -and ([DateTime]$s.Json.start_date).ToUniversalTime() -lt [DateTime]::UtcNow.AddHours(-2))
     Check "starting again -> 409" ((S POST "/experiments/$($x1.id)/start").Status -eq 409)
+    $lockedFlag = @((S GET "/flags").Json.flags | Where-Object { $_.id -eq $idA })[0]
+    Check "the flag reports the running experiment that locks it (get and list)" ((S GET "/flags/$idA").Json.locked_by_experiment -eq "Checkout conversion $tag" -and $lockedFlag.locked_by_experiment -eq "Checkout conversion $tag")
     $r = S PUT "/flags/$idA" @{ variants = @(@{ key = "control"; percentage = 40 }, @{ key = "test"; percentage = 60 }) }
     Check "changing percentages -> 409 naming the experiment" ($r.Status -eq 409 -and $r.Json.error -match "locked" -and $r.Json.error -match "Checkout conversion")
     Check "renaming a variant -> 409" ((S PUT "/flags/$idA" @{ variants = @(@{ key = "control"; percentage = 50 }, @{ key = "b"; percentage = 50 }) }).Status -eq 409)
@@ -195,6 +198,7 @@ try {
     $p = S POST "/experiments/$($x1.id)/stop"
     Check "stop -> stopped with an end date" ($p.Status -eq 200 -and $p.Json.status -eq "stopped" -and $p.Json.end_date)
     Check "stopping again -> 409, restarting a stopped experiment -> 409" ((S POST "/experiments/$($x1.id)/stop").Status -eq 409 -and (S POST "/experiments/$($x1.id)/start").Status -eq 409)
+    Check "after stopping, the flag is no longer locked" ($null -eq (S GET "/flags/$idA").Json.locked_by_experiment)
     Check "after stopping, the variants can change again" ((S PUT "/flags/$idA" @{ variants = @(@{ key = "control"; percentage = 40 }, @{ key = "test"; percentage = 60 }) }).Status -eq 200)
     $null = S PUT "/flags/$idA" @{ variants = @(@{ key = "control"; percentage = 50 }, @{ key = "test"; percentage = 50 }) }
     $rs = (Fresh "/experiments/$($x1.id)/results").Json
