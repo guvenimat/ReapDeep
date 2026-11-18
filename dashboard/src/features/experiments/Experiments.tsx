@@ -183,7 +183,7 @@ function ExperimentResultsCard({ experiment, version }: { experiment: Experiment
               <StatTile label="Goal" value={revenue ? 'Revenue' : experiment.metric.kind === 'funnel' ? 'Funnel' : 'Conversion'} hint={describeMetric(experiment.metric)} />
             </div>
             <ResultsTable results={r} revenue={revenue} />
-            <ExplainCard title="AI interpretation" load={() => api.explainExperiment(experiment.id)}
+            <ExplainCard title="AI interpretation" feature="experiment_explain" load={() => api.explainExperiment(experiment.id)}
               hint="A plain-language reading of these results with a rule-based decision (ship, keep running, stop) and follow-up ideas." />
           </div>
         )}

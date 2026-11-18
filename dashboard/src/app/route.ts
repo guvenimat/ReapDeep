@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { DateRange, Interval } from '../api/types'
 import type { IconName } from '../components/icons'
 
-export type Tab = 'dashboards' | 'ai' | 'web' | 'trends' | 'funnels' | 'retention' | 'paths' | 'lifecycle' | 'rfm' | 'alerts' | 'flags' | 'experiments' | 'events' | 'persons' | 'cohorts' | 'catalog' | 'settings'
+export type Tab = 'dashboards' | 'ai' | 'platform' | 'web' | 'trends' | 'funnels' | 'retention' | 'paths' | 'lifecycle' | 'rfm' | 'alerts' | 'flags' | 'experiments' | 'events' | 'persons' | 'cohorts' | 'catalog' | 'settings'
 export interface TabInfo { id: Tab; label: string; icon: IconName; description: string; group: 'analyze' | 'data' | 'admin' }
 export const TABS: TabInfo[] = [
   { id: 'dashboards', label: 'Dashboards', icon: 'dashboards', description: 'Saved insights, side by side', group: 'analyze' },
@@ -21,6 +21,7 @@ export const TABS: TabInfo[] = [
   { id: 'flags', label: 'Feature flags', icon: 'flag', description: 'Roll features out gradually and split visitors into variants', group: 'data' },
   { id: 'experiments', label: 'Experiments', icon: 'flask', description: 'A/B tests on multivariate flags: which variant converts or earns more', group: 'data' },
   { id: 'catalog', label: 'Catalog', icon: 'catalog', description: 'Products and the recommendations served to your site', group: 'data' },
+  { id: 'platform', label: 'Platform', icon: 'key', description: 'Customers and the AI features each of them can use', group: 'admin' },
   { id: 'settings', label: 'Settings', icon: 'settings', description: 'Project, members, API keys and account', group: 'admin' },
 ]
 

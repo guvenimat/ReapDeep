@@ -111,4 +111,36 @@ public class AiTests
         Assert.Equal("funnels", doc.RootElement.GetProperty("kind").GetString());
         Assert.Equal(2, doc.RootElement.GetProperty("query").GetProperty("steps").GetArrayLength());
     }
+
+    static AiAccessState State(bool platform, string[] allowed, bool customer, string[] chosen) =>
+        new(1, "Org", platform, [.. allowed], customer, [.. chosen]);
+
+    [Fact]
+    public void A_feature_works_only_when_both_the_platform_and_the_customer_have_it_on()
+    {
+        var all = AiFeatures.All;
+        Assert.Equal(all, State(true, all, true, all).Effective);
+        Assert.Equal([AiFeatures.Query], State(true, [AiFeatures.Query, AiFeatures.Digest], true, [AiFeatures.Query, AiFeatures.InsightExplain]).Effective);
+        Assert.Empty(State(false, all, true, all).Effective);
+        Assert.Empty(State(true, all, false, all).Effective);
+        Assert.Empty(State(false, all, true, all).Allowed);
+    }
+
+    [Fact]
+    public void Feature_lists_are_checked_and_kept_in_a_fixed_order()
+    {
+        Assert.Equal([AiFeatures.InsightExplain, AiFeatures.Digest], AiFeatures.Validate([AiFeatures.Digest, " insight_explain", AiFeatures.Digest]));
+        Assert.Throws<ReapDeep.Analytics.ValidationException>(() => AiFeatures.Validate(["chatbot"]));
+    }
+
+    [Fact]
+    public void Platform_administrators_come_from_configuration_only()
+    {
+        var admins = new PlatformAdmins(new ConfigurationBuilder().AddInMemoryCollection([KeyValuePair.Create("Platform:AdminEmails", (string?)" Ops@Example.com ; boss@example.com")]).Build());
+
+        Assert.True(admins.IsAdmin("ops@example.com"));
+        Assert.True(admins.IsAdmin("BOSS@example.com "));
+        Assert.False(admins.IsAdmin("customer@example.com"));
+        Assert.False(new PlatformAdmins(new ConfigurationBuilder().Build()).IsAdmin("ops@example.com"));
+    }
 }

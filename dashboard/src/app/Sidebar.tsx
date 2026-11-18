@@ -42,7 +42,7 @@ export function Sidebar({ me, project, active, status, statusError, onNavigate, 
         {GROUPS.map((g) => (
           <div className="nav-group" key={g.id}>
             {g.label && <div className="nav-label">{g.label}</div>}
-            {TABS.filter((t) => t.group === g.id).map((t) => (
+            {TABS.filter((t) => t.group === g.id && (t.id !== 'platform' || me.platform_admin)).map((t) => (
               <a key={t.id} href={`#/${t.id}`} className={`nav-item${active === t.id ? ' active' : ''}`}
                 aria-current={active === t.id ? 'page' : undefined}
                 onClick={(e) => { e.preventDefault(); onNavigate(t.id) }}>

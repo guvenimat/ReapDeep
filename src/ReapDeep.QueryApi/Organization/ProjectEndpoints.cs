@@ -21,18 +21,20 @@ public static class ProjectEndpoints
         api.MapPost("/project/recommendation-secret", RotateRecommendationSecret).RequireManager();
     }
 
-    static async Task<IResult> Current(ProjectContext project, ProjectRepository projects, AiGateway ai, CancellationToken ct) =>
-        await projects.GetAsync(project.ProjectId, ct) is { } detail
-            ? ApiResults.Ok((project.CanManage && project.UserId is not null ? detail : detail with { RecommendationSecret = null })
-                with { AiModel = ai.Configured ? ai.ModelLabel : null }, AppJsonContext.Default.ProjectDetail)
-            : ApiResults.NotFound("Project not found");
-
-    static async Task<IResult> UpdateSettings(ProjectSettingsRequest req, ProjectContext project, ProjectRepository projects, AiGateway ai, CancellationToken ct)
+    static async Task<IResult> Current(ProjectContext project, ProjectRepository projects, AiGateway ai, AiAccessRepository access, CancellationToken ct)
     {
-        Ensure.That(req.AnonymizeIp is not null || req.AiEnabled is not null, "anonymize_ip or ai_enabled is required");
-        if (req.AnonymizeIp is { } anonymize) await projects.SetAnonymizeIpAsync(project.ProjectId, anonymize, ct);
-        if (req.AiEnabled is { } enabled) await projects.SetAiEnabledAsync(project.ProjectId, enabled, ct);
-        return await Current(project, projects, ai, ct);
+        if (await projects.GetAsync(project.ProjectId, ct) is not { } detail) return ApiResults.NotFound("Project not found");
+        var features = ai.Configured ? (await access.ForProjectAsync(project.ProjectId, ct))?.Effective ?? [] : [];
+        return ApiResults.Ok((project.CanManage && project.UserId is not null ? detail : detail with { RecommendationSecret = null })
+            with { AiModel = ai.Configured ? ai.ModelLabel : null, AiFeatures = features }, AppJsonContext.Default.ProjectDetail);
+    }
+
+    static async Task<IResult> UpdateSettings(ProjectSettingsRequest req, ProjectContext project, ProjectRepository projects, AiGateway ai,
+        AiAccessRepository access, CancellationToken ct)
+    {
+        Ensure.That(req.AnonymizeIp is not null, "anonymize_ip is required");
+        await projects.SetAnonymizeIpAsync(project.ProjectId, req.AnonymizeIp!.Value, ct);
+        return await Current(project, projects, ai, access, ct);
     }
 
     static async Task<IResult> RotateRecommendationSecret(ProjectContext project, ProjectRepository projects, CancellationToken ct)

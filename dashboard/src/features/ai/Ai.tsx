@@ -5,6 +5,7 @@ import { ACTION_PREFIX } from '../../components/editors'
 import { Icon } from '../../components/icons'
 import { Card } from '../../components/ui'
 import { AiAnswerView } from './AiAnswer'
+import { useAiFeature } from './AiAccess'
 
 type Item = { event?: string; action?: string; metric?: string; property?: string }
 const ref = (i: Item) => (i.action ? ACTION_PREFIX + i.action : i.event ?? '')
@@ -136,10 +137,18 @@ function Digest({ canManage }: { canManage: boolean }) {
 }
 
 export function AiPage({ canManage }: { canManage: boolean }) {
+  const ask = useAiFeature('query')
+  const digest = useAiFeature('digest')
   return (
     <div className="stack">
-      <Ask />
-      <Digest canManage={canManage} />
+      {ask && <Ask />}
+      {digest && <Digest canManage={canManage} />}
+      {!ask && !digest && (
+        <Card title={<><Icon name="sparkles" />AI insights</>}>
+          <p className="editor-hint" data-ai-off="">Questions in plain language and the weekly strategy note are not turned on for this organization.
+            Owners and admins manage AI features in Settings; the platform team decides which ones each organization can use.</p>
+        </Card>
+      )}
     </div>
   )
 }

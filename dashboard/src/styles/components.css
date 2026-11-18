@@ -534,3 +534,12 @@ button.link.active { text-decoration: underline; }
 .ai-ideas { list-style: none; padding: 0; margin: 6px 0 0; display: grid; gap: 8px; }
 .ai-idea { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; justify-content: space-between; }
 .ai-idea > div { display: grid; gap: 2px; min-width: 0; flex: 1; }
+
+.ai-features { display: grid; gap: 8px; }
+.ai-feature { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+.ai-feature > span { display: grid; gap: 2px; }
+.ai-feature.unavailable { opacity: 0.55; cursor: default; }
+.platform-orgs { display: grid; gap: 14px; }
+.platform-org { display: grid; gap: 10px; padding: 14px 0; border-top: 1px solid var(--border); }
+.platform-org:first-child { border-top: 0; padding-top: 0; }
+.platform-org-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }

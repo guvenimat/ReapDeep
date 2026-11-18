@@ -22,7 +22,7 @@ public sealed class AiQuotaException(string message) : Exception(message);
 
 public sealed record AiReply(JsonElement Json, string Model, bool Cached, DateTime GeneratedAt);
 
-public sealed class AiGateway(IChatModel model, AiOptions options, NpgsqlDataSource db, RedisConnection redis, ILogger<AiGateway> log)
+public sealed class AiGateway(IChatModel model, AiOptions options, NpgsqlDataSource db, RedisConnection redis, AiAccessRepository access, ILogger<AiGateway> log)
 {
     const int MaxStringLength = 300;
     const int MaxArrayItems = 100;
@@ -43,17 +43,15 @@ public sealed class AiGateway(IChatModel model, AiOptions options, NpgsqlDataSou
 
     public string ModelLabel => options.Label;
 
-    public async Task<bool> EnabledAsync(long projectId, CancellationToken ct)
-    {
-        await using var conn = await db.OpenConnectionAsync(ct);
-        return await conn.ExecuteScalarAsync<bool>("SELECT ai_enabled FROM projects WHERE id = @Id", new { Id = projectId });
-    }
-
-    public async Task<AiReply> AskAsync(ProjectContext project, string task, string instructions, JsonNode data, string? question, CancellationToken ct)
+    public async Task<AiReply> AskAsync(ProjectContext project, string feature, string task, string instructions, JsonNode data, string? question,
+        CancellationToken ct)
     {
         if (!options.Configured) throw new AiUnavailableException("No AI provider is configured on the server (Ai__ApiKey)");
-        if (!await EnabledAsync(project.ProjectId, ct))
-            throw new AiDisabledException("AI analysis is off for this project; an owner or admin can turn it on in Settings");
+        var state = await access.ForProjectAsync(project.ProjectId, ct) ?? throw new AiDisabledException("Project not found");
+        if (!state.PlatformEnabled || !state.PlatformFeatures.Contains(feature))
+            throw new AiDisabledException("This AI feature is not included for your organization; ask the platform team to turn it on");
+        if (!state.CustomerEnabled || !state.CustomerFeatures.Contains(feature))
+            throw new AiDisabledException("This AI feature is turned off for your organization; an owner or admin can turn it on in Settings");
 
         var message = new JsonObject { ["task"] = task, ["data"] = Clean(data, 0) };
         if (question is not null) message["question"] = Truncate(question, 500);

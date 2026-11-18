@@ -102,7 +102,7 @@ export interface Metadata {
 
 export interface User { id: number; email: string; name: string }
 export interface Project { id: number; name: string; organization_id: number; organization_name: string; role: 'owner' | 'admin' | 'member'; timezone: string }
-export interface Me { user: User; projects: Project[] }
+export interface Me { user: User; projects: Project[]; platform_admin?: boolean }
 export type Role = Project['role']
 export interface Member { user_id: number; email: string; name: string; role: Role; created_at: string; pending: boolean }
 export type AuthTokenPurpose = 'invite' | 'reset'
@@ -232,7 +232,13 @@ export type ProjectDetail = {
   id: number; name: string; organization_id: number; organization_name: string; timezone: string; public_key: string; created_at: string
   anonymize_ip: boolean; ingest_events_per_second: number | null
   recommendation_secret?: string | null
-  ai_enabled: boolean; ai_model?: string | null
+  ai_features?: AiFeature[] | null; ai_model?: string | null
+}
+export type AiFeature = 'experiment_explain' | 'insight_explain' | 'query' | 'digest'
+export interface AiAccess { platform_enabled: boolean; allowed: AiFeature[]; enabled: boolean; features: AiFeature[]; effective: AiFeature[]; model: string | null }
+export interface PlatformOrganization {
+  id: number; name: string; projects: number; members: number; ai_enabled: boolean; ai_features: AiFeature[]; customer_enabled: boolean
+  customer_features: AiFeature[]; effective: AiFeature[]
 }
 export interface AiVerdict { decision: 'ship' | 'stop' | 'keep_running' | 'no_difference' | 'investigate'; variant: string; reason: string }
 export interface AiExperimentIdea { name: string; hypothesis: string; goal_event: string; flag_key: string }
