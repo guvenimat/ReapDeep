@@ -109,6 +109,7 @@ public static class HostingExtensions
         services.AddSingleton<AiGateway>();
         services.AddSingleton<AiAccessRepository>();
         services.AddSingleton<DigestRepository>();
+        services.AddSingleton<ReapDeep.QueryApi.Notifications.NotificationRepository>();
         services.AddSingleton<DigestService>();
         services.AddSingleton<PlatformAdmins>();
         services.AddSingleton<EmailSender>();

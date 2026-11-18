@@ -21,6 +21,7 @@ import { Trends } from '../features/trends/Trends'
 import { Web } from '../features/web/Web'
 import { useQuery } from '../lib/hooks'
 import { RangePicker } from './RangePicker'
+import { NotificationBell } from './NotificationBell'
 import { rangeFromParams, TABS, useRoute } from './route'
 import { Sidebar } from './Sidebar'
 import { AiPage } from '../features/ai/Ai'
@@ -90,7 +91,10 @@ export function Workspace({ me, onLogout, onAccessChanged }: { me: Me; onLogout:
                 <h1>{tab.label}</h1>
                 <p>{tab.description}</p>
               </div>
-              {showRange && <RangePicker range={range} onChange={setParams} />}
+              <div className="topbar-actions">
+                {showRange && <RangePicker range={range} onChange={setParams} />}
+                {projectId !== undefined && <NotificationBell projectId={projectId} />}
+              </div>
             </header>
             <main key={projectId}>
               {route.tab === 'dashboards' && <Dashboards id={route.id} params={route.params} range={range} openDashboard={(id) => navigate('dashboards', id)} />}

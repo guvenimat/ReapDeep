@@ -188,7 +188,8 @@ public sealed class DigestRepository(NpgsqlDataSource db)
     public static List<string> Split(string text) => [.. text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
 }
 
-public sealed class DigestJob(DigestRepository schedules, DigestService digests, IConfiguration cfg, ILogger<DigestJob> log) : BackgroundService
+public sealed class DigestJob(DigestRepository schedules, DigestService digests, ReapDeep.QueryApi.Notifications.NotificationRepository notifications,
+    IConfiguration cfg, ILogger<DigestJob> log) : BackgroundService
 {
     static readonly TimeSpan Lease = TimeSpan.FromMinutes(30);
 
@@ -220,6 +221,8 @@ public sealed class DigestJob(DigestRepository schedules, DigestService digests,
         {
             var (answer, noteId) = await digests.WriteAsync(project, period, "schedule", ct);
             error = await digests.EmailAsync(s.ProjectName, period, answer, [.. DigestRepository.Split(s.EmailTo)], noteId, ct);
+            await notifications.AddAsync(s.ProjectId, ReapDeep.QueryApi.Notifications.NotificationKinds.Note,
+                $"Strategy note for {period.FromText} to {period.ToText ?? "today"}", answer.Summary, "#/ai", ct);
             log.LogInformation("Project {Project}: scheduled strategy note written for {From} to {To}", s.ProjectId, period.FromText, period.ToText);
         }
         catch (Exception e) when (e is AiDisabledException or AiUnavailableException or AiQuotaException or ValidationException)

@@ -9,7 +9,7 @@ using ReapDeep.QueryApi.Insights;
 namespace ReapDeep.QueryApi.Alerts;
 
 public sealed class AlertService(AlertRepository alerts, InsightRepository insights, TrendService trends, WebhookSender webhooks, EmailSender email,
-    IConfiguration cfg, ILogger<AlertService> log)
+    IConfiguration cfg, ILogger<AlertService> log, ReapDeep.QueryApi.Notifications.NotificationRepository notifications)
 {
     readonly IReadOnlyList<TimeSpan> _retryDelays = AlertRules.ParseDelays(cfg["Alerts:RetryDelaysSeconds"]);
 
@@ -58,6 +58,9 @@ public sealed class AlertService(AlertRepository alerts, InsightRepository insig
             AlertEventRow? errorEvent = alert.State == AlertRules.Error
                 ? null
                 : await alerts.AddEventAsync(alert.Id, alert.ProjectId, AlertRules.Error, null, null, message, null, null, ct);
+            if (errorEvent is not null)
+                await notifications.AddAsync(alert.ProjectId, ReapDeep.QueryApi.Notifications.NotificationKinds.AlertError,
+                    $"Alert \"{alert.Name}\" could not be checked", message, "#/alerts", ct);
             await alerts.SaveResultAsync(alert.Id, AlertRules.Error, null, null, message, next, ct);
             return new AlertCheckResponse(AlertRules.Error, null, null, message, errorEvent);
         }
@@ -73,6 +76,9 @@ public sealed class AlertService(AlertRepository alerts, InsightRepository insig
             var pending = await alerts.AddEventAsync(alert.Id, alert.ProjectId, kind, value, previous, text, body, DateTime.UtcNow + AlertJob.Lease, ct,
                 alert.Channel);
             evt = await DeliverAsync(pending.Id, alert.Id, alert.Channel, alert.WebhookUrl, alert.EmailTo, alert.Secret, body, 1, ct);
+            await notifications.AddAsync(alert.ProjectId,
+                firing ? ReapDeep.QueryApi.Notifications.NotificationKinds.AlertFired : ReapDeep.QueryApi.Notifications.NotificationKinds.AlertResolved,
+                firing ? $"Alert \"{alert.Name}\" fired" : $"Alert \"{alert.Name}\" is back to normal", text, "#/alerts", ct);
         }
         await alerts.SaveResultAsync(alert.Id, state, value, previous, null, next, ct);
         return new AlertCheckResponse(state, value, previous, text, evt);

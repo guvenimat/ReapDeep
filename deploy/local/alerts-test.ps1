@@ -133,6 +133,14 @@ try {
     $events = (S GET "/alerts/$($alert.id)/events").Json.events
     Check "history: resolved then fired, both delivered with HTTP 200 on the first attempt" (@($events).Count -eq 2 -and $events[0].kind -eq "resolved" -and $events[1].kind -eq "fired" -and $events[0].response_status -eq 200 -and $events[1].response_status -eq 200 -and $events[0].delivery_status -eq "delivered" -and $events[0].attempts -eq 1)
 
+    Write-Host "`n4a) In-app notifications"
+    $notes = (S GET "/notifications").Json
+    $mine = @($notes.notifications | Where-Object { $_.title -like "*$($alert.name)*" })
+    Check "firing and resolving left two notifications that link to the alerts tab" ($mine.Count -eq 2 -and $mine[0].kind -eq "alert_resolved" -and $mine[1].kind -eq "alert_fired" -and $mine[0].link -eq "#/alerts")
+    Check "they start unread" ($notes.unread -ge 2 -and $mine[0].unread -eq $true)
+    Check "marking them read clears the unread count" ((S POST "/notifications/read").Status -eq 204 -and (S GET "/notifications").Json.unread -eq 0)
+    Check "a read key cannot read notifications -> 403" ((Send $plain GET "/notifications" $null @{ Authorization = "Bearer $readKey"; "X-Project-Id" = "1" }).Status -eq 403)
+
     Write-Host "`n4b) Failed deliveries are retried"
     $flaky = (S POST "/alerts" (With @{ name = "Flaky $tag"; webhook_url = "http://host.docker.internal:$port/flaky"; enabled = $false })).Json
     $first = (S POST "/alerts/$($flaky.id)/check").Json.event
