@@ -241,6 +241,7 @@ finally {
     foreach ($x in $otherExperiments) { if ($x) { $null = S DELETE "/experiments/$($x.id)" $null $other.id } }
     foreach ($f in $flags) { if ($f) { $null = S DELETE "/flags/$($f.id)" } }
     foreach ($f in $otherFlags) { if ($f) { $null = S DELETE "/flags/$($f.id)" $null $other.id } }
+    if ($other) { $null = S DELETE "/project" @{ confirm = $other.name } $other.id }
 }
 Check "experiments and flags of this run removed" (-not ((S GET "/experiments").Json.experiments | Where-Object { $_.flag_key -like "*$tag" }) -and -not ((S GET "/flags").Json.flags | Where-Object { $_.key -like "*$tag" }))
 

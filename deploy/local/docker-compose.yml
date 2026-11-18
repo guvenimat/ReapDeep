@@ -194,6 +194,8 @@ services:
       Deletion__IntervalSeconds: "30"
       Deletion__MinAgeSeconds: "20"
       Deletion__TombstoneSeconds: "60"
+      ProjectDeletion__DelaySeconds: "45"
+      ProjectDeletion__PollSeconds: "10"
       Cohorts__PollSeconds: "5"
       Cohorts__MaxRefreshSeconds: "30"
       Recommendations__PollSeconds: "10"

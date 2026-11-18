@@ -40,4 +40,26 @@ public sealed class ProjectRepository(NpgsqlDataSource db)
         await using var conn = await db.OpenConnectionAsync(ct);
         await conn.ExecuteAsync("UPDATE projects SET recommendation_secret = @Secret WHERE id = @Id", new { Id = projectId, Secret = secret });
     }
+
+    public sealed record DeletedProject(List<string> KeyHashes, List<long> MemberIds);
+    public readonly record struct DeleteResult(bool LastProject, DeletedProject? Deleted);
+
+    public async Task<DeleteResult> DeleteAsync(long projectId, long requestedBy, CancellationToken ct)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        await using var tx = await conn.BeginTransactionAsync(ct);
+        var org = await conn.ExecuteScalarAsync<long?>("SELECT organization_id FROM projects WHERE id = @Id FOR UPDATE", new { Id = projectId }, tx);
+        if (org is null) return new DeleteResult(false, null);
+        var siblings = await conn.ExecuteScalarAsync<long>("SELECT count(*) FROM projects WHERE organization_id = @Org", new { Org = org.Value }, tx);
+        if (siblings <= 1) return new DeleteResult(true, null);
+        var keys = (await conn.QueryAsync<string>("SELECT key_hash FROM api_keys WHERE project_id = @Id", new { Id = projectId }, tx)).AsList();
+        var members = (await conn.QueryAsync<long>("SELECT user_id FROM organization_members WHERE organization_id = @Org", new { Org = org.Value }, tx)).AsList();
+        await conn.ExecuteAsync("""
+            INSERT INTO project_deletions (project_id, organization_id, name, requested_by)
+            SELECT id, organization_id, name, @UserId FROM projects WHERE id = @Id;
+            DELETE FROM projects WHERE id = @Id;
+            """, new { Id = projectId, UserId = requestedBy }, tx);
+        await tx.CommitAsync(ct);
+        return new DeleteResult(false, new DeletedProject(keys, members));
+    }
 }

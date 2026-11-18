@@ -3,6 +3,14 @@ namespace ReapDeep.Analytics.Sql;
 public static class DeletionSql
 {
     public static readonly string[] TombstoneTables = ["analytics.person_distinct_ids", "analytics.persons"];
+    public static readonly string[] ProjectTables = ["analytics.events", "analytics.person_distinct_ids", "analytics.persons", "analytics.cohort_members"];
+
+    public static SqlQuery DeleteProject(string table, long projectId)
+    {
+        if (!ProjectTables.Contains(table)) throw new ArgumentException($"Unknown project table: {table}", nameof(table));
+        var b = new SqlBuilder(projectId, DateTime.UtcNow, DateTime.UtcNow);
+        return b.Build($"DELETE FROM {table} WHERE project_id = {b.P(projectId)}");
+    }
 
     public static SqlQuery DeleteEvents(long projectId, IReadOnlyList<string> distinctIds)
     {

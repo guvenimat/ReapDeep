@@ -193,6 +193,6 @@ do {
 Check "the read key reads project 1 (the X-Project-Id header does not switch it): its pageview is there" ($iso1.Status -eq 200 -and $iso1.Json.current.pageviews -eq 1 -and $iso1.Json.pages[0].pathname -eq "/iso-$tag")
 Check "the test project does not see project 1's pageview" ((Web $isoFilter $project.id -Fresh).Json.current.pageviews -eq 0)
 
-Write-Host "`nTest project $($project.id) is left in place (there is no project delete API)."
+Check "the test project is deleted" ((Send $owner DELETE "$api/project" @{ confirm = $project.name } @{ "X-Project-Id" = "$($project.id)" }).Status -eq 202)
 if ($script:failed -eq 0) { Write-Host "`nPASSED: all $script:checks web analytics checks" -ForegroundColor Green }
 else { Write-Host "`nFAILED: $script:failed of $script:checks checks failed" -ForegroundColor Red; exit 1 }

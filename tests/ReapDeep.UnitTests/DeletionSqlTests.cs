@@ -23,4 +23,15 @@ public class DeletionSqlTests
         Assert.Equal(("@cutoff", (object)cutoff), q.Parameters.Single());
         Assert.Throws<ArgumentException>(() => DeletionSql.PurgeTombstones("analytics.events", cutoff));
     }
+
+    [Fact]
+    public void A_project_is_deleted_table_by_table_with_its_id_as_a_parameter()
+    {
+        var q = DeletionSql.DeleteProject("analytics.events", 42);
+
+        Assert.Matches(@"^DELETE FROM analytics\.events WHERE project_id = @p\d+$", q.Sql);
+        Assert.Contains(q.Parameters, p => p.Value is long v && v == 42);
+        Assert.Contains("analytics.cohort_members", DeletionSql.ProjectTables);
+        Assert.Throws<ArgumentException>(() => DeletionSql.DeleteProject("analytics.events; DROP TABLE x", 42));
+    }
 }

@@ -20,6 +20,12 @@ public sealed class StarRocksDeleter(MySqlDataSource db)
             await ExecuteAsync(CohortSql.DeleteDistinctIds(projectId, chunk), ct);
     }
 
+    public async Task DeleteProjectAsync(long projectId, CancellationToken ct)
+    {
+        foreach (var table in DeletionSql.ProjectTables)
+            await ExecuteAsync(DeletionSql.DeleteProject(table, projectId), ct);
+    }
+
     public async Task PurgeTombstonesAsync(DateTime olderThanUtc, CancellationToken ct)
     {
         foreach (var table in DeletionSql.TombstoneTables)

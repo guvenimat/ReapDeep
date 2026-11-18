@@ -196,7 +196,7 @@ try {
 }
 finally {
     foreach ($f in $created) { $null = S DELETE "/flags/$($f.id)" }
-    if ($other) { foreach ($f in @((S GET "/flags" $null $other.id).Json.flags)) { if ($f) { $null = S DELETE "/flags/$($f.id)" $null $other.id } } }
+    if ($other) { $null = S DELETE "/project" @{ confirm = $other.name } $other.id }
 }
 Check "flags of this run removed" (-not ((S GET "/flags").Json.flags | Where-Object { $_.key -like "*-$tag" }))
 
