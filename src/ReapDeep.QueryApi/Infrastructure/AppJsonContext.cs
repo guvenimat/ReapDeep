@@ -76,6 +76,7 @@ namespace ReapDeep.QueryApi.Infrastructure;
 [JsonSerializable(typeof(InsightBody))]
 [JsonSerializable(typeof(AnnotationBody))]
 [JsonSerializable(typeof(AiAnswer))]
+[JsonSerializable(typeof(ReapDeep.QueryApi.Notifications.NotificationsResponse))]
 [JsonSerializable(typeof(MemberLink))]
 [JsonSerializable(typeof(AiNotesResponse))]
 [JsonSerializable(typeof(DigestScheduleBody))]

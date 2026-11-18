@@ -33,6 +33,7 @@ public static class ApiRoutes
         api.MapActions();
         api.MapAi();
         api.MapAiAccess();
+        ReapDeep.QueryApi.Notifications.NotificationEndpoints.MapNotifications(api);
         app.MapPlatform();
         api.MapDashboards();
         api.MapMembers();
