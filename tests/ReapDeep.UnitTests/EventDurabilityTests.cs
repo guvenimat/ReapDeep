@@ -23,6 +23,24 @@ public class EventDurabilityTests
         Assert.Equal(expected, StarRocksErrors.Classify(number, sqlState, message));
 
     [Fact]
+    public void The_rejected_cancel_cleanup_statement_is_classified_as_a_canceled_query()
+    {
+        const string message = "Getting syntax error at line 1, column 21. Detail message: Unexpected input '@', the most similar input is {'OUTFILE'}.";
+        Assert.True(StarRocksErrors.IsCancelCleanup(1064, message));
+        Assert.Equal(StarRocksFailure.ResourceLimit, StarRocksErrors.Classify(1064, "HY000", message));
+    }
+
+    [Theory]
+    [InlineData(1064, "Getting syntax error at line 1, column 40. Detail message: Unexpected input '@', the most similar input is {<EOF>}.")]
+    [InlineData(1064, "Getting syntax error at line 1, column 21. Detail message: Unexpected input 'x', the most similar input is {'FROM'}.")]
+    [InlineData(5502, "Getting syntax error at line 1, column 21. Detail message: Unexpected input '@', the most similar input is {'OUTFILE'}.")]
+    public void Other_syntax_errors_stay_query_errors(int number, string message)
+    {
+        Assert.False(StarRocksErrors.IsCancelCleanup(number, message));
+        Assert.Equal(StarRocksFailure.QueryError, StarRocksErrors.Classify(number, "HY000", message));
+    }
+
+    [Fact]
     public void A_timeout_mentioned_in_an_ordinary_error_is_not_a_resource_limit() =>
         Assert.Equal(StarRocksFailure.QueryError, StarRocksErrors.Classify(5502, "42602", "Unknown column 'timeout'"));
 

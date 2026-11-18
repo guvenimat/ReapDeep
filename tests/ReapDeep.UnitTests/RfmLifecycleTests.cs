@@ -141,6 +141,20 @@ public class RfmLifecycleTests
         Assert.Contains(q.Parameters, p => p.Value is DateTime t && t == Now.AddDays(-365));
     }
 
+    [Theory]
+    [InlineData(90, 7)]
+    [InlineData(180, 30)]
+    [InlineData(365, 90)]
+    public void Migration_sql_defines_every_placeholder_it_uses(int window, int period)
+    {
+        var q = RfmSql.Migration(Project, "purchase", window, Now, Now.AddDays(-period));
+
+        var used = System.Text.RegularExpressions.Regex.Matches(q.Sql, @"@p\d+").Select(m => m.Value).ToHashSet();
+        Assert.NotEmpty(used);
+        Assert.Subset(q.Parameters.Select(p => p.Name).ToHashSet(), used);
+        Assert.DoesNotMatch(@"@(?!p\d)", q.Sql);
+    }
+
     [Fact]
     public void Person_rfm_filters_the_scored_population_by_the_person_key()
     {

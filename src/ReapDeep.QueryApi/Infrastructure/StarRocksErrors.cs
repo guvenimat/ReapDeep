@@ -10,9 +10,16 @@ public static class StarRocksErrors
     public const int GenericError = 1064;
     const string ResourceClass = "53";
 
+    public static bool IsCancelCleanup(int number, string message) =>
+        number == GenericError
+        && message.StartsWith("Getting syntax error at line 1, column 21.", StringComparison.Ordinal)
+        && message.Contains("Unexpected input '@'", StringComparison.Ordinal)
+        && message.Contains("OUTFILE", StringComparison.Ordinal);
+
     public static StarRocksFailure Classify(int number, string? sqlState, string message) => number switch
     {
         QueryTimeout => StarRocksFailure.ResourceLimit,
+        _ when IsCancelCleanup(number, message) => StarRocksFailure.ResourceLimit,
         GenericError when message.Contains("Failed to allocate resource to query", StringComparison.OrdinalIgnoreCase)
             || message.Contains("Exceed concurrency limit", StringComparison.OrdinalIgnoreCase) => StarRocksFailure.Busy,
         _ when sqlState is not null && sqlState.StartsWith(ResourceClass, StringComparison.Ordinal) => StarRocksFailure.ResourceLimit,

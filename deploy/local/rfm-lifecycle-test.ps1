@@ -153,6 +153,22 @@ $fromSeg = ($mig.rows | Where-Object { $_.from -ne "none" } | Measure-Object per
 $toNone = ($mig.rows | Where-Object { $_.to -eq "none" } | Measure-Object persons -Sum).Sum
 Check "30 days ago 7 of the 10 were customers; c8, c9 and c10 are new -> $fromSeg / $fromNone" ($fromSeg -eq 7 -and $fromNone -eq 3 -and -not $toNone)
 Check "period_days 14 -> 400" ((S POST "/query/rfm/migration" @{ purchase_event = $buy; period_days = 14 }).Status -eq 400)
+function SleepCleanups { [int](cmd /c "docker exec reapdeep-starrocks sh -c ""grep -c __MySqlConnector__Sleep /data/deploy/starrocks/fe/log/fe.audit.log"" 2>nul") }
+$cleanupsBefore = SleepCleanups
+$since = (Get-Date).ToUniversalTime().AddSeconds(-1).ToString("o")
+foreach ($delay in 20, 40, 60, 90, 120) {
+    $req = New-Object System.Net.Http.HttpRequestMessage([System.Net.Http.HttpMethod]::Post, "$api/query/rfm/migration")
+    $req.Headers.Add("X-Project-Id", "1")
+    $req.Content = New-Object System.Net.Http.StringContent((Json @{ purchase_event = $buy; period_days = 90 }), [Text.Encoding]::UTF8, "application/json")
+    $cts = New-Object System.Threading.CancellationTokenSource
+    $cts.CancelAfter($delay)
+    try { $null = $session.SendAsync($req, $cts.Token).Result } catch { }
+}
+Start-Sleep 2
+$aborted = (SleepCleanups) - $cleanupsBefore
+$failures = @(cmd /c "docker logs reapdeep-query-api --since $since 2>&1" | Select-String "StarRocks query failed|Unexpected input '@'").Count
+Check "client-aborted migration requests reached StarRocks ($aborted canceled) and logged no query failure -> $failures" ($aborted -gt 0 -and $failures -eq 0)
+Check "the next migration request succeeds" ((S POST "/query/rfm/migration" @{ purchase_event = $buy; period_days = 30 }).Status -eq 200)
 $pr = (S GET "/persons/$($c[9])/rfm?purchase_event=$buy").Json
 Check "person RFM: c10 is a Champion with 6 orders and 70 spent -> $($pr.segment) $($pr.orders) $($pr.monetary)" ($pr.segment -eq "champions" -and $pr.orders -eq 6 -and $pr.monetary -eq 70 -and $pr.r -eq 5)
 $c4Person = @((S GET "/cohorts/$($cohort.id)/persons").Json.persons)[0].id
