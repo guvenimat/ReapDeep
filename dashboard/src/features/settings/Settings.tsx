@@ -31,6 +31,7 @@ function ProjectInfo({ project, onAccessChanged }: { project: Project; onAccessC
   const [secretCopied, setSecretCopied] = useState(false)
   const secretAction = useAction()
   const privacyAction = useAction()
+  const deleteAction = useAction()
   const isOwner = project.role === 'owner'
   const canManage = isOwner || project.role === 'admin'
 
@@ -54,6 +55,11 @@ function ProjectInfo({ project, onAccessChanged }: { project: Project; onAccessC
   }
   const setAnonymizeIp = async (anonymize: boolean) => {
     if (await privacyAction.run(() => api.updateProject({ anonymize_ip: anonymize }))) setVersion((v) => v + 1)
+  }
+  const removeProject = async () => {
+    const typed = window.prompt(`Delete "${project.name}" with all of its events, persons, insights, flags and keys? This cannot be undone. Type the project name to confirm.`)
+    if (typed === null) return
+    if (await deleteAction.run(() => api.deleteProject(typed))) window.location.reload()
   }
   const limit = detail.data?.ingest_events_per_second
   const limitText = limit === 0 ? 'Unlimited' : limit ? `${num(limit)} events/s` : 'Server default'
@@ -113,6 +119,16 @@ function ProjectInfo({ project, onAccessChanged }: { project: Project; onAccessC
           </div>
           <FormMessage error={action.error} success={created ? `Project "${created}" created. Switch to it from the project menu.` : undefined} />
         </form>
+      )}
+      {isOwner && (
+        <div className="danger-row">
+          <div className="danger-text">
+            <span className="strong">Delete this project</span>
+            <span className="muted small">Removes its settings, keys, insights, flags and catalog at once, and its events and persons from StarRocks a few minutes later. The last project of an organization cannot be deleted.</span>
+          </div>
+          <button type="button" className="danger" onClick={removeProject} disabled={deleteAction.busy}><Icon name="trash" />Delete project</button>
+          <FormMessage error={deleteAction.error} />
+        </div>
       )}
     </Card>
   )

@@ -42,6 +42,12 @@ public static class HostingExtensions
             sp.GetRequiredService<DeletionOptions>(),
             sp.GetRequiredService<ILogger<DeletionJob>>()));
 
+        services.AddHostedService(sp => new ProjectDeletionJob(
+            sp.GetRequiredService<NpgsqlDataSource>(),
+            sp.GetService<StarRocksDeleter>(),
+            cfg,
+            sp.GetRequiredService<ILogger<ProjectDeletionJob>>()));
+
         services.AddSingleton<CohortRepository>();
         services.AddSingleton(CohortOptions.From(cfg));
         services.AddHostedService(sp => new CohortRefreshJob(

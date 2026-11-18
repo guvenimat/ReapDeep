@@ -349,7 +349,7 @@ Any trend or funnel can be saved by name from its tab (`/api/v1/insights`). A da
 - Passwords are hashed with PBKDF2-SHA256 (600K iterations), and sign-in is rate limited to 10 attempts per minute per client IP.
 - On first start, the Query API creates the `ADMIN_EMAIL` user as owner of every organization when the `users` table is empty.
 - **Settings** (dashboard tab and `/api/v1/members`, `/api/v1/api-keys`, `/api/v1/auth/password`): owners and admins add members, either with a temporary password or by an invitation email whose single-use link (7 days) lets the new member set their own password, resend pending invitations, change roles and remove members; "Forgot your password?" on the sign-in screen emails a one-hour reset link (`POST /api/v1/auth/password/forgot`, always `202`, so it does not reveal which emails have accounts); anyone can change their own password, which signs out their other sessions. Admins cannot create or change owners, and the last owner cannot be demoted or leave. API keys are shown once at creation and stored only as a SHA-256 hash; revoking one takes effect immediately.
-- **Projects** (`/api/v1/project`, `/api/v1/projects`): the settings tab shows the current project's public key for the JS SDK and the ingestion API, its ingestion limit and whether visitor IP addresses are anonymized (`PATCH /api/v1/project` with `{"anonymize_ip": false}`, owners and admins). Owners can create more projects in their organization; ingestion and the recommender pick up a new key or setting within 30 seconds.
+- **Projects** (`/api/v1/project`, `/api/v1/projects`): the settings tab shows the current project's public key for the JS SDK and the ingestion API, its ingestion limit and whether visitor IP addresses are anonymized (`PATCH /api/v1/project` with `{"anonymize_ip": false}`, owners and admins). Owners can create more projects in their organization; ingestion and the recommender pick up a new key or setting within 30 seconds. Owners can also delete a project (`DELETE /api/v1/project` with `{"confirm": "<project name>"}`, or the Settings tab): its PostgreSQL data (keys, insights, flags, cohorts, catalog, persons) goes at once, ingestion refuses its key within 30 seconds, and the person worker deletes its events, persons and cohort memberships from StarRocks after a delay that lets in-flight events land first (5 minutes by default, `ProjectDeletion__DelaySeconds`). The last project of an organization cannot be deleted, and raw events stay in Kafka for its 7-day retention.
 
 ### Add the SDK to a page
 
@@ -482,7 +482,7 @@ cd deploy/local
 .\identity-test.ps1     # identity resolution, 13 end-to-end scenarios including property order after a worker backlog
 .\auth-test.ps1         # sign-in, sessions, project access, CORS, X-Forwarded-For, StarRocks grants
 .\deletion-test.ps1     # deletion requests and the batch job, end to end
-.\settings-test.ps1     # members, roles, password change, API keys, projects, IP anonymization
+.\settings-test.ps1     # members, roles, password change, API keys, projects, IP anonymization, project deletion
 .\server-test.ps1       # server keys, /batch with historical timestamps and duplicates, flag definitions, the .NET SDK sample run inside the compose network, revocation
 .\account-test.ps1      # invitation and password reset emails through Mailpit: single use, expiry, no account enumeration, rate limits
 .\insights-test.ps1     # saved insights and dashboards, API and browser

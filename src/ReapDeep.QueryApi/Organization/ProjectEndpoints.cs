@@ -16,6 +16,7 @@ public static class ProjectEndpoints
         api.MapGet("/project", Current);
         api.MapPatch("/project", UpdateSettings).RequireManager();
         api.MapPost("/projects", Create).RequireOwner();
+        api.MapDelete("/project", Delete).RequireOwner();
         api.MapPost("/project/recommendation-secret", RotateRecommendationSecret).RequireManager();
     }
 
@@ -36,6 +37,26 @@ public static class ProjectEndpoints
         var secret = RecommendationSecretPrefix + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(32));
         await projects.SetRecommendationSecretAsync(project.ProjectId, secret, ct);
         return ApiResults.Ok(new RecommendationSecretResponse(secret), AppJsonContext.Default.RecommendationSecretResponse);
+    }
+
+    static async Task<IResult> Delete(DeleteProjectRequest req, ProjectContext project, ProjectRepository projects, SessionService sessions,
+        ApiKeyAuthenticator apiKeys, CancellationToken ct)
+    {
+        if (await projects.GetAsync(project.ProjectId, ct) is not { } current) return ApiResults.NotFound("Project not found");
+        Ensure.That(string.Equals(req.Confirm?.Trim(), current.Name, StringComparison.Ordinal), "confirm must be the project's name");
+        return await projects.DeleteAsync(project.ProjectId, project.UserId!.Value, ct) switch
+        {
+            { LastProject: true } => ApiResults.Conflict("The last project of an organization cannot be deleted"),
+            { Deleted: { } deleted } => await Done(deleted),
+            _ => ApiResults.NotFound("Project not found"),
+        };
+
+        async Task<IResult> Done(ProjectRepository.DeletedProject deleted)
+        {
+            foreach (var hash in deleted.KeyHashes) await apiKeys.InvalidateAsync(hash);
+            foreach (var user in deleted.MemberIds) await sessions.InvalidateUserAsync(user);
+            return Results.Accepted();
+        }
     }
 
     static async Task<IResult> Create(CreateProjectRequest req, ProjectContext project, ProjectRepository projects, SessionService sessions, CancellationToken ct)

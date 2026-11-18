@@ -520,3 +520,5 @@ button.link.active { text-decoration: underline; }
 .action-form .row input { flex: 1; min-width: 180px; }
 .action-event-inputs { flex-wrap: wrap; }
 .action-event-inputs > * { flex: 1 1 180px; }
+
+.danger-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }

@@ -149,6 +149,25 @@ while ($fullIp -notmatch '^\d+\.\d+\.\d+\.[1-9]\d*$' -and (Get-Date) -lt $deadli
 }
 Check "ingestion stores the full IP once the setting is picked up ($fullIp)" ($fullIp -match '^\d+\.\d+\.\d+\.[1-9]\d*$')
 
+Write-Host "`n9) Deleting a project"
+$rows = { [int](Sr "SELECT (SELECT COUNT(*) FROM analytics.events WHERE project_id = $($newProject.id)) + (SELECT COUNT(*) FROM analytics.person_distinct_ids WHERE project_id = $($newProject.id))") }
+Check "the project has analytics rows before deletion ($(& $rows))" ((& $rows) -gt 0)
+Check "read API key cannot delete a project -> 403" ((Send $keyClient DELETE "/project" '{"confirm":"x"}' -headers @{ Authorization = "Bearer $readKey" }).Status -eq 403)
+Check "a wrong confirmation -> 400" ((Send $owner DELETE "/project" '{"confirm":"Project"}' -headers $np).Status -eq 400)
+$del = Send $owner DELETE "/project" ('{"confirm":"Project ' + $tag + '"}') -headers $np
+Check "owner deletes the project with its name -> 202" ($del.Status -eq 202)
+Check "it leaves /auth/me and is no longer reachable" (@((Send $owner GET "/auth/me").Json.projects | Where-Object { $_.id -eq $newProject.id }).Count -eq 0 -and (Send $owner GET "/project" -headers $np).Status -in 403, 404)
+$refused = $false
+$deadline = (Get-Date).AddSeconds(45)
+while (-not $refused -and (Get-Date) -lt $deadline) {
+    $resp = $ingest.PostAsync("http://localhost:8000/capture", (New-Object System.Net.Http.StringContent($capture, [Text.Encoding]::UTF8, "application/json"))).Result
+    if ([int]$resp.StatusCode -eq 401) { $refused = $true } else { Start-Sleep -Seconds 3 }
+}
+Check "ingestion refuses the deleted project's key within 45 s" $refused
+$deadline = (Get-Date).AddSeconds(150)
+while ((& $rows) -gt 0 -and (Get-Date) -lt $deadline) { Start-Sleep -Seconds 5 }
+Check "the worker deletes its events and persons from StarRocks after the delay" ((& $rows) -eq 0)
+
 $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
 & docker compose exec -T postgres psql -U reapdeep -d reapdeep -tAc "DELETE FROM api_keys WHERE name = 'key $tag'; DELETE FROM users WHERE email = '$memberEmail'; DELETE FROM projects WHERE name = 'Project $tag';" 2>&1 | Out-Null
 $ErrorActionPreference = $prev
