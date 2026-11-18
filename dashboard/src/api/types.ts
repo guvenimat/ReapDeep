@@ -102,7 +102,7 @@ export interface Metadata {
 
 export interface User { id: number; email: string; name: string }
 export interface Project { id: number; name: string; organization_id: number; organization_name: string; role: 'owner' | 'admin' | 'member'; timezone: string }
-export interface Me { user: User; projects: Project[]; platform_admin?: boolean }
+export interface Me { user: User; projects: Project[]; platform_admin?: boolean; platform_role?: 'admin' | 'viewer' | null }
 export type Role = Project['role']
 export interface Member { user_id: number; email: string; name: string; role: Role; created_at: string; pending: boolean }
 export type AuthTokenPurpose = 'invite' | 'reset'
@@ -236,6 +236,10 @@ export type ProjectDetail = {
 }
 export type AiFeature = 'experiment_explain' | 'insight_explain' | 'query' | 'digest'
 export interface AiAccess { platform_enabled: boolean; allowed: AiFeature[]; enabled: boolean; features: AiFeature[]; effective: AiFeature[]; model: string | null }
+export interface PlatformAuditEntry {
+  id: number; actor_email: string; organization_id: number | null; organization_name: string; action: string
+  before: { enabled: boolean; features: AiFeature[] }; after: { enabled: boolean; features: AiFeature[] }; created_at: string
+}
 export interface PlatformOrganization {
   id: number; name: string; projects: number; members: number; ai_enabled: boolean; ai_features: AiFeature[]; customer_enabled: boolean
   customer_features: AiFeature[]; effective: AiFeature[]

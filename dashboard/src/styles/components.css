@@ -547,3 +547,6 @@ button.link.active { text-decoration: underline; }
 .ai-schedule-form { flex-wrap: wrap; }
 .ai-schedule-form input { flex: 1; min-width: 220px; }
 .ai-card select[aria-label="Earlier notes"] { max-width: 100%; }
+
+.audit-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.audit-list li { display: grid; gap: 2px; }

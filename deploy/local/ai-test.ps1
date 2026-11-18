@@ -52,6 +52,13 @@ try {
     $memberLogin = Send $memberClient POST "/auth/login" (@{ email = $memberEmail; password = $memberPassword } | ConvertTo-Json -Compress)
     Check "a customer user is not a platform administrator" ($memberLogin.Status -eq 200 -and -not $memberLogin.Json.platform_admin -and (S GET "/auth/me").Json.platform_admin)
     Check "a customer user cannot open the platform -> 403" ((Send $memberClient GET "/platform/organizations").Status -eq 403)
+    $viewer = "platform-viewer@reapdeep.local"
+    $null = S POST "/members" @{ email = $viewer; name = "Platform viewer"; password = $memberPassword; role = "member" }
+    $vh = New-Object System.Net.Http.HttpClientHandler; $vh.CookieContainer = New-Object System.Net.CookieContainer
+    $viewerClient = New-Object System.Net.Http.HttpClient($vh)
+    $vLogin = Send $viewerClient POST "/auth/login" (@{ email = $viewer; password = $memberPassword } | ConvertTo-Json -Compress)
+    Check "a platform viewer can see the customers and the change log" ($vLogin.Json.platform_role -eq "viewer" -and (Send $viewerClient GET "/platform/organizations").Status -eq 200 -and (Send $viewerClient GET "/platform/audit").Status -eq 200)
+    Check "but cannot change them -> 403" ((Send $viewerClient PUT "/platform/organizations/$orgId/ai" @{ enabled = $true }).Status -eq 403)
     Check "a member sees the AI settings but cannot change them -> 403" ((Send $memberClient GET "/organization/ai").Status -eq 200 -and (Send $memberClient PUT "/organization/ai" @{ enabled = $false }).Status -eq 403)
 
     $null = S PUT "/platform/organizations/$orgId/ai" @{ enabled = $false }
@@ -70,6 +77,8 @@ try {
     Check "the platform narrows the list: only what both allow stays on" (((S GET "/organization/ai").Json.effective -join ",") -eq "query")
     Check "unknown feature -> 400" ((S PUT "/organization/ai" @{ features = @("chatbot") }).Status -eq 400 -and (S PUT "/platform/organizations/$orgId/ai" @{ features = @("chatbot") }).Status -eq 400)
     Check "unknown organization -> 404" ((S PUT "/platform/organizations/999999999/ai" @{ enabled = $true }).Status -eq 404)
+    $log = @((S GET "/platform/audit").Json.entries | Where-Object { $_.organization_id -eq $orgId } | Select-Object -First 3)
+    Check "every platform change is logged with who did it and the before and after state" ($log.Count -eq 3 -and $log[0].actor_email -eq $envValues.ADMIN_EMAIL -and (($log[0].after.features) -join ",") -eq "insight_explain,query" -and $log[2].after.enabled -eq $false)
     $null = S PUT "/platform/organizations/$orgId/ai" @{ enabled = $true; features = $all }
     $null = S PUT "/organization/ai" @{ enabled = $true; features = $all }
     Check "everything on again" (@((S GET "/organization/ai").Json.effective).Count -eq 4)
@@ -138,7 +147,7 @@ finally {
         $null = S PUT "/organization/ai" @{ enabled = $before.customer_enabled; features = @($before.customer_features) }
     }
     $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
-    & docker compose exec -T postgres psql -U reapdeep -d reapdeep -tAc "DELETE FROM users WHERE email = '$memberEmail'" 2>&1 | Out-Null
+    & docker compose exec -T postgres psql -U reapdeep -d reapdeep -tAc "DELETE FROM users WHERE email IN ('$memberEmail', 'platform-viewer@reapdeep.local')" 2>&1 | Out-Null
     $ErrorActionPreference = $prev
 }
 

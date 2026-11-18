@@ -1,9 +1,10 @@
 import { createContext, useContext, useState } from 'react'
 import { api, errorMessage } from '../../api/client'
-import type { AiAccess, AiFeature, PlatformOrganization } from '../../api/types'
+import type { AiAccess, AiFeature, PlatformAuditEntry, PlatformOrganization } from '../../api/types'
 import { Icon } from '../../components/icons'
 import { Badge, Card, Status } from '../../components/ui'
 import { useQuery } from '../../lib/hooks'
+import { dateTime } from '../../lib/format'
 
 export const AI_FEATURES: { id: AiFeature; label: string; description: string }[] = [
   { id: 'experiment_explain', label: 'Experiment interpretation', description: 'Plain-language reading of A/B test results with a rule-based decision' },
@@ -88,7 +89,7 @@ export function AiSettingsCard({ canManage }: { canManage: boolean }) {
   )
 }
 
-function OrganizationRow({ org, onSaved }: { org: PlatformOrganization; onSaved: () => void }) {
+function OrganizationRow({ org, onSaved, canEdit }: { org: PlatformOrganization; onSaved: () => void; canEdit: boolean }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
   const save = async (body: { enabled?: boolean; features?: AiFeature[] }) => {
@@ -115,14 +116,14 @@ function OrganizationRow({ org, onSaved }: { org: PlatformOrganization; onSaved:
           ? <Badge tone="good">{org.effective.length} of {org.ai_features.length} in use</Badge>
           : <Badge tone="muted">Turned off by the customer</Badge>)}
         <label className="switch" htmlFor={`platform-ai-${org.id}`}>
-          <input id={`platform-ai-${org.id}`} type="checkbox" checked={org.ai_enabled} disabled={busy}
+          <input id={`platform-ai-${org.id}`} type="checkbox" checked={org.ai_enabled} disabled={busy || !canEdit}
             onChange={(e) => void save({ enabled: e.target.checked, ...(e.target.checked && org.ai_features.length === 0 ? { features: AI_FEATURES.map((f) => f.id) } : {}) })} />
           <span className="switch-track" aria-hidden />
           AI
         </label>
       </div>
       {org.ai_enabled && (
-        <FeatureChecks idPrefix={`platform-${org.id}`} allowed={AI_FEATURES.map((f) => f.id)} chosen={org.ai_features} disabled={busy}
+        <FeatureChecks idPrefix={`platform-${org.id}`} allowed={AI_FEATURES.map((f) => f.id)} chosen={org.ai_features} disabled={busy || !canEdit}
           onChange={(features) => void save({ features })} />
       )}
       {error && <p className="form-message error" role="alert">{error}</p>}
@@ -130,7 +131,29 @@ function OrganizationRow({ org, onSaved }: { org: PlatformOrganization; onSaved:
   )
 }
 
-export function PlatformPage() {
+const describeState = (s: PlatformAuditEntry['after']) =>
+  s.enabled ? `AI on: ${s.features.length ? s.features.map((f) => AI_FEATURES.find((x) => x.id === f)?.label ?? f).join(', ') : 'no features'}` : 'AI off'
+
+function AuditLog({ version }: { version: number }) {
+  const audit = useQuery((signal) => api.platformAudit(signal), [version])
+  return (
+    <Card testId="platform-audit" title={<><Icon name="calendar" />Recent changes</>} meta="Who changed which customer's AI settings; kept permanently">
+      <Status state={audit} empty={audit.data?.entries.length === 0} emptyTitle="No changes yet" emptyText="Changes made on this page are listed here.">
+        <ul className="audit-list">
+          {audit.data?.entries.map((e) => (
+            <li key={e.id} data-audit-id={e.id}>
+              <span className="muted small">{dateTime(e.created_at)}</span>
+              <span><span className="strong">{e.actor_email}</span> changed <span className="strong">{e.organization_name}</span></span>
+              <span className="muted small">{describeState(e.before)} → {describeState(e.after)}</span>
+            </li>
+          ))}
+        </ul>
+      </Status>
+    </Card>
+  )
+}
+
+export function PlatformPage({ canEdit }: { canEdit: boolean }) {
   const [version, setVersion] = useState(0)
   const orgs = useQuery((signal) => api.platformOrganizations(signal), [version])
   return (
@@ -139,10 +162,12 @@ export function PlatformPage() {
         meta={orgs.data?.model ? `Model: ${orgs.data.model} · turn AI on for an organization and choose its features; the customer can switch them off again` : 'No AI provider is configured on the server'}>
         <Status state={orgs} empty={orgs.data?.organizations.length === 0}>
           <div className="platform-orgs">
-            {orgs.data?.organizations.map((o) => <OrganizationRow key={o.id} org={o} onSaved={() => setVersion((v) => v + 1)} />)}
+            {orgs.data?.organizations.map((o) => <OrganizationRow key={o.id} org={o} canEdit={canEdit} onSaved={() => setVersion((v) => v + 1)} />)}
           </div>
+          {!canEdit && <p className="footnote">You have read-only platform access (Platform__ViewerEmails).</p>}
         </Status>
       </Card>
+      <AuditLog version={version} />
     </div>
   )
 }
