@@ -7,6 +7,7 @@ namespace ReapDeep.Recommender.Infrastructure;
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower)]
 [JsonSerializable(typeof(RecommendResponse))]
 [JsonSerializable(typeof(FlagsResponse))]
+[JsonSerializable(typeof(FlagDefinitionsResponse))]
 [JsonSerializable(typeof(ErrorResponse))]
 [JsonSerializable(typeof(HealthResponse))]
 [JsonSerializable(typeof(string))]

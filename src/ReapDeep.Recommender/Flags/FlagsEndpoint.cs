@@ -17,7 +17,23 @@ public static class FlagsEndpoint
     static readonly JsonElement True = JsonDocument.Parse("true").RootElement.Clone();
     static readonly JsonElement False = JsonDocument.Parse("false").RootElement.Clone();
 
-    public static void MapFlags(this WebApplication app) => app.MapGet("/flags", Flags);
+    const string BearerPrefix = "Bearer ";
+
+    public static void MapFlags(this WebApplication app)
+    {
+        app.MapGet("/flags", Flags);
+        app.MapGet("/flags/definitions", Definitions);
+    }
+
+    static IResult Definitions(HttpContext ctx, ProjectCache projects, FlagCache flags)
+    {
+        if (!projects.IsLoaded || !flags.IsLoaded) return Error(StatusCodes.Status503ServiceUnavailable, "Starting up, try again shortly");
+        var header = ctx.Request.Headers.Authorization.ToString();
+        if (!header.StartsWith(BearerPrefix, StringComparison.OrdinalIgnoreCase) || !projects.TryGetProjectIdBySecret(header[BearerPrefix.Length..].Trim(), out var projectId))
+            return Error(StatusCodes.Status401Unauthorized, "A server key is required: Authorization: Bearer sk_...");
+        ctx.Response.Headers.CacheControl = "private, no-store";
+        return Results.Json(new FlagDefinitionsResponse([.. flags.Definitions(projectId)]), AppJsonContext.Default.FlagDefinitionsResponse);
+    }
 
     static IResult Flags(HttpContext ctx, ProjectCache projects, FlagCache flags, [FromQuery(Name = "api_key")] string? apiKey, string? identity,
         string? properties)

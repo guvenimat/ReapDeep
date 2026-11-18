@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsAotCompatible>true</IsAotCompatible>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+    <PackageId>ReapDeep.Server</PackageId>
+    <Version>0.1.0</Version>
+    <Description>Server-side .NET client for ReapDeep: event import with a server key and local feature flag evaluation.</Description>
+    <Authors>Guven Imat</Authors>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <RepositoryUrl>https://github.com/guvenimat/ReapDeep</RepositoryUrl>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="ReapDeep.UnitTests" />
+  </ItemGroup>
+
+</Project>

@@ -9,6 +9,7 @@ public static class ApiKeyEndpoints
 {
     const string ReadKeyPrefix = "rk_";
     const string CatalogKeyPrefix = "ck_";
+    const string ServerKeyPrefix = "sk_";
     const int VisiblePrefixLength = 7;
 
     public static void MapApiKeys(this RouteGroupBuilder api)
@@ -25,7 +26,8 @@ public static class ApiKeyEndpoints
     {
         var name = Ensure.NotBlank(req.Name, "name", 100);
         var scope = Ensure.OneOf(req.Scope ?? KeyScopes.Read, "scope", KeyScopes.All);
-        var key = (scope == KeyScopes.CatalogWrite ? CatalogKeyPrefix : ReadKeyPrefix) + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(16));
+        var prefix = scope switch { KeyScopes.CatalogWrite => CatalogKeyPrefix, KeyScopes.Server => ServerKeyPrefix, _ => ReadKeyPrefix };
+        var key = prefix + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(scope == KeyScopes.Server ? 24 : 16));
         var row = await keys.CreateAsync(project.ProjectId, name, scope, key[..VisiblePrefixLength], ApiKeyAuthenticator.HashKey(key), project.UserId!.Value, ct);
         return ApiResults.Created(new CreatedApiKey(row, key), AppJsonContext.Default.CreatedApiKey);
     }

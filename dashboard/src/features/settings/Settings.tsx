@@ -304,7 +304,7 @@ function ApiKeys() {
                 <tr key={k.id} className={k.revoked_at ? 'revoked' : undefined}>
                   <td className="strong">{k.name}</td>
                   <td className="mono">{k.prefix}…</td>
-                  <td>{k.scope === 'catalog_write' ? <Badge tone="accent">Catalog write</Badge> : <Badge>Read</Badge>}</td>
+                  <td>{k.scope === 'catalog_write' ? <Badge tone="accent">Catalog write</Badge> : k.scope === 'server' ? <Badge tone="accent">Server</Badge> : <Badge>Read</Badge>}</td>
                   <td className="nowrap tabular muted">{dateTime(k.created_at)}</td>
                   <td className="muted">{k.created_by ?? '-'}</td>
                   <td className="nowrap">{k.revoked_at ? <Badge tone="muted">Revoked {dateTime(k.revoked_at)}</Badge> : <Badge tone="good">Active</Badge>}</td>
@@ -324,6 +324,7 @@ function ApiKeys() {
           <select value={scope} onChange={(e) => setScope(e.target.value as KeyScope)} aria-label="Key scope">
             <option value="read">Read analytics</option>
             <option value="catalog_write">Write catalog</option>
+            <option value="server">Server (import events, evaluate flags)</option>
           </select>
           <button type="submit" className="primary" disabled={action.busy}><Icon name="plus" />Create key</button>
         </div>
