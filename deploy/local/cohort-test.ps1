@@ -96,6 +96,29 @@ Check "preview: dropped after view and viewed 3+ times -> 1 (A)" ((S POST "/coho
 Check "funnel condition with step outside the funnel -> 400" ((S POST "/cohorts/preview" @{ definition = (Definition @(, @(FunnelCond "dropped" 2))) }).Status -eq 400)
 Check "read API key cannot create cohorts -> 403" ((K POST "/cohorts" @{ name = "x"; definition = $windowShoppers }).Status -eq 403)
 
+Write-Host "`n2b) Actions in cohort rules"
+$action = (S POST "/actions" @{ name = "Engaged $tag"; description = ""; events = @($view, $buy) }).Json
+$actionCond = @{ type = "performed_event"; action = $action.name; count_op = "gte"; count = 1; within_days = 1 }
+$ap = S POST "/cohorts/preview" @{ definition = (Definition @(, @($actionCond))) }
+Check "preview: an action matches any of its events -> 3" ($ap.Status -eq 200 -and $ap.Json.persons -eq 3)
+$actionCond.count = 3
+$ap3 = S POST "/cohorts/preview" @{ definition = (Definition @(, @($actionCond))) }
+Check "preview: an action counts every matching event -> 2 (A and B)" ($ap3.Status -eq 200 -and $ap3.Json.persons -eq 2)
+$actionRet = S POST "/query/retention" @{ start_action = $action.name; return_action = $action.name; period = "day"; periods = 1 }
+Check "retention runs a start and return action -> 3 persons" ($actionRet.Status -eq 200 -and @($actionRet.Json.cohorts | Where-Object { $_.size -eq 3 }).Count -eq 1)
+$actionPaths = S POST "/query/paths" @{ start_action = $action.name; depth = 3; window_seconds = 86400 }
+Check "paths starts from an action -> 3 persons" ($actionPaths.Status -eq 200 -and $actionPaths.Json.persons -eq 3)
+$actionLife = S POST "/query/lifecycle" @{ action = $action.name; period = "day"; lookback_days = 30 }
+$active = @($actionLife.Json.periods | ForEach-Object { $_.new + $_.returning + $_.resurrecting }) | Measure-Object -Sum
+Check "lifecycle follows an action -> 3 active persons" ($actionLife.Status -eq 200 -and $active.Sum -eq 3)
+$actCohort = (S POST "/cohorts" @{ name = "Engaged action $tag"; kind = "dynamic"; definition = (Definition @(, @($actionCond))) }).Json
+$actReady = WaitReady $actCohort.id
+Check "worker calculates an action cohort: 2 persons" ($actReady -and $actReady.member_count -eq 2)
+$missing = S POST "/cohorts/preview" @{ definition = (Definition @(, @(@{ type = "performed_event"; action = "missing-$tag"; count_op = "gte"; count = 1; within_days = 1 }))) }
+Check "an unknown action is rejected -> 400" ($missing.Status -eq 400)
+S DELETE "/cohorts/$($actCohort.id)" | Out-Null
+S DELETE "/actions/$($action.id)" | Out-Null
+
 Write-Host "`n3) Dynamic, property and static cohorts"
 $dyn = (S POST "/cohorts" @{ name = "Window shoppers $tag"; kind = "dynamic"; definition = $windowShoppers }).Json
 $early = S POST "/query/trends" @{ series = @(@{ event = $view }); filters = @(@{ scope = "cohort"; property = "$($dyn.id)"; op = "in" }) }

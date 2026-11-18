@@ -213,7 +213,9 @@ Check "weekly counting and validation" ((S POST "/query/stickiness" @{ event = $
 Write-Host "`n5) Saved insights"
 $i1 = S POST "/insights" @{ name = "RFM $tag"; kind = "rfm"; query = @{ window_days = 365; purchase_event = $buy } }
 $i2 = S POST "/insights" @{ name = "Lifecycle $tag"; kind = "lifecycle"; query = @{ event = $act; period = "week" } }
-Check "rfm and lifecycle insights can be saved" ($i1.Status -eq 201 -and $i2.Status -eq 201)
+$i3 = S POST "/insights" @{ name = "Stickiness $tag"; kind = "stickiness"; query = @{ event = $act; interval = "day"; filters = @() } }
+$i4 = S POST "/insights" @{ name = "Web $tag"; kind = "web"; query = @{ filters = @(); pages = "top"; sources = "referring_domain"; devices = "device_type" } }
+Check "rfm, lifecycle, stickiness and web insights can be saved" ($i1.Status -eq 201 -and $i2.Status -eq 201 -and $i3.Status -eq 201 -and $i4.Status -eq 201)
 
 Write-Host "`n6) Refunds"
 $refunder = "refunder_$tag"
@@ -228,7 +230,7 @@ Check "but never counts as an order or as the last purchase -> $($refunded.order
 
 Write-Host "`n7) Cleanup"
 $null = S DELETE "/cohorts/$($cohort.id)"
-foreach ($i in @($i1, $i2)) { if ($i.Json.id) { $null = S DELETE "/insights/$($i.Json.id)" } }
+foreach ($i in @($i1, $i2, $i3, $i4)) { if ($i.Json.id) { $null = S DELETE "/insights/$($i.Json.id)" } }
 
 if ($script:failed -eq 0) { Write-Host "`nPASSED: all RFM and lifecycle checks" -ForegroundColor Green }
 else { Write-Host "`nFAILED: $script:failed checks failed" -ForegroundColor Red; exit 1 }

@@ -171,6 +171,13 @@ $html = Dom "#/web?range=24h&q=$q" "document.querySelector('[data-testid=web-pag
 Check "Web analytics: one visitor, one pageview, one session, all bounced" ((Section $html "web-visitors") -match '>1</div>' -and (Section $html "web-pageviews") -match '>1</div>' -and (Section $html "web-sessions") -match '>1</div>' -and (Section $html "web-bounce-rate") -match '>100%</div>')
 Check "Web analytics: visitors and pageviews chart with two lines" (([regex]::Matches((Section $html "web-chart"), 'class="line"')).Count -eq 2)
 Check "Web analytics: the page, the direct source and the desktop device are listed" ((Section $html "web-pages") -match "data-value=""/dt-$tag""" -and (Section $html "web-sources") -match '>Direct<' -and (Section $html "web-devices") -match 'data-value="Desktop"')
+Check "Web analytics offers save, CSV and chart notes" ($html -match 'data-testid="save-insight"' -and $html -match 'data-testid="export-csv"' -and $html -match 'data-annotations=""')
+
+$html = Dom "#/stickiness?range=24h" "document.querySelector('[data-testid=save-insight]')"
+Check "Stickiness tab offers save and an event-or-action field" ($html -match 'data-testid="save-insight"' -and $html -match 'placeholder="event or action"')
+
+$html = Dom "#/cohorts/new" "document.querySelector('[data-testid=cohort-editor]')"
+Check "the cohort editor accepts an event or action" ($html -match 'placeholder="event or action"')
 
 $html = Dom "#/alerts" "document.querySelector('[data-testid=alerts-card]') && !document.querySelector('.skeleton')"
 Check "Alerts tab renders for the owner with a 'New alert' action" ($html -match 'data-testid="alerts-card"' -and $html -match 'data-testid="new-alert"')

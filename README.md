@@ -178,7 +178,7 @@ The Web analytics page (`POST /api/v1/query/web`) is built from `$pageview` even
 
 - **Visitors** are unique persons (anonymous and identified ids merged) with a pageview; **pageviews** count `$pageview` events.
 - A **session** is the SDK's `$session_id` (30 minutes of inactivity, 24 hours at most) with at least one pageview. A **bounce** is a session with exactly one pageview, and the **session duration** runs from the session's first to its last event of any kind. Every tile is compared with the previous period of the same length; a session belongs to the period in which it started.
-- Entry page, referrer, UTM values and device are taken from each session's first pageview, so later internal pages do not count as sources. A missing referrer counts as direct. Each table shows the top 10 values (`limit` up to 100) with sessions, visitors, bounce rate and average duration.
+- Entry page, referrer, UTM values and device are taken from each session's first pageview, so later internal pages do not count as sources. A missing referrer counts as direct, and so does a referrer from the page's own host (a new session after 30 minutes of inactivity), so the site does not appear as its own traffic source. Each table shows the top 10 values (`limit` up to 100) with sessions, visitors, bounce rate and average duration. The chart takes chart notes and the view can be saved as an insight with a CSV export.
 - On the Demo Shop (about 64K events in total) a load takes 70 ms for 7 days, 90 ms for 30 days and 230-410 ms for 180-365 days without the cache; the slowest of the four queries is the session breakdown.
 
 ### Retention and paths
@@ -192,11 +192,11 @@ The Web analytics page (`POST /api/v1/query/web`) is built from `$pageview` even
 
 A trend series counts events, counts unique persons, or aggregates a numeric event property (sum, average, median, 90th percentile, minimum, maximum), for example the daily sum of `amount` on `purchase`. Series are named A, B, C... and a formula combines them with `+ - * /` and parentheses: `A / B` with A = sum of `amount` and B = unique buyers is revenue per buyer. Formulas are evaluated per bucket and on the period totals (so unique-user totals stay correct), per breakdown value, and division by zero gives 0. "Compare to previous period" runs every series over the preceding range of the same length and draws it as a dashed line; the tiles show the change in percent.
 
-**Actions** name a group of events (`/api/v1/actions`, managed on the Events tab), for example `Checkout` = `add_to_cart` or `begin_checkout`. A trend series or funnel step can use `{"action": "Checkout"}` instead of an event (the editors suggest it as `action:Checkout`); the Query API looks the action up on every request, so editing it changes every insight that uses it within the 45-second result cache. Actions work in trends and funnels; retention, paths, lifecycle and cohorts still take single events.
+**Actions** name a group of events (`/api/v1/actions`, managed on the Events tab), for example `Checkout` = `add_to_cart` or `begin_checkout`. A trend series, funnel step, retention start or return event, path start, lifecycle activity or cohort event condition can use `{"action": "Checkout"}` instead of an event (the editors suggest it as `action:Checkout`); the Query API looks the action up on every request, so editing it changes every insight that uses it within the 45-second result cache. Alerts follow their saved trend, so they use the same actions.
 
-**Chart notes** mark a day on trend charts and dashboard tiles (`/api/v1/annotations`, a day and up to 300 characters, any member can add them on the Trends tab): the day gets a dashed line and the note appears in the tooltip, so a spike can be read next to "campaign launched".
+**Chart notes** mark a day on trend and web analytics charts and dashboard tiles (`/api/v1/annotations`, a day and up to 300 characters, any member can add them on the Trends or Web analytics tab): the day gets a dashed line and the note appears in the tooltip, so a spike can be read next to "campaign launched".
 
-**CSV export:** trends, funnels, retention, paths, lifecycle and RFM have a download button in the save bar. The file holds what the chart shows (one column per series for trends, one row per step and breakdown for funnels); values a spreadsheet would read as a formula are prefixed with `'`.
+**CSV export:** trends, funnels, retention, paths, lifecycle, RFM, stickiness and web analytics have a download button in the save bar, and experiment results have one in their card. The file holds what the chart shows (one column per series for trends, one row per step and breakdown for funnels); values a spreadsheet would read as a formula are prefixed with `'`.
 
 ### Lifecycle and RFM
 
@@ -215,7 +215,7 @@ Under a funnel, "What sets converters apart" (`POST /api/v1/query/funnels/correl
 
 ### Stickiness
 
-The Stickiness tab (`POST /api/v1/query/stickiness`) counts, for an event or an action, how many different days or weeks each person did it in the date range, and shows how many persons fall in each count with the average and the share of regulars (active in at least half of the periods). Persons are merged across their ids, like everywhere else.
+The Stickiness tab (`POST /api/v1/query/stickiness`) counts, for an event or an action, how many different days or weeks each person did it in the date range, and shows how many persons fall in each count with the average and the share of regulars (active in at least half of the periods). Persons are merged across their ids, like everywhere else. The view can be saved as an insight and exported as CSV.
 
 ### Alerts
 
@@ -291,7 +291,7 @@ What leaves ReapDeep is aggregated: counts, rates, statistics and event, propert
 
 ![Cohort](docs/images/cohort.png)
 
-A dynamic cohort is a set of OR'ed groups of AND'ed conditions: *did event X at least / at most / exactly N times in the last D days* (optionally where an event property matches), *did not do event Y in the last D days*, or *person property matches*. Windows are 1-90 days. *RFM segment is one of ...* turns RFM segments into a condition (see above). *Dropped after step N* or *reached step N* of a funnel (2-8 steps, a conversion window and a look-back of 1-90 days) keeps a funnel's drop-offs as a cohort that updates itself; the Funnels tab saves one from any drop-off. A static cohort is a list of person ids or distinct_ids, pasted or loaded from a CSV.
+A dynamic cohort is a set of OR'ed groups of AND'ed conditions: *did event or action X at least / at most / exactly N times in the last D days* (optionally where an event property matches), *did not do event or action Y in the last D days*, or *person property matches*. Windows are 1-90 days. *RFM segment is one of ...* turns RFM segments into a condition (see above). *Dropped after step N* or *reached step N* of a funnel (2-8 steps, a conversion window and a look-back of 1-90 days) keeps a funnel's drop-offs as a cohort that updates itself; the Funnels tab saves one from any drop-off. A static cohort is a list of person ids or distinct_ids, pasted or loaded from a CSV.
 
 | A funnel drop-off, saved as a fixed or dynamic cohort | The resulting cohort with its funnel condition |
 |---|---|
@@ -518,8 +518,8 @@ cd deploy/local
 .\server-test.ps1       # server keys, /batch with historical timestamps and duplicates, flag definitions, the .NET SDK sample run inside the compose network, revocation
 .\account-test.ps1      # invitation and password reset emails through Mailpit: single use, expiry, no account enumeration, rate limits
 .\insights-test.ps1     # saved insights and dashboards, chart notes, actions, funnel correlation, API and browser
-.\cohort-test.ps1       # cohorts: rules, identity merge, static lists, filters and breakdowns, recalculation, deletion
-.\rfm-lifecycle-test.ps1  # RFM scores and segments with known answers, rfm_segment cohorts, lifecycle states and look-back
+.\cohort-test.ps1       # cohorts: rules, actions, identity merge, static lists, filters and breakdowns, recalculation, deletion
+.\rfm-lifecycle-test.ps1  # RFM scores and segments with known answers, rfm_segment cohorts, lifecycle states and look-back, stickiness, saved insights
 .\alerts-test.ps1       # alerts: validation, firing and resolving, signed webhooks to a local receiver, manual retry, test notifications, change and formula conditions, errors
 .\recommender-test.ps1  # catalog, key scopes, models from real events, the public Recommender, stock changes, signed for_you requests
 .\flags-test.ps1       # feature flags: validation, access, variant and rollout shares over 6,000 identities, stable assignment, disabled flags, targeting, project isolation, exposure events
