@@ -18,6 +18,7 @@ import { Retention } from '../features/retention/Retention'
 import { Rfm } from '../features/rfm/Rfm'
 import { Settings } from '../features/settings/Settings'
 import { Trends } from '../features/trends/Trends'
+import { Web } from '../features/web/Web'
 import { useQuery } from '../lib/hooks'
 import { RangePicker } from './RangePicker'
 import { rangeFromParams, TABS, useRoute } from './route'
@@ -83,6 +84,7 @@ export function Workspace({ me, onLogout, onAccessChanged }: { me: Me; onLogout:
             </header>
             <main key={projectId}>
               {route.tab === 'dashboards' && <Dashboards id={route.id} params={route.params} range={range} openDashboard={(id) => navigate('dashboards', id)} />}
+              {route.tab === 'web' && <Web params={route.params} range={range} onChange={onQuery} />}
               {route.tab === 'trends' && <Trends params={route.params} range={range} onChange={onQuery} onInsight={onInsight} />}
               {route.tab === 'funnels' && <Funnels params={route.params} range={range} onChange={onQuery} onInsight={onInsight} />}
               {route.tab === 'retention' && <Retention params={route.params} range={range} onChange={onQuery} onInsight={onInsight} />}

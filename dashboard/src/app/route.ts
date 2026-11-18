@@ -2,10 +2,11 @@ import { useCallback, useEffect, useState } from 'react'
 import type { DateRange, Interval } from '../api/types'
 import type { IconName } from '../components/icons'
 
-export type Tab = 'dashboards' | 'trends' | 'funnels' | 'retention' | 'paths' | 'lifecycle' | 'rfm' | 'alerts' | 'flags' | 'experiments' | 'events' | 'persons' | 'cohorts' | 'catalog' | 'settings'
+export type Tab = 'dashboards' | 'web' | 'trends' | 'funnels' | 'retention' | 'paths' | 'lifecycle' | 'rfm' | 'alerts' | 'flags' | 'experiments' | 'events' | 'persons' | 'cohorts' | 'catalog' | 'settings'
 export interface TabInfo { id: Tab; label: string; icon: IconName; description: string; group: 'analyze' | 'data' | 'admin' }
 export const TABS: TabInfo[] = [
   { id: 'dashboards', label: 'Dashboards', icon: 'dashboards', description: 'Saved insights, side by side', group: 'analyze' },
+  { id: 'web', label: 'Web analytics', icon: 'globe', description: 'Visitors, sessions, pages, traffic sources and devices', group: 'analyze' },
   { id: 'trends', label: 'Trends', icon: 'trends', description: 'Event volume and unique users over time', group: 'analyze' },
   { id: 'funnels', label: 'Funnels', icon: 'funnels', description: 'Conversion through ordered steps', group: 'analyze' },
   { id: 'retention', label: 'Retention', icon: 'retention', description: 'How many people come back, by cohort', group: 'analyze' },

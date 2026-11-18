@@ -65,6 +65,19 @@ export interface LifecycleResponse {
   event: string | null; period: 'day' | 'week' | 'month'; lookback_days: number; timezone: string
   periods: ({ start: string } & Record<LifecycleStatus, number>)[]; took_ms: number
 }
+export type WebDimension = 'entry_page' | 'referring_domain' | 'utm_source' | 'utm_medium' | 'utm_campaign' | 'device_type' | 'browser' | 'os'
+export interface WebSummary {
+  visitors: number; pageviews: number; sessions: number; bounces: number; bounce_rate: number | null; avg_session_seconds: number | null
+}
+export interface WebBreakdownRow { value: string | null; sessions: number; visitors: number; bounce_rate: number; avg_session_seconds: number }
+export interface WebAnalyticsResponse {
+  interval: Interval; timezone: string; date_from: string; date_to: string; previous_from: string
+  current: WebSummary; previous: WebSummary
+  series: { bucket: string; visitors: number; pageviews: number }[]
+  pages: { pathname: string | null; pageviews: number; visitors: number }[]
+  breakdowns: { dimension: WebDimension; rows: WebBreakdownRow[] }[]
+  took_ms: number
+}
 export interface PathsResponse {
   start_event: string; depth: number; persons: number
   steps: { step: number; persons: number; nodes: { name: string; persons: number }[] }[]
