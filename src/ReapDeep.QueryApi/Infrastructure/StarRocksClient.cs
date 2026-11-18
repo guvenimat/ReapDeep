@@ -15,13 +15,20 @@ public sealed class StarRocksClient(MySqlDataSource db, IConfiguration cfg)
 
     public async Task<List<T>> QueryAsync<T>(SqlQuery query, Func<MySqlDataReader, T> map, CancellationToken ct)
     {
-        await using var conn = await db.OpenConnectionAsync(ct);
-        await using var cmd = new MySqlCommand(query.Sql, conn) { CommandTimeout = CommandTimeoutSeconds };
-        foreach (var (name, value) in query.Parameters) cmd.Parameters.AddWithValue(name, value);
-        await using var reader = await cmd.ExecuteReaderAsync(ct);
-        var rows = new List<T>();
-        while (await reader.ReadAsync(ct)) rows.Add(map(reader));
-        return rows;
+        try
+        {
+            await using var conn = await db.OpenConnectionAsync(ct);
+            await using var cmd = new MySqlCommand(query.Sql, conn) { CommandTimeout = CommandTimeoutSeconds };
+            foreach (var (name, value) in query.Parameters) cmd.Parameters.AddWithValue(name, value);
+            await using var reader = await cmd.ExecuteReaderAsync(ct);
+            var rows = new List<T>();
+            while (await reader.ReadAsync(ct)) rows.Add(map(reader));
+            return rows;
+        }
+        catch (MySqlException e) when (ct.IsCancellationRequested)
+        {
+            throw new OperationCanceledException("The StarRocks query was canceled", e, ct);
+        }
     }
 
     public async Task<List<T>> QueryAsync<T>(SqlQuery query, Func<MySqlDataReader, T> map, SemaphoreSlim gate, CancellationToken ct)
