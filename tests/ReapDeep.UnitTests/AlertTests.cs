@@ -108,6 +108,10 @@ public class AlertTests
     [InlineData("8.8.8.8", false)]
     [InlineData("172.32.0.1", false)]
     [InlineData("2606:4700:4700::1111", false)]
+    [InlineData("64:ff9b::a9fe:a9fe", true)]
+    [InlineData("64:ff9b::808:808", false)]
+    [InlineData("2002:a00:1::1", true)]
+    [InlineData("::7f00:1", true)]
     public void Private_loopback_link_local_and_metadata_addresses_are_blocked(string ip, bool blocked) =>
         Assert.Equal(blocked, WebhookSender.IsPrivate(IPAddress.Parse(ip)));
 
@@ -140,4 +144,8 @@ public class AlertTests
     public void Signature_is_lowercase_hex_hmac_sha256() =>
         Assert.Equal("f7bc83f430538424b13298e6aa6fb143ef4d59a14946175997479dbc2d1a3cd8",
             WebhookSender.Sign("key", "The quick brown fox jumps over the lazy dog"u8.ToArray()));
+
+    [Fact]
+    public void Email_subjects_are_one_line() =>
+        Assert.Equal("Alert fired Bcc: x@example.com", EmailSender.OneLine("Alert fired\r\nBcc: x@example.com\n"));
 }

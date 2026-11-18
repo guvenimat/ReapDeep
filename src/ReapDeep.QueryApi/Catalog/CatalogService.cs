@@ -11,6 +11,11 @@ public sealed class CatalogService(StarRocksClient starRocks)
 {
     public const int MaxItemsPerRequest = 10_000;
     const int MaxUrlLength = 2048;
+
+    public static bool IsSafeUrl(string url) =>
+        url.Length == 0
+        || (url.StartsWith('/') && !url.StartsWith("//", StringComparison.Ordinal) && !url.StartsWith("/\\", StringComparison.Ordinal))
+        || (Uri.TryCreate(url, UriKind.Absolute, out var u) && (u.Scheme == Uri.UriSchemeHttps || u.Scheme == Uri.UriSchemeHttp));
     const int MaxAttributesLength = 8 * 1024;
 
     public static List<ValidItem> Validate(List<ItemBody>? items)
@@ -31,6 +36,7 @@ public sealed class CatalogService(StarRocksClient starRocks)
             var url = i.Url?.Trim() ?? "";
             var image = i.ImageUrl?.Trim() ?? "";
             Ensure.That(url.Length <= MaxUrlLength && image.Length <= MaxUrlLength, $"items[{n}] urls can be at most {MaxUrlLength} characters");
+            Ensure.That(IsSafeUrl(url) && IsSafeUrl(image), $"items[{n}] urls must be http(s) addresses or paths starting with '/'");
             var attributes = i.Attributes is { ValueKind: JsonValueKind.Object } a ? a.GetRawText() : "{}";
             Ensure.That(i.Attributes is null or { ValueKind: JsonValueKind.Object or JsonValueKind.Null }, $"items[{n}].attributes must be an object");
             Ensure.That(attributes.Length <= MaxAttributesLength, $"items[{n}].attributes is too large");

@@ -28,6 +28,8 @@ public static class FlagsEndpoint
     static IResult Definitions(HttpContext ctx, ProjectCache projects, FlagCache flags)
     {
         if (!projects.IsLoaded || !flags.IsLoaded) return Error(StatusCodes.Status503ServiceUnavailable, "Starting up, try again shortly");
+        if (ctx.Request.Headers.Origin.Count > 0)
+            return Error(StatusCodes.Status403Forbidden, "Server keys must stay on the server; this request came from a browser");
         var header = ctx.Request.Headers.Authorization.ToString();
         if (!header.StartsWith(BearerPrefix, StringComparison.OrdinalIgnoreCase) || !projects.TryGetProjectIdBySecret(header[BearerPrefix.Length..].Trim(), out var projectId))
             return Error(StatusCodes.Status401Unauthorized, "A server key is required: Authorization: Bearer sk_...");

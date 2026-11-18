@@ -33,7 +33,7 @@ public sealed class EmailSender(IConfiguration cfg)
     public async Task<WebhookResult> SendAsync(string[] to, EmailMessage message, string senderName, CancellationToken ct)
     {
         if (!Configured) return new WebhookResult(null, "No SMTP server is configured", false);
-        using var mail = new MailMessage { From = new MailAddress(_from, senderName), Subject = message.Subject, Body = message.Text, IsBodyHtml = false };
+        using var mail = new MailMessage { From = new MailAddress(_from, senderName), Subject = OneLine(message.Subject), Body = message.Text, IsBodyHtml = false };
         foreach (var r in to) mail.To.Add(r);
         using var smtp = new SmtpClient(_host, _port) { EnableSsl = _ssl, Timeout = 10_000, DeliveryMethod = SmtpDeliveryMethod.Network };
         if (!string.IsNullOrEmpty(_user)) smtp.Credentials = new NetworkCredential(_user, _password);
@@ -52,4 +52,6 @@ public sealed class EmailSender(IConfiguration cfg)
             return new WebhookResult(null, $"SMTP: {e.Message}", true);
         }
     }
+
+    public static string OneLine(string text) => string.Join(' ', text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
 }
