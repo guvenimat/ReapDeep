@@ -17,6 +17,7 @@ x-query-api-environment: &query-api-environment
   Auth__BootstrapPassword: ${ADMIN_PASSWORD:?Missing ADMIN_PASSWORD in .env - run run-local.ps1 or smoke-test.sh}
   Auth__SecureCookie: "false"
   Auth__PublicUrl: http://localhost:3000
+  Platform__AdminEmails: ${PLATFORM_ADMIN_EMAILS:-${ADMIN_EMAIL:-admin@reapdeep.local}}
   Ai__Provider: ${AI_PROVIDER:-fake}
   Ai__ApiKey: ${DEEPSEEK_API_KEY:-}
   Ai__BaseUrl: ${AI_BASE_URL:-https://api.deepseek.com}

@@ -32,6 +32,8 @@ public static class ApiRoutes
         api.MapAnnotations();
         api.MapActions();
         api.MapAi();
+        api.MapAiAccess();
+        app.MapPlatform();
         api.MapDashboards();
         api.MapMembers();
         api.MapApiKeys();

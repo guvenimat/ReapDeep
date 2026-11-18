@@ -49,7 +49,7 @@ public static class AiEndpoints
             ["results"] = JsonSerializer.SerializeToNode(results with { TookMs = 0 }, AppJsonContext.Default.ExperimentResults),
             ["verdict"] = new JsonObject { ["decision"] = verdict.Decision, ["variant"] = verdict.Variant, ["reason"] = verdict.Reason },
         };
-        var reply = await ai.AskAsync(project, AiTasks.Experiment, $"""
+        var reply = await ai.AskAsync(project, AiFeatures.ExperimentExplain, AiTasks.Experiment, $"""
             Task: explain the result of an A/B test to the store team. "results" holds the statistics computed by ReapDeep: persons and
             conversions per variant, the difference to the control with its 95% confidence interval, the relative lift, the p-value and the
             sample ratio check. "verdict" was decided by fixed rules from these numbers: explain it and never contradict it.
@@ -111,7 +111,7 @@ public static class AiEndpoints
                 "size = persons who did the start event in that period; counts[n] = how many of them did the return event n periods later; average values are fractions",
                 r.DateFrom, r.DateTo);
         }
-        var reply = await ai.AskAsync(project, AiTasks.Insight, $"""
+        var reply = await ai.AskAsync(project, AiFeatures.InsightExplain, AiTasks.Insight, $"""
             Task: explain a {kind} chart from ReapDeep to the store team. Point out the largest changes, peaks, drops, the weakest funnel step or
             the retention pattern, and compare with the previous period when it is given. Say when numbers are too small to mean much.
             The recommendation is one concrete thing to look at or try next.
@@ -139,7 +139,7 @@ public static class AiEndpoints
             ["known_values"] = new JsonObject { ["$device_type"] = new JsonArray("Desktop", "Mobile", "Tablet") },
             ["person_properties"] = new JsonArray(meta.PersonProperties.Select(p => (JsonNode?)p.Name).Take(60).ToArray()),
         };
-        var reply = await ai.AskAsync(project, AiTasks.Query, """
+        var reply = await ai.AskAsync(project, AiFeatures.Query, AiTasks.Query, """
             Task: turn the question into one ReapDeep analysis request. Use only event names from data.events (or action names from
             data.actions as {"action": name} instead of {"event": name}). Event filters and breakdowns use names from data.event_columns
             (device, browser, OS, page, referrer and UTM columns, for example "$device_type") or data.event_properties; person filters use
@@ -207,7 +207,7 @@ public static class AiEndpoints
             }).ToArray()),
             ["events"] = new JsonArray(meta.Events.OrderByDescending(e => e.LastSeenAt).Take(80).Select(e => (JsonNode?)e.Name).ToArray()),
         };
-        var reply = await ai.AskAsync(project, AiTasks.Digest, """
+        var reply = await ai.AskAsync(project, AiFeatures.Digest, AiTasks.Digest, """
             Task: write a weekly strategy note for the store team from these numbers: traffic and its sources, devices, top pages, customer
             segments (RFM), how recommendations perform, and the experiments that exist. Findings name the biggest changes and risks; the
             recommendation is the single most valuable thing to do next. Also propose up to 3 A/B experiments that are not already running:

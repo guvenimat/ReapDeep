@@ -36,18 +36,43 @@ if ((S POST "/auth/login" $login).Status -ne 200) { throw "login failed (rate li
 $readKey = $envValues.READ_API_KEY
 $project = (S GET "/project").Json
 if ($project.ai_model -ne "fake model (tests)") { throw "ai-test needs AI_PROVIDER=fake (the query-api reports '$($project.ai_model)'); it never calls a real model" }
-$wasEnabled = [bool]$project.ai_enabled
+$orgId = [long]$project.organization_id
+$memberEmail = "ai_member_$tag@example.com"; $memberPassword = "temp-$tag-pass"
 $trend = @{ series = @(@{ event = '$pageview'; metric = "total" }); interval = "day" }
 
 try {
-    Write-Host "`n1) Switch (tag: $tag)"
-    $null = S PATCH "/project" @{ ai_enabled = $false }
-    Check "the project reports the configured model and AI off" ((S GET "/project").Json.ai_enabled -eq $false)
+    Write-Host "`n1) Platform and customer switches (tag: $tag)"
+    $orgs = S GET "/platform/organizations"
+    $before = @($orgs.Json.organizations | Where-Object { $_.id -eq $orgId })[0]
+    Check "the platform administrator lists the customers with their AI settings" ($orgs.Status -eq 200 -and $null -ne $before)
+    Check "a read key cannot open the platform -> 401" ((Send $plain GET "/platform/organizations" $null @{ Authorization = "Bearer $readKey" }).Status -eq 401)
+    $null = S POST "/members" @{ email = $memberEmail; name = "AI member $tag"; password = $memberPassword; role = "member" }
+    $mh = New-Object System.Net.Http.HttpClientHandler; $mh.CookieContainer = New-Object System.Net.CookieContainer
+    $memberClient = New-Object System.Net.Http.HttpClient($mh)
+    $memberLogin = Send $memberClient POST "/auth/login" (@{ email = $memberEmail; password = $memberPassword } | ConvertTo-Json -Compress)
+    Check "a customer user is not a platform administrator" ($memberLogin.Status -eq 200 -and -not $memberLogin.Json.platform_admin -and (S GET "/auth/me").Json.platform_admin)
+    Check "a customer user cannot open the platform -> 403" ((Send $memberClient GET "/platform/organizations").Status -eq 403)
+    Check "a member sees the AI settings but cannot change them -> 403" ((Send $memberClient GET "/organization/ai").Status -eq 200 -and (Send $memberClient PUT "/organization/ai" @{ enabled = $false }).Status -eq 403)
+
+    $null = S PUT "/platform/organizations/$orgId/ai" @{ enabled = $false }
     $off = S POST "/ai/explain" @{ kind = "trends"; query = $trend }
-    Check "explaining while AI is off -> 403 with a pointer to Settings" ($off.Status -eq 403 -and $off.Json.error -match "Settings")
-    Check "a read key cannot use AI -> 403" ((Send $plain POST "/ai/explain" @{ kind = "trends"; query = $trend } @{ Authorization = "Bearer $readKey" }).Status -eq 403)
-    $on = S PATCH "/project" @{ ai_enabled = $true }
-    Check "a manager turns AI on" ($on.Status -eq 200 -and $on.Json.ai_enabled -eq $true)
+    Check "with AI off on the platform side: 403 'not included'" ($off.Status -eq 403 -and $off.Json.error -match "not included")
+    Check "the customer sees AI as not included and no features" ((S GET "/organization/ai").Json.platform_enabled -eq $false -and @((S GET "/project").Json.ai_features).Count -eq 0)
+    $all = @("experiment_explain", "insight_explain", "query", "digest")
+    $null = S PUT "/platform/organizations/$orgId/ai" @{ enabled = $true; features = $all }
+    $null = S PUT "/organization/ai" @{ enabled = $false }
+    $custOff = S POST "/ai/explain" @{ kind = "trends"; query = $trend }
+    Check "the platform allows it, the customer turns AI off: 403 pointing to Settings" ($custOff.Status -eq 403 -and $custOff.Json.error -match "Settings")
+    $partial = S PUT "/organization/ai" @{ enabled = $true; features = @("experiment_explain", "query", "digest") }
+    Check "the customer keeps three features: chart explanations are off" ($partial.Json.effective -notcontains "insight_explain" -and @($partial.Json.effective).Count -eq 3 -and (S POST "/ai/explain" @{ kind = "trends"; query = $trend }).Status -eq 403)
+    Check "the project reports the features in use" (@((S GET "/project").Json.ai_features) -contains "query" -and @((S GET "/project").Json.ai_features) -notcontains "insight_explain")
+    $null = S PUT "/platform/organizations/$orgId/ai" @{ features = @("insight_explain", "query") }
+    Check "the platform narrows the list: only what both allow stays on" (((S GET "/organization/ai").Json.effective -join ",") -eq "query")
+    Check "unknown feature -> 400" ((S PUT "/organization/ai" @{ features = @("chatbot") }).Status -eq 400 -and (S PUT "/platform/organizations/$orgId/ai" @{ features = @("chatbot") }).Status -eq 400)
+    Check "unknown organization -> 404" ((S PUT "/platform/organizations/999999999/ai" @{ enabled = $true }).Status -eq 404)
+    $null = S PUT "/platform/organizations/$orgId/ai" @{ enabled = $true; features = $all }
+    $null = S PUT "/organization/ai" @{ enabled = $true; features = $all }
+    Check "everything on again" (@((S GET "/organization/ai").Json.effective).Count -eq 4)
 
     Write-Host "`n2) Chart explanations"
     $trend.filters = @(@{ scope = "event"; property = '$browser'; op = "neq"; value = "no-$tag" })
@@ -86,7 +111,13 @@ try {
     Check "experiment ideas only use events the project has" (@($d.Json.experiments | Where-Object { $_.goal_event -ne "purchase" }).Count -eq 0)
 }
 finally {
-    $null = S PATCH "/project" @{ ai_enabled = $wasEnabled }
+    if ($before) {
+        $null = S PUT "/platform/organizations/$orgId/ai" @{ enabled = $before.ai_enabled; features = @($before.ai_features) }
+        $null = S PUT "/organization/ai" @{ enabled = $before.customer_enabled; features = @($before.customer_features) }
+    }
+    $prev = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+    & docker compose exec -T postgres psql -U reapdeep -d reapdeep -tAc "DELETE FROM users WHERE email = '$memberEmail'" 2>&1 | Out-Null
+    $ErrorActionPreference = $prev
 }
 
 if ($script:failed -eq 0) { Write-Host "`nPASSED: all AI checks" -ForegroundColor Green }

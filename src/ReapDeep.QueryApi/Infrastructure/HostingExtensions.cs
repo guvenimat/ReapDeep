@@ -107,6 +107,8 @@ public static class HostingExtensions
         services.AddSingleton(ai);
         services.AddSingleton<IChatModel>(_ => ai.Provider == AiOptions.Fake ? new FakeChatModel() : new OpenAiCompatibleChatModel(new HttpClient { Timeout = TimeSpan.FromSeconds(100) }, ai));
         services.AddSingleton<AiGateway>();
+        services.AddSingleton<AiAccessRepository>();
+        services.AddSingleton<PlatformAdmins>();
         services.AddSingleton<EmailSender>();
         services.AddSingleton<AuthTokenRepository>();
         services.AddSingleton<AccountMailer>();

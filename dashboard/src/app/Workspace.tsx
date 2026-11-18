@@ -24,6 +24,7 @@ import { RangePicker } from './RangePicker'
 import { rangeFromParams, TABS, useRoute } from './route'
 import { Sidebar } from './Sidebar'
 import { AiPage } from '../features/ai/Ai'
+import { AiFeaturesContext, PlatformPage } from '../features/ai/AiAccess'
 
 function pickProject(me: Me): number | undefined {
   const stored = storedProjectId()
@@ -40,6 +41,9 @@ export function Workspace({ me, onLogout, onAccessChanged }: { me: Me; onLogout:
   const meta = useQuery((signal) => api.metadata(signal), [projectId])
   const [cohortsVersion, setCohortsVersion] = useState(0)
   const cohorts = useQuery((signal) => api.cohorts(signal), [projectId, cohortsVersion])
+  const [aiVersion, setAiVersion] = useState(0)
+  const aiAccess = useQuery((signal) => api.aiAccess(signal), [projectId, aiVersion])
+  const aiContext = useMemo(() => ({ features: aiAccess.data?.effective ?? [], reload: () => setAiVersion((v) => v + 1) }), [aiAccess.data])
   const [actionsVersion, setActionsVersion] = useState(0)
   const actions = useQuery((signal) => api.actions(signal), [projectId, actionsVersion])
   const actionsContext = useMemo(() => ({ actions: actions.data?.actions ?? [], reload: () => setActionsVersion((v) => v + 1) }), [actions.data])
@@ -70,12 +74,13 @@ export function Workspace({ me, onLogout, onAccessChanged }: { me: Me; onLogout:
   const onQuery = (q: string) => setParams({ q })
   const onInsight = (id?: string) => setParams({ insight: id })
   const openPerson = (id?: string) => navigate('persons', id)
-  const showRange = route.tab !== 'persons' && route.tab !== 'settings' && route.tab !== 'cohorts' && route.tab !== 'catalog' && route.tab !== 'rfm' && route.tab !== 'alerts' && route.tab !== 'flags' && route.tab !== 'experiments' && route.tab !== 'ai'
+  const showRange = route.tab !== 'persons' && route.tab !== 'settings' && route.tab !== 'cohorts' && route.tab !== 'catalog' && route.tab !== 'rfm' && route.tab !== 'alerts' && route.tab !== 'flags' && route.tab !== 'experiments' && route.tab !== 'ai' && route.tab !== 'platform'
 
   return (
     <MetaContext.Provider value={meta.data}>
       <CohortsContext.Provider value={cohorts.data?.cohorts ?? []}>
       <ActionsContext.Provider value={actionsContext}>
+      <AiFeaturesContext.Provider value={aiContext}>
         <div className="shell">
           <Sidebar me={me} project={project} active={route.tab} status={status} statusError={err}
             onNavigate={(t) => navigate(t)} onProjectChange={changeProject} onLogout={onLogout} />
@@ -99,6 +104,7 @@ export function Workspace({ me, onLogout, onAccessChanged }: { me: Me; onLogout:
               {route.tab === 'alerts' && <Alerts canManage={canManage} />}
               {route.tab === 'flags' && <Flags canManage={canManage} />}
               {route.tab === 'ai' && <AiPage canManage={canManage} />}
+              {route.tab === 'platform' && (me.platform_admin ? <PlatformPage /> : <p className="editor-hint">Only platform administrators can open this page.</p>)}
               {route.tab === 'experiments' && <Experiments id={route.id} canManage={canManage} navigate={(id) => navigate('experiments', id)} />}
               {route.tab === 'events' && <Events params={route.params} range={range} onChange={onQuery} openPerson={openPerson} />}
               {route.tab === 'persons' && <Persons id={route.id} openPerson={openPerson} canManage={canManage} />}
@@ -109,6 +115,7 @@ export function Workspace({ me, onLogout, onAccessChanged }: { me: Me; onLogout:
             </main>
           </div>
         </div>
+      </AiFeaturesContext.Provider>
       </ActionsContext.Provider>
       </CohortsContext.Provider>
     </MetaContext.Provider>

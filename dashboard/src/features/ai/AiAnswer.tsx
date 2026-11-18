@@ -1,9 +1,10 @@
 import { useState } from 'react'
 import { errorMessage } from '../../api/client'
-import type { AiAnswer, AiVerdict } from '../../api/types'
+import type { AiAnswer, AiFeature, AiVerdict } from '../../api/types'
 import { Icon } from '../../components/icons'
 import { Badge, Card } from '../../components/ui'
 import { dateTime } from '../../lib/format'
+import { useAiFeature } from './AiAccess'
 
 const VERDICTS: Record<AiVerdict['decision'], { label: string; tone: 'good' | 'muted' | 'accent' | 'danger' }> = {
   ship: { label: 'Ship', tone: 'good' },
@@ -50,7 +51,10 @@ export function AiAnswerView({ answer }: { answer: AiAnswer }) {
   )
 }
 
-export function ExplainCard({ title = 'AI explanation', hint, load }: { title?: string; hint: string; load: () => Promise<AiAnswer> }) {
+export function ExplainCard({ title = 'AI explanation', hint, load, feature = 'insight_explain' }: {
+  title?: string; hint: string; load: () => Promise<AiAnswer>; feature?: AiFeature
+}) {
+  const available = useAiFeature(feature)
   const [answer, setAnswer] = useState<AiAnswer>()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
@@ -65,6 +69,7 @@ export function ExplainCard({ title = 'AI explanation', hint, load }: { title?: 
       setBusy(false)
     }
   }
+  if (!available) return null
   return (
     <Card className="ai-card" title={<><Icon name="sparkles" />{title}</>}
       actions={<button type="button" onClick={run} disabled={busy}>{busy ? 'Thinking…' : answer ? 'Explain again' : 'Explain'}</button>}>
