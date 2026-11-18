@@ -60,10 +60,13 @@ public sealed class CatalogService(StarRocksClient starRocks)
             Cases: Convert.ToInt64(r.GetValue(0)),
             Similar: r.IsDBNull(1) ? 0 : Convert.ToInt64(r.GetValue(1)),
             Covered: r.IsDBNull(2) ? 0 : Convert.ToInt64(r.GetValue(2)),
-            Popular: r.IsDBNull(3) ? 0 : Convert.ToInt64(r.GetValue(3))), ct)).Single();
+            Popular: r.IsDBNull(3) ? 0 : Convert.ToInt64(r.GetValue(3)),
+            Weighted: r.IsDBNull(4) ? 0 : Convert.ToInt64(r.GetValue(4)),
+            Session: r.IsDBNull(5) ? 0 : Convert.ToInt64(r.GetValue(5))), ct)).Single();
         double Rate(long hits) => row.Cases == 0 ? 0 : Math.Round((double)hits / row.Cases, 4);
         var testFrom = now - RecommendationSql.EvaluationWindow;
         return new HitRateResponse(k, row.Cases, row.Covered, row.Similar, Rate(row.Similar), row.Popular, Rate(row.Popular),
+            row.Weighted, Rate(row.Weighted), row.Session, Rate(row.Session),
             (testFrom - RecommendationSql.CoViewedWindow).ToString("o"), testFrom.ToString("o"), now.ToString("o"), sw.Elapsed.TotalMilliseconds);
     }
 }

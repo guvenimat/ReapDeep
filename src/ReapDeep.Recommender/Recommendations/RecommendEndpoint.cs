@@ -15,6 +15,7 @@ public static class RecommendEndpoint
     const int DefaultLimit = 10;
     const int MaxLimit = 50;
     const int MaxIdLength = 200;
+    const string Popular = RecommendationSql.Popular;
 
     public static void MapRecommend(this WebApplication app)
     {
@@ -26,7 +27,8 @@ public static class RecommendEndpoint
 
     static async Task<IResult> Recommend(HttpContext ctx, ProjectCache projects, RecommendationCache cache, PersonHistoryStore histories,
         [FromQuery(Name = "api_key")] string? apiKey, string? model, [FromQuery(Name = "item_id")] string? itemId, string? category, int? limit,
-        [FromQuery(Name = "distinct_id")] string? distinctId, long? expires, string? signature, CancellationToken ct)
+        [FromQuery(Name = "distinct_id")] string? distinctId, long? expires, string? signature,
+        [FromQuery(Name = "max_per_category")] int? maxPerCategory, string? fallback, CancellationToken ct)
     {
         if (!projects.IsLoaded || !cache.IsLoaded) return Error(StatusCodes.Status503ServiceUnavailable, "Starting up, try again shortly");
         if (string.IsNullOrEmpty(apiKey) || !projects.TryGetProjectId(apiKey, out var projectId)) return Error(StatusCodes.Status401Unauthorized, "Invalid api_key");
@@ -34,11 +36,13 @@ public static class RecommendEndpoint
         var m = model ?? RecommendationSql.Popular;
         if (m != RecommendationSql.ForYou && !RecommendationSql.Models.Contains(m))
             return Error(StatusCodes.Status400BadRequest, $"model: {string.Join(" | ", RecommendationSql.Models.Append(RecommendationSql.ForYou))}");
-        var needsItem = m is RecommendationSql.CoViewed or RecommendationSql.BoughtTogether;
+        var needsItem = RecommendationSql.ItemModels.Contains(m);
         if (needsItem && string.IsNullOrWhiteSpace(itemId)) return Error(StatusCodes.Status400BadRequest, $"item_id is required for {m}");
         if (itemId?.Length > MaxIdLength || category?.Length > MaxIdLength || distinctId?.Length > MaxIdLength)
             return Error(StatusCodes.Status400BadRequest, "item_id, category and distinct_id can be at most 200 characters");
         var n = Math.Clamp(limit ?? DefaultLimit, 1, MaxLimit);
+        if (maxPerCategory is < 1 or > MaxLimit) return Error(StatusCodes.Status400BadRequest, $"max_per_category must be between 1 and {MaxLimit}");
+        if (fallback is not (null or Popular or CatalogSnapshot.Content)) return Error(StatusCodes.Status400BadRequest, $"fallback: {Popular} | {CatalogSnapshot.Content}");
         var categoryFilter = string.IsNullOrWhiteSpace(category) ? null : category;
 
         if (m == RecommendationSql.ForYou)
@@ -54,12 +58,13 @@ public static class RecommendEndpoint
                 case SignatureCheck.TooLong: return Error(StatusCodes.Status400BadRequest, $"expires can be at most {PersonSignature.MaxLifetime.TotalMinutes:0} minutes ahead");
             }
             var history = await histories.GetAsync(projectId, distinctId, ct);
-            var personal = cache.Get(projectId).RecommendForPerson(history, categoryFilter, n, DateTime.UtcNow);
+            var personal = cache.Get(projectId).RecommendForPerson(history, categoryFilter, n, DateTime.UtcNow, maxPerCategory);
             ctx.Response.Headers.CacheControl = "private, no-store";
             return Results.Json(new RecommendResponse(m, null, personal), AppJsonContext.Default.RecommendResponse);
         }
 
-        var items = cache.Get(projectId).Recommend(m, needsItem ? itemId : null, categoryFilter, n);
+        var items = cache.Get(projectId).Recommend(m, needsItem ? itemId : null, categoryFilter, n, maxPerCategory,
+            fallback == CatalogSnapshot.Content);
         ctx.Response.Headers.CacheControl = "public, max-age=60";
         return Results.Json(new RecommendResponse(m, needsItem ? itemId : null, items), AppJsonContext.Default.RecommendResponse);
     }

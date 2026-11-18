@@ -73,7 +73,7 @@ flowchart LR
 - **Identity.** PostgreSQL is the source of truth for persons. The worker applies merge rules (two identified persons are never merged) and writes changes to an outbox in the same transaction. Each property remembers the event time it was set at, so a late or out-of-order `$set`, `$set_once` or `$unset` (for example an anonymous visitor's, processed after their `$identify` once the worker catches up) never overwrites a newer value. A publisher forwards them to Kafka, and StarRocks applies them in version order.
 - **Definitions.** The ingestion API keeps an in-memory set of the event names, event properties and `$set` / `$set_once` person properties it has seen per project, with an inferred type (string, number, boolean, datetime). New names are written to PostgreSQL (`event_definitions`, `property_definitions`) in batches every 10 s, and known names are refreshed at most once an hour, so the hot path never waits on the database. The dashboard's autocomplete reads them from `GET /api/v1/metadata`. Each project is capped at 10K names per scope.
 - **Deletion.** Owners and admins request deletion of a person or a `distinct_id` (`POST /api/v1/deletion-requests`). A periodic batch job in the person worker (daily by default) deletes the events from StarRocks with one `DELETE` per project, removes the identity rows from PostgreSQL, and sends tombstones through the outbox so StarRocks drops the mappings and person properties in version order; the tombstones are purged later. Batching keeps StarRocks delete-predicate and compaction load low.
-- **Recommendations.** Product events carry `item_id`, which ingestion stores in its own column. The person worker computes four models in StarRocks (popular, trending, co_viewed, bought_together) and writes each project's lists to PostgreSQL. The Recommender answers `GET /recommend?api_key=pk_...` from an in-memory copy of the catalog and the lists, so it never queries StarRocks; stock and category are applied per request. Personalized lists (`for_you`) need a request signed by the store's backend.
+- **Recommendations.** Product events carry `item_id`, which ingestion stores in its own column. The person worker computes six models in StarRocks (popular, trending, co_viewed, bought_together and two co_viewed variants for A/B tests) and writes each project's lists to PostgreSQL. The Recommender answers `GET /recommend?api_key=pk_...` from an in-memory copy of the catalog and the lists, so it never queries StarRocks; stock and category are applied per request. Personalized lists (`for_you`) need a request signed by the store's backend.
 - **Queries.** A person is `COALESCE(pdi.person_id, e.distinct_id)` over a `LEFT JOIN`, so anonymous events are never dropped. Date filters use UTC boundaries for partition pruning; the project time zone is used only for bucketing.
 
 ### Operations
@@ -277,14 +277,29 @@ The commerce contract is small: `product_viewed`, `add_to_cart` and `purchase` e
 | `trending` | last 7 days against the expected share from the 21 days before | 28 days |
 | `co_viewed` | cosine similarity of items in the same person's 50 most recent items, shrunk for small counts: `co / (sqrt(n_a * n_b) + 5)` | 30 days |
 | `bought_together` | the same, purchases only | 90 days |
+| `co_viewed_weighted` | like `co_viewed`, but each pair counts the product of both interactions (view 1, cart 3, purchase 5) | 30 days |
+| `co_viewed_session` | like `co_viewed`, but only items seen in the same session (`$session_id`) | 30 days |
 
-Interactions are counted per `distinct_id` first and then merged per person, so a product viewed before signing in still counts for the signed-in person. The person worker refreshes each project hourly (every minute locally) and keeps 50 candidates per item and 200 for the global lists. The Recommender filters them at request time (in stock, category, not the item itself) and fills short item-based lists with popular items of the same category, marking each item's `source`.
+Interactions are counted per `distinct_id` first and then merged per person, so a product viewed before signing in still counts for the signed-in person. The person worker refreshes each project hourly (every minute locally) and keeps 50 candidates per item and 200 for the global lists. The Recommender filters them at request time (in stock, category, not the item itself) and fills short item-based lists with popular items of the same category, marking each item's `source`. Two request options change the list without a new model: `max_per_category=N` keeps at most N items of one category (also for `for_you`), and `fallback=content` fills short item-based lists first with items of the same category ranked by shared title words and similar price (`source: content`), which helps new items that have no interactions yet.
 
 ```bash
 curl "http://localhost:8002/recommend?api_key=pk_demo_shop&model=co_viewed&item_id=linen-shirt&limit=5"
 ```
 
-Quality is measured on demand (`POST /api/v1/recommendations/evaluate`, the Catalog tab's "Measure now"): the models are trained on the 30 days before the last week, and for each person the second item they touched last week counts as a hit if it was in the top 10 for their first. On the demo data (`-Visitors 6000`) co_viewed reaches a 23.8% hit rate against 22.5% for the popular baseline; the demo browsing is strongly popularity-driven, so the gap is small and depends on the generated sample.
+Quality is measured on demand (`POST /api/v1/recommendations/evaluate`, the Catalog tab's "Measure now"): the models are trained on the 30 days before the last week, and for each person the second item they touched last week counts as a hit if it was in the top 10 for their first. On the demo data (`-Visitors 6000`) co_viewed reaches a 23.9% hit rate against 22.5% for the popular baseline; the demo browsing is strongly popularity-driven, so the gap is small and depends on the generated sample. The variants score 19.6% (weighted: it favors items people buy, while the test predicts the next item they look at) and 23.9% (session: the generated visitors browse in one session, so it matches co_viewed). An offline score only says whether a model predicts browsing; which one sells more is a question for a live test.
+
+#### Choosing a model with an experiment
+
+The variants exist to be compared on real traffic, with the feature flag and experiment features. Create a multivariate flag whose variant keys are model names (for example `co_viewed` and `co_viewed_weighted`), let the page ask the flag which model to use, and report the model in the recommendation events:
+
+```js
+await rd.loadFlags()
+const model = rd.getFlag('similar-model') || 'co_viewed'
+const items = await rd.recommend({ model, itemId: 'linen-shirt', limit: 8, maxPerCategory: 3 })
+rd.trackRecommendationShown({ model, placement: 'product_page', sourceItemId: 'linen-shirt' }, items.map((i) => i.item_id))
+```
+
+An experiment on that flag with `purchase` (or `recommendation_clicked`) as the goal then compares the variants with a confidence interval and a sample-ratio check, and the Catalog tab's live performance shows the click rate of each model side by side. When a winner is clear, roll it out to 100% in the flag; no deployment is needed.
 
 Live performance comes from the site itself: the SDK's `trackRecommendationShown` and `trackRecommendationClicked` send `recommendation_shown` and `recommendation_clicked` events with the model and the placement, and `GET /api/v1/recommendations/performance?days=7|30|90` (read key; the Catalog tab's "Live performance") returns impressions, clicks, click rate and purchases per model and placement. A purchase counts when the same person buys the clicked item within 7 days of the click. The demo shop sends both events: similar items on product pages are clicked 23.4% of the time and popular items on the home page 11.3% (last 30 days).
 

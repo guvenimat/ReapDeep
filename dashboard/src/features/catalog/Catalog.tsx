@@ -10,6 +10,8 @@ import { itemsFromCsv } from './csv'
 const MODELS: { id: RecommendationModel; label: string; description: string }[] = [
   { id: 'co_viewed', label: 'Viewed together', description: 'People who looked at this also looked at' },
   { id: 'bought_together', label: 'Bought together', description: 'People who bought this also bought' },
+  { id: 'co_viewed_weighted', label: 'Viewed together, weighted', description: 'Purchases and carts count more than views' },
+  { id: 'co_viewed_session', label: 'Viewed in the same visit', description: 'Pairs seen within one session' },
   { id: 'popular', label: 'Popular', description: 'Most engaged items, last 30 days' },
   { id: 'trending', label: 'Trending', description: 'Growing fastest this week' },
 ]
@@ -75,6 +77,8 @@ function Quality() {
       {result ? (
         <div className="quality" data-testid="quality-result">
           <QualityBar label="Viewed together" rate={result.co_viewed_hit_rate} hits={result.co_viewed_hits} cases={result.cases} accent />
+          <QualityBar label="Viewed together, weighted" rate={result.co_viewed_weighted_hit_rate} hits={result.co_viewed_weighted_hits} cases={result.cases} />
+          <QualityBar label="Viewed in the same visit" rate={result.co_viewed_session_hit_rate} hits={result.co_viewed_session_hits} cases={result.cases} />
           <QualityBar label="Popular (baseline)" rate={result.popular_hit_rate} hits={result.popular_hits} cases={result.cases} />
           <p className="footnote">
             {num(result.cases)} test cases · suggestions available for {pct(result.cases ? result.covered / result.cases : 0)} of them

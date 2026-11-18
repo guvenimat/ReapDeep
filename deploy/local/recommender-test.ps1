@@ -1,4 +1,4 @@
-$ErrorActionPreference = "Stop"
+﻿$ErrorActionPreference = "Stop"
 Set-Location -Path $PSScriptRoot
 . (Join-Path $PSScriptRoot "env.ps1")
 Add-Type -AssemblyName System.Net.Http
@@ -11,6 +11,7 @@ $tag = "rc" + [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 $script:failed = 0
 function Id([string]$name) { "$name-$tag" }
 $A = Id "shirt"; $B = Id "tee"; $C = Id "chinos"; $D = Id "dress"; $E = Id "boots"; $F = Id "scarf"
+$G = Id "linen-shirt"; $H = Id "belt"; $I = Id "cap"; $J = Id "wallet"; $K = Id "gloves"
 
 function Check($desc, $cond) {
     if ($cond) { Write-Host "  OK   $desc" -ForegroundColor Green } else { Write-Host "  FAIL $desc" -ForegroundColor Red; $script:failed++ }
@@ -94,7 +95,7 @@ Check "co_viewed for shirt: tee first (3 people), then chinos and dress -> $($co
 Check "anonymous view before identify counts for the merged person (shirt-chinos needs both of them)" ($co -contains $C)
 Check "bought_together for shirt: boots" (@($detail.bought_together | ForEach-Object { $_.item_id }) -contains $E)
 $models = (S GET "/recommendations/models").Json.models
-Check "all four models have a calculation" (@($models).Count -eq 4)
+Check "all six models have a calculation" (@($models).Count -eq 6)
 
 Write-Host "`n3) Public Recommender"
 $served = WaitFor { (Ids (Reco "model=co_viewed&item_id=$A&limit=3"))[0] -eq $B } 30
@@ -113,9 +114,48 @@ Check "unknown public key -> 401" ((Send $plain GET "$reco/recommend?api_key=pk_
 Check "co_viewed without item_id -> 400" ((Reco "model=co_viewed").Status -eq 400)
 Check "unknown model -> 400" ((Reco "model=collaborative").Status -eq 400)
 
+Write-Host "`n3b) Model variants and serving options"
+$gear = "gear-$tag"
+$more = @(
+    @{ item_id = $G; title = "Shirt Linen"; category = "apparel-$tag"; price = 49 },
+    @{ item_id = $H; title = "Belt"; category = $gear; price = 30 },
+    @{ item_id = $I; title = "Cap"; category = $gear; price = 20 },
+    @{ item_id = $J; title = "Wallet"; category = $gear; price = 40 },
+    @{ item_id = $K; title = "Gloves"; category = $gear; price = 25 }
+)
+Check "five more items for the variants" ((K $ck.key PUT "/items" @{ items = $more }).Json.upserted -eq 5)
+function InSession([string]$distinctId, [string]$session, [string]$event, [string[]]$items) {
+    ($items | ForEach-Object { "{`"event`":`"$event`",`"distinct_id`":`"$distinctId`",`"properties`":{`"item_id`":`"$_`",`"`$session_id`":`"$session`"}}" }) -join ","
+}
+$variantEvents = @(1..3 | ForEach-Object { InSession "s$_-$tag" "ss$_-$tag" "product_viewed" @($H, $I) })
+$variantEvents += @(1..2 | ForEach-Object { (InSession "t$_-$tag" "ta$_-$tag" "product_viewed" @($H)) + "," + (InSession "t$_-$tag" "tb$_-$tag" "product_viewed" @($K)) })
+$variantEvents += @(1..2 | ForEach-Object { (Events "u$_-$tag" "product_viewed" @($H)) + "," + (Events "u$_-$tag" "purchase" @($J)) })
+Capture ("[" + ($variantEvents -join ",") + "]")
+$variantsReady = WaitFor {
+    (Ids (Reco "model=co_viewed_session&item_id=$H&limit=3")) -contains $I -and (Ids (Reco "model=co_viewed&item_id=$H&limit=3")) -contains $J
+} 180
+Check "worker calculated the weighted and session variants" $variantsReady
+$plainCo = Ids (Reco "model=co_viewed&item_id=$H&limit=3")
+$weighted = Ids (Reco "model=co_viewed_weighted&item_id=$H&limit=3")
+Check "co_viewed for the belt: cap first (3 people viewed both) -> $($plainCo -join ', ')" ($plainCo[0] -eq $I -and $plainCo -contains $J -and $plainCo -contains $K)
+Check "co_viewed_weighted for the belt: wallet first (2 people bought it after viewing the belt) -> $($weighted -join ', ')" ($weighted[0] -eq $J -and $weighted -contains $I)
+$sessionItems = Reco "model=co_viewed_session&item_id=$H&limit=3"
+$sessionIds = Ids $sessionItems
+Check "co_viewed_session for the belt: cap (same visit), not gloves (other visits) or the wallet (no session) -> $($sessionIds -join ', ')" ($sessionIds[0] -eq $I -and @($sessionItems.Json.items | Where-Object { $_.source -eq "co_viewed_session" }).Count -eq 1)
+$capped = Reco "model=co_viewed&item_id=$H&limit=4&max_per_category=1"
+$cats = @($capped.Json.items | ForEach-Object { $_.category })
+Check "max_per_category=1: one item per category -> $($cats -join ', ')" ($capped.Status -eq 200 -and @($cats).Count -ge 2 -and @($cats | Select-Object -Unique).Count -eq @($cats).Count)
+$cold = Reco "model=co_viewed&item_id=$G&limit=2&fallback=content"
+Check "fallback=content: a cold item gets the shirt (same category, shared title word, same price) first -> $((Ids $cold) -join ', ')" ((Ids $cold)[0] -eq $A -and $cold.Json.items[0].source -eq "content")
+Check "without fallback=content a cold item gets popular items" ((Reco "model=co_viewed&item_id=$G&limit=2").Json.items[0].source -eq "popular")
+Check "max_per_category=0 -> 400" ((Reco "model=popular&max_per_category=0").Status -eq 400)
+Check "unknown fallback -> 400" ((Reco "model=co_viewed&item_id=$H&fallback=random").Status -eq 400)
+Check "co_viewed_session without item_id -> 400" ((Reco "model=co_viewed_session").Status -eq 400)
+
 Write-Host "`n4) Quality endpoint"
 $q = S POST "/recommendations/evaluate?k=10"
 Check "hit rate endpoint answers with counts and rates" ($q.Status -eq 200 -and $null -ne $q.Json.cases -and $q.Json.k -eq 10)
+Check "hit rate covers the weighted and session variants" ($null -ne $q.Json.co_viewed_weighted_hit_rate -and $null -ne $q.Json.co_viewed_session_hit_rate)
 Check "read key cannot run the evaluation -> 403" ((K $readKey POST "/recommendations/evaluate").Status -eq 403)
 
 Write-Host "`n4b) Live performance from recommendation events"
@@ -183,7 +223,7 @@ Check "for_you without a signature -> 400" ((Reco "model=for_you&distinct_id=use
 $null = S POST "/deletion-requests" @{ target_type = "distinct_id"; target_id = "user-$tag" }
 Check "after a deletion request the person's history is no longer used" (WaitFor { $r = ForYou "user-$tag"; $r.Status -eq 200 -and (Personal $r).Count -eq 0 } 120)
 
-foreach ($i in @($A, $B, $C, $D, $E, $F)) { $null = S DELETE "/items/$i" }
+foreach ($i in @($A, $B, $C, $D, $E, $F, $G, $H, $I, $J, $K)) { $null = S DELETE "/items/$i" }
 $null = S DELETE "/api-keys/$($ck.api_key.id)"
 $left = (S GET "/items?search=$tag").Json
 Check "test items deleted -> $(@($left.items).Count) left" (@($left.items).Count -eq 0)

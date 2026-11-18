@@ -158,4 +158,62 @@ public class RecommenderTests
 
         Assert.Equal([new HistoryItem("12", 5, 1793400000), new HistoryItem("7", 1, 1793300000)], items);
     }
+
+    [Fact]
+    public void Category_cap_spreads_the_list_over_categories()
+    {
+        var items = Snapshot.Recommend("popular", null, null, 4, maxPerCategory: 1);
+
+        Assert.Equal(["boots", "shirt", "scarf"], items.Select(i => i.ItemId));
+    }
+
+    [Fact]
+    public void Category_cap_also_applies_to_personal_lists()
+    {
+        var items = Snapshot.RecommendForPerson([new("shirt", 1, DaysAgo(0))], null, 5, Now, maxPerCategory: 2);
+
+        Assert.Equal(2, items.Count(i => i.Category == "apparel"));
+    }
+
+    static readonly CatalogSnapshot Content = new(
+        new[]
+        {
+            new CatalogItem("linen-shirt", "Linen Shirt White", "apparel", 40m, "EUR", true, "", ""),
+            new CatalogItem("linen-shirt-blue", "Linen Shirt Blue", "Apparel", 42m, "EUR", true, "", ""),
+            new CatalogItem("oxford-shirt", "Oxford Shirt", "apparel", 80m, "EUR", true, "", ""),
+            new CatalogItem("linen-pants", "Linen Pants", "apparel", 40m, "EUR", true, "", ""),
+            new CatalogItem("linen-coat", "Linen Shirt Coat", "apparel", 40m, "EUR", false, "", ""),
+            new CatalogItem("linen-towel", "Linen Towel", "home", 40m, "EUR", true, "", ""),
+        }.ToFrozenDictionary(i => i.ItemId),
+        FrozenDictionary<string, Candidate[]>.Empty,
+        FrozenDictionary<string, FrozenDictionary<string, Candidate[]>>.Empty);
+
+    [Fact]
+    public void Content_similarity_ranks_in_stock_items_of_the_same_category_by_title_and_price()
+    {
+        var similar = Content.ContentSimilar("linen-shirt");
+
+        Assert.Equal(["linen-shirt-blue", "linen-pants", "oxford-shirt"], similar.Select(c => c.ItemId));
+        Assert.Equal(0.685714, similar[0].Score, 6);
+        Assert.Empty(Content.ContentSimilar("unknown"));
+    }
+
+    [Fact]
+    public void Content_fallback_fills_cold_items_only_when_asked()
+    {
+        var withContent = Content.Recommend("co_viewed_session", "linen-shirt", null, 2, contentFallback: true);
+
+        Assert.Equal(["linen-shirt-blue", "linen-pants"], withContent.Select(i => i.ItemId));
+        Assert.All(withContent, i => Assert.Equal("content", i.Source));
+        Assert.Empty(Content.Recommend("co_viewed_session", "linen-shirt", null, 2));
+    }
+
+    [Fact]
+    public void Content_fallback_comes_after_the_model_list()
+    {
+        var items = Snapshot.Recommend("co_viewed", "shirt", null, 3, contentFallback: true);
+
+        Assert.Equal(["tee", "chinos"], items.Take(2).Select(i => i.ItemId));
+        Assert.Equal(["co_viewed", "content", "popular"], items.Select(i => i.Source));
+    }
 }

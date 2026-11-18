@@ -13,13 +13,15 @@ export interface Config {
 
 export type Properties = Record<string, unknown>
 
-export type RecommendationModel = 'popular' | 'trending' | 'co_viewed' | 'bought_together'
+export type RecommendationModel = 'popular' | 'trending' | 'co_viewed' | 'bought_together' | 'co_viewed_weighted' | 'co_viewed_session'
 
 export interface RecommendOptions {
   model?: RecommendationModel
   itemId?: string
   category?: string
   limit?: number
+  maxPerCategory?: number
+  fallback?: 'popular' | 'content'
 }
 
 export interface RecommendedItem {
@@ -31,7 +33,7 @@ export interface RecommendedItem {
   url: string
   image_url: string
   score: number
-  source: RecommendationModel
+  source: RecommendationModel | 'for_you' | 'content'
 }
 
 export interface RecommendationContext {
@@ -138,6 +140,8 @@ export class ReapDeep {
     if (options.itemId) query.set('item_id', options.itemId)
     if (options.category) query.set('category', options.category)
     if (options.limit) query.set('limit', String(options.limit))
+    if (options.maxPerCategory) query.set('max_per_category', String(options.maxPerCategory))
+    if (options.fallback) query.set('fallback', options.fallback)
     return ((await this.get('recommend', query)) as { items: RecommendedItem[] }).items
   }
 

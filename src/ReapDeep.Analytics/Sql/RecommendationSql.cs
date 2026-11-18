@@ -6,8 +6,11 @@ public static class RecommendationSql
     public const string Trending = "trending";
     public const string CoViewed = "co_viewed";
     public const string BoughtTogether = "bought_together";
+    public const string CoViewedWeighted = "co_viewed_weighted";
+    public const string CoViewedSession = "co_viewed_session";
     public const string ForYou = "for_you";
-    public static readonly string[] Models = [Popular, Trending, CoViewed, BoughtTogether];
+    public static readonly string[] Models = [Popular, Trending, CoViewed, BoughtTogether, CoViewedWeighted, CoViewedSession];
+    public static readonly string[] ItemModels = [CoViewed, BoughtTogether, CoViewedWeighted, CoViewedSession];
 
     public const string ViewEvent = "product_viewed";
     public const string CartEvent = "add_to_cart";
@@ -41,8 +44,10 @@ public static class RecommendationSql
     {
         Popular => PopularItems(projectId, nowUtc - PopularWindow, nowUtc, GlobalCandidates),
         Trending => TrendingItems(projectId, nowUtc),
-        CoViewed => Similar(projectId, nowUtc - CoViewedWindow, nowUtc, purchasesOnly: false, ItemCandidates),
-        BoughtTogether => Similar(projectId, nowUtc - BoughtTogetherWindow, nowUtc, purchasesOnly: true, ItemCandidates),
+        CoViewed => Similar(projectId, nowUtc - CoViewedWindow, nowUtc, Similarity.Views),
+        BoughtTogether => Similar(projectId, nowUtc - BoughtTogetherWindow, nowUtc, Similarity.Purchases),
+        CoViewedWeighted => Similar(projectId, nowUtc - CoViewedWindow, nowUtc, Similarity.Weighted),
+        CoViewedSession => Similar(projectId, nowUtc - CoViewedWindow, nowUtc, Similarity.Session),
         _ => throw new ValidationException($"Unknown model: '{model}' ({string.Join(" | ", Models)})"),
     };
 
@@ -66,11 +71,15 @@ public static class RecommendationSql
             $"ORDER BY score DESC, item_id LIMIT {GlobalCandidates}");
     }
 
-    static SqlQuery Similar(long projectId, DateTime fromUtc, DateTime toUtc, bool purchasesOnly, int perItem)
+    public enum Similarity { Views, Purchases, Weighted, Session }
+
+    static SqlQuery Similar(long projectId, DateTime fromUtc, DateTime toUtc, Similarity kind)
     {
         var b = new SqlBuilder(projectId, fromUtc, toUtc);
-        return b.Build($"WITH {PersonItems(b, projectId, fromUtc, toUtc)}, {SimilarityCtes(b, purchasesOnly)} " +
-                       $"SELECT src AS source, dst AS item_id, score FROM ranked WHERE rn <= {perItem}");
+        var session = kind == Similarity.Session;
+        var items = session ? SessionItems(b, projectId, fromUtc, toUtc) : PersonItems(b, projectId, fromUtc, toUtc);
+        return b.Build($"WITH {items}, {SimilarityCtes(b, kind, session ? "si" : "pi")} " +
+                       $"SELECT src AS source, dst AS item_id, score FROM ranked WHERE rn <= {ItemCandidates}");
     }
 
     public static SqlQuery PersonHistory(long projectId, DateTime nowUtc)
@@ -91,12 +100,17 @@ public static class RecommendationSql
         var test = PersonItems(b, projectId, testFrom, nowUtc, name: "test_pi", firstSeen: true);
         var popular = $"pop AS (SELECT item_id, ROW_NUMBER() OVER (ORDER BY SUM(w) DESC, item_id) AS rn FROM pi GROUP BY item_id)";
         return b.Build(
-            $"WITH {PersonItems(b, projectId, trainFrom, testFrom)}, {SimilarityCtes(b, purchasesOnly: false)}, {popular}, {test}, " +
+            $"WITH {PersonItems(b, projectId, trainFrom, testFrom)}, {SessionItems(b, projectId, trainFrom, testFrom)}, " +
+            $"{SimilarityCtes(b, Similarity.Views, "pi")}, {SimilarityCtes(b, Similarity.Weighted, "pi", "w_")}, " +
+            $"{SimilarityCtes(b, Similarity.Session, "si", "s_")}, {popular}, {test}, " +
             "seq AS (SELECT person, item_id, ROW_NUMBER() OVER (PARTITION BY person ORDER BY ts, item_id) AS rn FROM test_pi), " +
             "cases AS (SELECT a.item_id AS seen, n.item_id AS next FROM seq a JOIN seq n ON n.person = a.person AND a.rn = 1 AND n.rn = 2) " +
             "SELECT COUNT(*) AS cases, SUM(IF(r.dst IS NULL, 0, 1)) AS similar_hits, SUM(IF(cov.src IS NULL, 0, 1)) AS covered, " +
-            "SUM(IF(p.item_id IS NULL, 0, 1)) AS popular_hits FROM cases c " +
+            "SUM(IF(p.item_id IS NULL, 0, 1)) AS popular_hits, SUM(IF(rw.dst IS NULL, 0, 1)) AS weighted_hits, " +
+            "SUM(IF(rs.dst IS NULL, 0, 1)) AS session_hits FROM cases c " +
             $"LEFT JOIN (SELECT src, dst FROM ranked WHERE rn <= {k}) r ON r.src = c.seen AND r.dst = c.next " +
+            $"LEFT JOIN (SELECT src, dst FROM w_ranked WHERE rn <= {k}) rw ON rw.src = c.seen AND rw.dst = c.next " +
+            $"LEFT JOIN (SELECT src, dst FROM s_ranked WHERE rn <= {k}) rs ON rs.src = c.seen AND rs.dst = c.next " +
             "LEFT JOIN (SELECT DISTINCT src FROM ranked) cov ON cov.src = c.seen " +
             $"LEFT JOIN (SELECT item_id FROM pop WHERE rn <= {k}) p ON p.item_id = c.next");
     }
@@ -141,12 +155,27 @@ public static class RecommendationSql
                "GROUP BY 1, 2)";
     }
 
-    static string SimilarityCtes(SqlBuilder b, bool purchasesOnly) =>
-        $"lim AS (SELECT person, item_id FROM (SELECT person, item_id, ROW_NUMBER() OVER (PARTITION BY person ORDER BY ts DESC, item_id) AS n FROM pi" +
-        $"{(purchasesOnly ? $" WHERE w >= {PurchaseWeight}" : "")}) x WHERE n <= {MaxItemsPerPerson}), " +
-        "cnt AS (SELECT item_id, COUNT(*) AS n FROM lim GROUP BY item_id), " +
-        "pairs AS (SELECT a.item_id AS src, o.item_id AS dst, COUNT(*) AS co FROM lim a JOIN lim o ON o.person = a.person AND o.item_id <> a.item_id " +
-        $"GROUP BY 1, 2 HAVING COUNT(*) >= {b.P(MinCoOccurrence)}), " +
-        $"scored AS (SELECT p.src, p.dst, p.co / (sqrt(cs.n * cd.n) + {SimilarityShrinkage}) AS score FROM pairs p JOIN cnt cs ON cs.item_id = p.src JOIN cnt cd ON cd.item_id = p.dst), " +
-        "ranked AS (SELECT src, dst, score, ROW_NUMBER() OVER (PARTITION BY src ORDER BY score DESC, dst) AS rn FROM scored)";
+    static string SessionItems(SqlBuilder b, long projectId, DateTime fromUtc, DateTime toUtc)
+    {
+        var (purchase, cart, view) = (b.P(PurchaseEvent), b.P(CartEvent), b.P(ViewEvent));
+        return $"si AS (SELECT e.session_id AS person, e.item_id, " +
+               $"MAX(CASE e.event WHEN {purchase} THEN {PurchaseWeight} WHEN {cart} THEN {CartWeight} ELSE {ViewWeight} END) AS w, MAX(e.timestamp) AS ts " +
+               $"FROM analytics.events e WHERE e.project_id = {b.P(projectId)} AND e.timestamp >= {b.P(fromUtc)} AND e.timestamp < {b.P(toUtc)} " +
+               $"AND e.event IN ({purchase}, {cart}, {view}) AND e.item_id IS NOT NULL AND e.item_id <> '' " +
+               "AND e.session_id IS NOT NULL AND e.session_id <> '' GROUP BY 1, 2)";
+    }
+
+    static string SimilarityCtes(SqlBuilder b, Similarity kind, string source, string x = "")
+    {
+        var filter = kind == Similarity.Purchases ? $" WHERE w >= {PurchaseWeight}" : "";
+        var (n, co) = kind == Similarity.Weighted ? ("SUM(w * w)", "SUM(a.w * o.w)") : ("COUNT(*)", "COUNT(*)");
+        return $"{x}lim AS (SELECT person, item_id, w FROM (SELECT person, item_id, w, ROW_NUMBER() OVER (PARTITION BY person ORDER BY ts DESC, item_id) AS n FROM {source}" +
+               $"{filter}) x WHERE n <= {MaxItemsPerPerson}), " +
+               $"{x}cnt AS (SELECT item_id, {n} AS n FROM {x}lim GROUP BY item_id), " +
+               $"{x}pairs AS (SELECT a.item_id AS src, o.item_id AS dst, {co} AS co FROM {x}lim a JOIN {x}lim o ON o.person = a.person AND o.item_id <> a.item_id " +
+               $"GROUP BY 1, 2 HAVING COUNT(*) >= {b.P(MinCoOccurrence)}), " +
+               $"{x}scored AS (SELECT p.src, p.dst, p.co / (sqrt(cs.n * cd.n) + {SimilarityShrinkage}) AS score FROM {x}pairs p " +
+               $"JOIN {x}cnt cs ON cs.item_id = p.src JOIN {x}cnt cd ON cd.item_id = p.dst), " +
+               $"{x}ranked AS (SELECT src, dst, score, ROW_NUMBER() OVER (PARTITION BY src ORDER BY score DESC, dst) AS rn FROM {x}scored)";
+    }
 }

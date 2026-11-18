@@ -150,7 +150,7 @@ export interface CatalogItemInput {
 }
 export interface RecommendedCatalogItem { item_id: string; title: string; category: string; in_stock: boolean; score: number }
 export interface CatalogItemDetail { item: CatalogItem; co_viewed: RecommendedCatalogItem[]; bought_together: RecommendedCatalogItem[] }
-export type RecommendationModel = 'popular' | 'trending' | 'co_viewed' | 'bought_together'
+export type RecommendationModel = 'popular' | 'trending' | 'co_viewed' | 'bought_together' | 'co_viewed_weighted' | 'co_viewed_session'
 export interface ModelRun { model: RecommendationModel; calculated_at: string; calculation_ms: number; source_items: number }
 export interface RecommendationPerformance {
   model: string; placement: string; impressions: number; clicks: number; purchases: number; click_rate: number | null; purchase_rate: number | null
@@ -162,6 +162,7 @@ export interface RecommendationPerformanceResponse {
 
 export interface HitRate {
   k: number; cases: number; covered: number; co_viewed_hits: number; co_viewed_hit_rate: number; popular_hits: number; popular_hit_rate: number
+  co_viewed_weighted_hits: number; co_viewed_weighted_hit_rate: number; co_viewed_session_hits: number; co_viewed_session_hit_rate: number
   train_from: string; test_from: string; test_to: string; took_ms: number
 }
 

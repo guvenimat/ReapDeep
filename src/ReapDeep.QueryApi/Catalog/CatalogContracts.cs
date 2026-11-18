@@ -23,4 +23,5 @@ public sealed record RecommendationPerformance(string Model, string Placement, l
     double? ClickRate, double? PurchaseRate);
 public sealed record RecommendationPerformanceResponse(int Days, int AttributionDays, List<RecommendationPerformance> Rows, double TookMs);
 public sealed record HitRateResponse(int K, long Cases, long Covered, long CoViewedHits, double CoViewedHitRate, long PopularHits, double PopularHitRate,
+    long CoViewedWeightedHits, double CoViewedWeightedHitRate, long CoViewedSessionHits, double CoViewedSessionHitRate,
     string TrainFrom, string TestFrom, string TestTo, double TookMs);
