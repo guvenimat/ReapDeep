@@ -181,6 +181,32 @@ export interface FlagInput {
   key?: string; name: string; description: string; enabled: boolean; rollout_percentage: number; variants: FlagVariant[]; conditions: FlagCondition[]
 }
 
+export type ExperimentStatus = 'draft' | 'running' | 'stopped'
+export type MetricKind = 'conversion' | 'funnel' | 'revenue'
+export interface ExperimentMetric { kind: MetricKind; event?: string | null; steps?: string[] | null; window_seconds?: number | null; property?: string | null }
+export interface Experiment {
+  id: number; name: string; description: string; flag_id: number; flag_key: string; flag_enabled: boolean; variants: FlagVariant[]; control_variant: string
+  status: ExperimentStatus; metric: ExperimentMetric; start_date: string | null; end_date: string | null
+  created_by: string | null; updated_by: string | null; created_at: string; updated_at: string
+}
+export interface ExperimentInput {
+  name: string; description: string; flag_id: number; control_variant: string; metric: ExperimentMetric; start_date?: string; end_date?: string
+}
+export interface ExperimentComparison {
+  difference: number; difference_low: number | null; difference_high: number | null
+  relative_lift: number | null; relative_low: number | null; relative_high: number | null
+  statistic: number | null; p_value: number | null; degrees_of_freedom: number | null; significant: boolean
+}
+export interface ExperimentVariantResult {
+  key: string; percentage: number; is_control: boolean; persons: number; conversions: number; mean: number; standard_deviation: number | null
+  comparison: ExperimentComparison | null
+}
+export interface ExperimentSrm { chi_square: number; p_value: number; warning: boolean; threshold: number }
+export interface ExperimentResults {
+  experiment_id: number; metric_kind: MetricKind; test: 'two_proportion_z' | 'welch_t'; control_variant: string; date_from: string; date_to: string
+  variants: ExperimentVariantResult[]; excluded_persons: number; srm: ExperimentSrm | null; took_ms: number
+}
+
 export type ProjectDetail = {
   id: number; name: string; organization_id: number; organization_name: string; timezone: string; public_key: string; created_at: string
   anonymize_ip: boolean; ingest_events_per_second: number | null

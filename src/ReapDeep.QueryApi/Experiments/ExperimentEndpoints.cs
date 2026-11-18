@@ -104,6 +104,7 @@ public static class ExperimentEndpoints
         var metric = ExperimentRules.Metric(req.Metric ?? current?.Metric);
         var start = Date(req.StartDate, current?.StartDate, project.TimeZone, isEnd: false, "start_date");
         var end = Date(req.EndDate, current?.EndDate, project.TimeZone, isEnd: true, "end_date");
+        Ensure.That(start is not null || current is null || current.Status == ExperimentStatus.Draft, "start_date cannot be removed once the experiment has started");
         Ensure.That(start is null || end is null || end > start, "end_date must be after start_date");
         if (start is not null && end is not null)
             Ensure.That(end.Value - start.Value <= TimeSpan.FromDays(ExperimentRules.MaxRangeDays), $"An experiment can run for at most {ExperimentRules.MaxRangeDays} days");

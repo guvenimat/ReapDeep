@@ -165,6 +165,10 @@ $html = Dom "#/flags" "document.querySelector('[data-testid=flags-card]') && !do
 Check "Feature flags tab renders for the owner with a 'New flag' action" ($html -match 'data-testid="flags-card"' -and $html -match 'data-testid="new-flag"')
 $html = Dom "#/flags" "(function(){const b=document.querySelector('[data-testid=new-flag]');if(b&&!window.__f){window.__f=1;b.click();return false}const a=document.querySelector('[data-testid=flag-editor] .add-button');if(a&&window.__f===1){window.__f=2;a.click()}return false})() || document.querySelector('[data-testid=flag-editor] .suggest input')"
 Check "the flag editor opens with a person property field that suggests names" ((Section $html "flag-editor") -match 'role="combobox"' -and (Section $html "flag-editor") -match 'Create flag')
+$html = Dom "#/experiments" "document.querySelector('[data-testid=experiments-card]') && !document.querySelector('.skeleton')"
+Check "Experiments tab renders for the owner with a 'New experiment' action" ($html -match 'data-testid="experiments-card"' -and $html -match 'data-testid="new-experiment"')
+$html = Dom "#/experiments/new" "document.querySelector('[data-testid=experiment-editor] .suggest input') && !document.querySelector('.skeleton')"
+Check "the experiment editor opens with a goal event field that suggests names and a flag picker" ((Section $html "experiment-editor") -match 'role="combobox"' -and (Section $html "experiment-editor") -match 'id="experiment-flag"' -and (Section $html "experiment-editor") -match 'Create experiment')
 
 Write-Host "`n4c) Catalog tab"
 $html = Dom "#/catalog" "[...document.querySelectorAll('[data-testid=recommendation-performance] tbody tr')].some((r) => r.textContent.includes('pdp-$tag'))"

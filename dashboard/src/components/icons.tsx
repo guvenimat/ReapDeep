@@ -4,7 +4,7 @@ export type IconName =
   | 'dashboards' | 'trends' | 'funnels' | 'retention' | 'paths' | 'events' | 'persons' | 'settings'
   | 'plus' | 'close' | 'chevron-left' | 'chevron-right' | 'chevron-down' | 'search' | 'refresh' | 'logout'
   | 'sun' | 'moon' | 'trash' | 'edit' | 'copy' | 'key' | 'users' | 'lock' | 'calendar' | 'bookmark' | 'external' | 'menu'
-  | 'catalog' | 'upload' | 'sparkles' | 'lifecycle' | 'rfm' | 'bell' | 'flag'
+  | 'catalog' | 'upload' | 'sparkles' | 'lifecycle' | 'rfm' | 'bell' | 'flag' | 'flask'
 
 const PATHS: Record<IconName, ReactNode> = {
   dashboards: <><rect x="3.5" y="3.5" width="7" height="9" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="5" rx="1.5" /><rect x="13.5" y="11.5" width="7" height="9" rx="1.5" /><rect x="3.5" y="15.5" width="7" height="5" rx="1.5" /></>,
@@ -40,6 +40,7 @@ const PATHS: Record<IconName, ReactNode> = {
   lifecycle: <><path d="M3.5 12h17" /><path d="M6.5 12V6.5M10.5 12V4.5M14.5 12V7.5M18.5 12V9" /><path d="M8.5 12v4.5M16.5 12v6" /></>,
   rfm: <><rect x="3.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="13.5" y="3.5" width="7" height="7" rx="1.5" /><rect x="3.5" y="13.5" width="7" height="7" rx="1.5" /><path d="M14 17h6M17 14v6" /></>,
   flag: <><path d="M5.5 20.5v-16" /><path d="M5.5 4.5h11l-2.5 4 2.5 4h-11" /></>,
+  flask: <><path d="M9.5 3.5h5M10.5 3.5v6l-5.5 9a1.5 1.5 0 0 0 1.3 2.3h11.4a1.5 1.5 0 0 0 1.3-2.3l-5.5-9v-6" /><path d="M7.5 15h9" /></>,
   bell: <><path d="M6 16.5V11a6 6 0 0 1 12 0v5.5l1.5 2h-15z" /><path d="M10 20.5a2 2 0 0 0 4 0" /></>,
   sparkles: <><path d="M10 3.5l1.6 4.4 4.4 1.6-4.4 1.6L10 15.5l-1.6-4.4-4.4-1.6 4.4-1.6z" /><path d="M17.5 14l.8 2.2 2.2.8-2.2.8-.8 2.2-.8-2.2-2.2-.8 2.2-.8z" /></>,
 }
