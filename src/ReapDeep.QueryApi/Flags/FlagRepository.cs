@@ -78,4 +78,10 @@ public sealed class FlagRepository(NpgsqlDataSource db)
 
     static async Task<FeatureFlag?> GetAsync(NpgsqlConnection conn, long projectId, long id) =>
         (await conn.QuerySingleOrDefaultAsync<FlagRecord>(Select + " AND f.id = @Id", new { ProjectId = projectId, Id = id }))?.ToContract();
+
+    public async Task<List<long>> ExistingCohortsAsync(long projectId, long[] ids, CancellationToken ct)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        return (await conn.QueryAsync<long>("SELECT id FROM cohorts WHERE project_id = @ProjectId AND id = ANY(@Ids)", new { ProjectId = projectId, Ids = ids })).AsList();
+    }
 }

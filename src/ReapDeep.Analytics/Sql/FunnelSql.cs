@@ -10,11 +10,12 @@ public static class FunnelSql
     {
         var conds = steps.Select(st =>
         {
-            var parts = new List<string> { $"e.event = {b.P(st.Event)}" };
+            var parts = new List<string> { SqlFragments.EventIs(b, st.Event, st.Events) };
             parts.AddRange(st.Filters?.Select(b.Condition) ?? []);
             return "(" + string.Join(" AND ", parts) + ")";
         }).ToList();
-        b.Where($"e.event IN ({string.Join(", ", steps.Select(st => st.Event).Distinct().Select(e => b.P(e)))})");
+        var all = steps.SelectMany(st => st.Events is { Count: > 0 } events ? events : [st.Event]).Distinct();
+        b.Where($"e.event IN ({string.Join(", ", all.Select(e => b.P(e)))})");
         return conds;
     }
 

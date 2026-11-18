@@ -7,6 +7,7 @@ export type Interval = 'hour' | 'day' | 'week' | 'month'
 export interface Filter { scope: Scope; property: string; op: Op; value?: string }
 export interface Breakdown { scope: Scope; property: string; limit?: number; cohort_ids?: number[] }
 export interface Series { event: string; metric: Metric; property?: string }
+export interface ActionDef { id: number; name: string; description: string; events: string[]; created_by: string | null; updated_at: string }
 export interface DateRange { date_from?: string; date_to?: string }
 
 export interface TrendResult {
@@ -110,6 +111,7 @@ export type KeyScope = 'read' | 'catalog_write' | 'server'
 export interface ApiKey { id: number; name: string; prefix: string; scope: KeyScope; created_by: string | null; created_at: string; revoked_at: string | null }
 
 export type InsightKind = 'trends' | 'funnels' | 'retention' | 'paths' | 'rfm' | 'lifecycle'
+export interface Annotation { id: number; day: string; content: string; created_by: string | null; created_at: string }
 export interface Insight {
   id: number; name: string; kind: InsightKind; query: Record<string, unknown>
   created_by: string | null; created_at: string; updated_at: string
@@ -187,7 +189,7 @@ export interface AlertInput {
   channel: AlertChannel; webhook_url?: string; email_to?: string[]
 }
 
-export type FlagOp = 'eq' | 'neq' | 'contains' | 'not_contains' | 'in' | 'not_in' | 'gt' | 'gte' | 'lt' | 'lte' | 'is_set' | 'is_not_set'
+export type FlagOp = 'eq' | 'neq' | 'contains' | 'not_contains' | 'in' | 'not_in' | 'gt' | 'gte' | 'lt' | 'lte' | 'is_set' | 'is_not_set' | 'in_cohort' | 'not_in_cohort'
 export type FlagScalar = string | number | boolean
 export interface FlagVariant { key: string; percentage: number }
 export interface FlagCondition { property: string; op: FlagOp; value?: FlagScalar | FlagScalar[] | null }

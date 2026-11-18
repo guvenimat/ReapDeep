@@ -1,7 +1,7 @@
-import { useState, type FormEvent } from 'react'
+import { useContext, useState, type FormEvent } from 'react'
 import { api, errorMessage } from '../../api/client'
 import type { FeatureFlag, FlagCondition, FlagOp, FlagScalar, FlagVariant } from '../../api/types'
-import { SuggestInput } from '../../components/editors'
+import { CohortsContext, SuggestInput } from '../../components/editors'
 import { Icon } from '../../components/icons'
 import { Badge, Card, FormMessage, IconButton, Segmented, Status } from '../../components/ui'
 import { ago } from '../../lib/format'
@@ -20,20 +20,26 @@ export const FLAG_OPS: { id: FlagOp; label: string }[] = [
   { id: 'lte', label: '≤' },
   { id: 'is_set', label: 'is set' },
   { id: 'is_not_set', label: 'is not set' },
+  { id: 'in_cohort', label: 'is in cohort' },
+  { id: 'not_in_cohort', label: 'is not in cohort' },
 ]
 
 const isList = (op: FlagOp) => op === 'in' || op === 'not_in'
 const isNumeric = (op: FlagOp) => op === 'gt' || op === 'gte' || op === 'lt' || op === 'lte'
 const hasValue = (op: FlagOp) => op !== 'is_set' && op !== 'is_not_set'
+const isCohort = (op: FlagOp) => op === 'in_cohort' || op === 'not_in_cohort'
 
-export function describeCondition(c: FlagCondition) {
+export function describeCondition(c: FlagCondition, cohortName?: (id: number) => string | undefined) {
   const op = FLAG_OPS.find((o) => o.id === c.op)?.label ?? c.op
+  if (isCohort(c.op)) return `person ${op} ${cohortName?.(Number(c.value)) ?? `#${c.value}`}`
   if (!hasValue(c.op)) return `${c.property} ${op}`
   const value = Array.isArray(c.value) ? c.value.join(', ') : String(c.value ?? '')
   return `${c.property} ${op} ${value}`
 }
 
 export function Flags({ canManage }: { canManage: boolean }) {
+  const cohorts = useContext(CohortsContext)
+  const cohortName = (id: number) => cohorts.find((c) => c.id === id)?.name
   const [version, setVersion] = useState(0)
   const [editing, setEditing] = useState<FeatureFlag | 'new'>()
   const [message, setMessage] = useState<{ text: string; error?: boolean }>()
@@ -104,7 +110,7 @@ export function Flags({ canManage }: { canManage: boolean }) {
                     <td className="flag-targeting">
                       {f.conditions.length === 0
                         ? <span className="muted">Everyone</span>
-                        : f.conditions.map((c, i) => <span key={i} className="cell-sub">{describeCondition(c)}</span>)}
+                        : f.conditions.map((c, i) => <span key={i} className="cell-sub">{describeCondition(c, cohortName)}</span>)}
                     </td>
                     <td className="nowrap muted" title={f.updated_by ?? undefined}>{ago(f.updated_at)}</td>
                     {canManage && (
@@ -135,6 +141,7 @@ function toDraft(c: FlagCondition): ConditionDraft {
 
 function fromDraft(c: ConditionDraft): FlagCondition {
   const property = c.property.trim()
+  if (isCohort(c.op)) return { property: '$cohort', op: c.op, value: Number(c.value) }
   if (!hasValue(c.op)) return { property, op: c.op }
   if (isList(c.op)) return { property, op: c.op, value: c.value.split(',').map((v) => v.trim()).filter(Boolean) }
   const value: FlagScalar = isNumeric(c.op) && c.value.trim() !== '' && !Number.isNaN(Number(c.value)) ? Number(c.value) : c.value
@@ -151,12 +158,13 @@ function FlagEditor({ flag, onSaved, onCancel }: { flag?: FeatureFlag; onSaved: 
   const [kind, setKind] = useState<'boolean' | 'multivariate'>(flag?.variants.length ? 'multivariate' : 'boolean')
   const [variants, setVariants] = useState<FlagVariant[]>(flag?.variants.length ? flag.variants : DEFAULT_VARIANTS)
   const [conditions, setConditions] = useState<ConditionDraft[]>((flag?.conditions ?? []).map(toDraft))
+  const cohorts = useContext(CohortsContext)
   const [enabled, setEnabled] = useState(flag?.enabled ?? false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
   const lockedBy = flag?.locked_by_experiment ?? null
   const total = variants.reduce((s, v) => s + (Number(v.percentage) || 0), 0)
-  const valid = key.trim() !== '' && rollout !== '' && (kind === 'boolean' || total === 100) && conditions.every((c) => c.property.trim() !== '')
+  const valid = key.trim() !== '' && rollout !== '' && (kind === 'boolean' || total === 100) && conditions.every((c) => (isCohort(c.op) ? c.value !== '' : c.property.trim() !== ''))
 
   const setVariant = (i: number, patch: Partial<FlagVariant>) => setVariants(variants.map((v, j) => (j === i ? { ...v, ...patch } : v)))
   const setCondition = (i: number, patch: Partial<ConditionDraft>) => setConditions(conditions.map((c, j) => (j === i ? { ...c, ...patch } : c)))
@@ -204,11 +212,22 @@ function FlagEditor({ flag, onSaved, onCancel }: { flag?: FeatureFlag; onSaved: 
             <span className="editor-hint">All conditions must match the person properties the site passes to loadFlags(). With no conditions everyone qualifies.</span>
             {conditions.map((c, i) => (
               <div className="row flag-condition" key={i}>
-                <SuggestInput list="person-props" placeholder="property" value={c.property} onChange={(v) => setCondition(i, { property: v })} aria-label="Person property" />
-                <select value={c.op} onChange={(e) => setCondition(i, { op: e.target.value as FlagOp })} aria-label="Operator" className="op">
+                {isCohort(c.op)
+                  ? <span className="cohort-subject">Person</span>
+                  : <SuggestInput list="person-props" placeholder="property" value={c.property} onChange={(v) => setCondition(i, { property: v })} aria-label="Person property" />}
+                <select value={c.op} aria-label="Operator" className="op" onChange={(e) => {
+                  const op = e.target.value as FlagOp
+                  setCondition(i, isCohort(op) === isCohort(c.op) ? { op } : { op, property: isCohort(op) ? '$cohort' : '', value: '' })
+                }}>
                   {FLAG_OPS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
                 </select>
-                {hasValue(c.op) && (
+                {isCohort(c.op) && (
+                  <select value={c.value} onChange={(e) => setCondition(i, { value: e.target.value })} aria-label="Cohort">
+                    <option value="">Choose a cohort…</option>
+                    {cohorts.map((co) => <option key={co.id} value={String(co.id)}>{co.name}</option>)}
+                  </select>
+                )}
+                {hasValue(c.op) && !isCohort(c.op) && (
                   <input value={c.value} onChange={(e) => setCondition(i, { value: e.target.value })} aria-label="Value"
                     placeholder={isList(c.op) ? 'pro, team' : isNumeric(c.op) ? '18' : 'value'} />
                 )}

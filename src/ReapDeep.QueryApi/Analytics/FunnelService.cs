@@ -1,13 +1,14 @@
 using System.Diagnostics;
 using ReapDeep.Analytics;
 using ReapDeep.Analytics.Sql;
+using ReapDeep.QueryApi.Actions;
 using ReapDeep.QueryApi.Auth;
 using ReapDeep.QueryApi.Cohorts;
 using ReapDeep.QueryApi.Infrastructure;
 
 namespace ReapDeep.QueryApi.Analytics;
 
-public sealed class FunnelService(StarRocksClient starRocks, CohortService cohorts)
+public sealed class FunnelService(StarRocksClient starRocks, CohortService cohorts, ActionRepository actions)
 {
     const long DefaultWindowSeconds = 7 * 24 * 3600;
     const long MaxWindowSeconds = 90 * 24 * 3600;
@@ -52,7 +53,7 @@ public sealed class FunnelService(StarRocksClient starRocks, CohortService cohor
     public async Task<FunnelPersonsResponse> PersonsAsync(ProjectContext project, FunnelPersonsRequest req, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
-        var steps = Steps(req.Steps);
+        var steps = Steps(await actions.ApplyAsync(project.ProjectId, req.Steps ?? [], ct));
         var window = Window(req.WindowSeconds);
         var kind = Ensure.OneOf(req.Kind ?? FunnelSql.Dropped, "kind", FunnelSql.Dropped, FunnelSql.Converted);
         var step = Ensure.InRange(req.Step ?? 1, 1, kind == FunnelSql.Dropped ? steps.Count - 1 : steps.Count, "step");
@@ -70,7 +71,7 @@ public sealed class FunnelService(StarRocksClient starRocks, CohortService cohor
 
     async Task<Plan> BuildPlanAsync(ProjectContext project, FunnelRequest req, CancellationToken ct)
     {
-        var steps = Steps(req.Steps);
+        var steps = Steps(await actions.ApplyAsync(project.ProjectId, req.Steps ?? [], ct));
         var window = Window(req.WindowSeconds);
         var sampling = req.Sampling ?? 1;
         Ensure.That(sampling is >= 0.01 and <= 1, "sampling must be between 0.01 and 1");

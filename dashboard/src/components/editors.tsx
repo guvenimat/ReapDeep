@@ -1,20 +1,28 @@
 import { createContext, useContext, useEffect, useId, useMemo, useRef, useState, type InputHTMLAttributes, type KeyboardEvent, type ReactNode } from 'react'
-import type { Breakdown, Cohort, Filter, Metadata, Op, Scope } from '../api/types'
+import type { ActionDef, Breakdown, Cohort, Filter, Metadata, Op, Scope } from '../api/types'
 import { Icon } from './icons'
 import { IconButton, Segmented } from './ui'
 
 export const MetaContext = createContext<Metadata | undefined>(undefined)
 export const CohortsContext = createContext<Cohort[]>([])
+export const ActionsContext = createContext<{ actions: ActionDef[]; reload: () => void }>({ actions: [], reload: () => {} })
+
+export const ACTION_PREFIX = 'action:'
+
+export function eventOrAction(value: string): { event: string } | { action: string } {
+  return value.startsWith(ACTION_PREFIX) ? { action: value.slice(ACTION_PREFIX.length) } : { event: value }
+}
 
 export const MAX_BREAKDOWN_COHORTS = 5
 
-export type SuggestList = 'events' | 'event-props' | 'person-props'
+export type SuggestList = 'events' | 'events-actions' | 'event-props' | 'person-props'
 
 export interface SuggestOption { value: string; type?: string }
 
 const MAX_SUGGESTIONS = 200
 
-export function suggestOptions(meta: Metadata | undefined, list: SuggestList): SuggestOption[] {
+export function suggestOptions(meta: Metadata | undefined, list: SuggestList, actions: ActionDef[] = []): SuggestOption[] {
+  if (list === 'events-actions') return [...actions.map((a) => ({ value: ACTION_PREFIX + a.name, type: 'action' })), ...(meta?.events ?? []).map((e) => ({ value: e.name }))]
   if (!meta) return []
   if (list === 'events') return meta.events.map((e) => ({ value: e.name }))
   if (list === 'person-props') return meta.person_properties.map((p) => ({ value: p.name, type: p.type ?? undefined }))
@@ -38,7 +46,8 @@ type SuggestInputProps = {
 
 export function SuggestInput({ list, value, onChange, className, ...inputProps }: SuggestInputProps) {
   const meta = useContext(MetaContext)
-  const options = useMemo(() => suggestOptions(meta, list), [meta, list])
+  const { actions } = useContext(ActionsContext)
+  const options = useMemo(() => suggestOptions(meta, list, actions), [meta, list, actions])
   const [open, setOpen] = useState(false)
   const [query, setQuery] = useState<string | null>(null)
   const [active, setActive] = useState(-1)

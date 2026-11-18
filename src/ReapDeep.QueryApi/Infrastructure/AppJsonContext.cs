@@ -1,5 +1,7 @@
 using System.Text.Json.Serialization;
+using ReapDeep.QueryApi.Actions;
 using ReapDeep.QueryApi.Alerts;
+using ReapDeep.QueryApi.Annotations;
 using ReapDeep.QueryApi.Analytics;
 using ReapDeep.QueryApi.Auth;
 using ReapDeep.QueryApi.Catalog;
@@ -71,6 +73,12 @@ namespace ReapDeep.QueryApi.Infrastructure;
 [JsonSerializable(typeof(ProjectSettingsRequest))]
 [JsonSerializable(typeof(RecommendationSecretResponse))]
 [JsonSerializable(typeof(InsightBody))]
+[JsonSerializable(typeof(AnnotationBody))]
+[JsonSerializable(typeof(ActionBody))]
+[JsonSerializable(typeof(ActionRow))]
+[JsonSerializable(typeof(ActionsResponse))]
+[JsonSerializable(typeof(AnnotationRow))]
+[JsonSerializable(typeof(AnnotationsResponse))]
 [JsonSerializable(typeof(InsightRow))]
 [JsonSerializable(typeof(InsightsResponse))]
 [JsonSerializable(typeof(DashboardBody))]

@@ -4,10 +4,12 @@ import { bucketLabel, compact, niceTicks, num } from '../../lib/format'
 import { useWidth } from '../../lib/hooks'
 import { columnPath, monotonePath, seriesColor, Tooltip, TooltipRow } from './common'
 
+export interface ChartNote { index: number; day: string; content: string }
+
 export interface ChartSeries { key: string; label: string; colorIndex: number; values: number[]; dashed?: boolean }
 
-export function TimeChart({ buckets, interval, series, mode, height = 280 }: {
-  buckets: string[]; interval: Interval; series: ChartSeries[]; mode: 'line' | 'bar'; height?: number
+export function TimeChart({ buckets, interval, series, mode, height = 280, notes = [] }: {
+  buckets: string[]; interval: Interval; series: ChartSeries[]; mode: 'line' | 'bar'; height?: number; notes?: ChartNote[]
 }) {
   const [ref, width] = useWidth<HTMLDivElement>()
   const [hover, setHover] = useState<{ i: number; x: number; y: number } | null>(null)
@@ -87,6 +89,13 @@ export function TimeChart({ buckets, interval, series, mode, height = 280 }: {
                 ),
               )}
 
+          {[...new Set(notes.map((a) => a.index))].filter((i) => i < n).map((i) => (
+            <g key={`note-${i}`} className="annotation">
+              <line className="annotation-line" x1={x(i)} x2={x(i)} y1={m.top} y2={m.top + innerH} />
+              <circle className="annotation-marker" cx={x(i)} cy={m.top + innerH} r={4.5} />
+            </g>
+          ))}
+
           {endLabels.map(({ s, y: ly }) => (
             <g key={s.key}>
               <circle cx={x(n - 1)} cy={ly} r={4} fill={seriesColor(s.colorIndex)} className="dot" />
@@ -113,6 +122,9 @@ export function TimeChart({ buckets, interval, series, mode, height = 280 }: {
           <div className="tooltip-title">{bucketLabel(buckets[hover.i], interval, true)}</div>
           {series.toSorted((a, b) => b.values[hover.i] - a.values[hover.i]).map((s) => (
             <TooltipRow key={s.key} color={seriesColor(s.colorIndex)} label={s.label} value={num(s.values[hover.i])} />
+          ))}
+          {notes.filter((a) => a.index === hover.i).map((a, k) => (
+            <div key={k} className="tooltip-note"><span className="annotation-day">{a.day}</span> {a.content}</div>
           ))}
         </Tooltip>
       )}

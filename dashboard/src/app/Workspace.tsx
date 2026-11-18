@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { api, setProject, storedProjectId } from '../api/client'
 import type { Me } from '../api/types'
-import { CohortsContext, MetaContext } from '../components/editors'
+import { CohortsContext, MetaContext, ActionsContext } from '../components/editors'
 import { EmptyState } from '../components/ui'
 import { Alerts } from '../features/alerts/Alerts'
 import { Catalog } from '../features/catalog/Catalog'
@@ -39,6 +39,9 @@ export function Workspace({ me, onLogout, onAccessChanged }: { me: Me; onLogout:
   const meta = useQuery((signal) => api.metadata(signal), [projectId])
   const [cohortsVersion, setCohortsVersion] = useState(0)
   const cohorts = useQuery((signal) => api.cohorts(signal), [projectId, cohortsVersion])
+  const [actionsVersion, setActionsVersion] = useState(0)
+  const actions = useQuery((signal) => api.actions(signal), [projectId, actionsVersion])
+  const actionsContext = useMemo(() => ({ actions: actions.data?.actions ?? [], reload: () => setActionsVersion((v) => v + 1) }), [actions.data])
   const err = meta.error && !meta.loading ? meta.error : undefined
   const status = meta.data && !meta.error ? 'ok' : err ? 'down' : 'checking'
 
@@ -71,6 +74,7 @@ export function Workspace({ me, onLogout, onAccessChanged }: { me: Me; onLogout:
   return (
     <MetaContext.Provider value={meta.data}>
       <CohortsContext.Provider value={cohorts.data?.cohorts ?? []}>
+      <ActionsContext.Provider value={actionsContext}>
         <div className="shell">
           <Sidebar me={me} project={project} active={route.tab} status={status} statusError={err}
             onNavigate={(t) => navigate(t)} onProjectChange={changeProject} onLogout={onLogout} />
@@ -103,6 +107,7 @@ export function Workspace({ me, onLogout, onAccessChanged }: { me: Me; onLogout:
             </main>
           </div>
         </div>
+      </ActionsContext.Provider>
       </CohortsContext.Provider>
     </MetaContext.Provider>
   )

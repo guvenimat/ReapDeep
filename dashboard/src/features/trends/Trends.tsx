@@ -3,11 +3,13 @@ import type { Breakdown, Filter, Interval, Metric, Series, TrendResponse, TrendR
 import { defaultInterval, readState, toDateRange, type Range } from '../../app/route'
 import { Legend, MAX_SERIES, seriesColor } from '../../components/charts/common'
 import { TimeChart, type ChartSeries } from '../../components/charts/TimeChart'
-import { AddButton, BreakdownEditor, completeBreakdown, completeFilters, EditorSection, FilterEditor, SuggestInput } from '../../components/editors'
+import { AddButton, BreakdownEditor, completeBreakdown, completeFilters, EditorSection, FilterEditor, SuggestInput, eventOrAction } from '../../components/editors'
 import { Card, IconButton, Segmented, StatTile, Status } from '../../components/ui'
 import { bucketLabel, ms, num, pct } from '../../lib/format'
 import { useDebounced, useQuery } from '../../lib/hooks'
 import { SaveInsight } from '../insights/SaveInsight'
+import { AnnotationNotes, useAnnotations } from '../insights/Annotations'
+import { trendsCsv } from '../../lib/csv'
 
 export interface TrendState {
   series: Series[]
@@ -41,7 +43,7 @@ export const trendInterval = (state: TrendState, range: Range) => state.interval
 
 export function trendBody(state: TrendState, range: Range) {
   return {
-    series: state.series.filter((s) => s.event.trim()).map((s) => (needsProperty(s.metric) ? s : { event: s.event, metric: s.metric })),
+    series: state.series.filter((s) => s.event.trim()).map((s) => ({ ...eventOrAction(s.event), metric: s.metric, ...(needsProperty(s.metric) ? { property: s.property } : {}) })),
     interval: trendInterval(state, range),
     filters: completeFilters(state.filters),
     breakdown: completeBreakdown(state.breakdown),
@@ -99,6 +101,7 @@ export function Trends({ params, range, onChange, onInsight }: {
   const visible = visibleResults(q.data)
   const current = visible.filter((r) => !r.compare)
   const buckets = current[0]?.data.map((d) => d.bucket) ?? []
+  const annotations = useAnnotations(buckets, interval)
   const chartSeries = trendChartSeries(q.data)
   const previousOf = (r: TrendResult) => visible.find((p) => p.compare && sameSeries(p, r))
 
@@ -110,7 +113,7 @@ export function Trends({ params, range, onChange, onInsight }: {
             <div className="editor-item" key={i}>
               <div className="row">
                 <span className="series-letter" aria-label={`Series ${seriesLetter(i)}`}>{seriesLetter(i)}</span>
-                <SuggestInput list="events" placeholder="event" value={s.event} aria-label={`Series ${i + 1} event`}
+                <SuggestInput list="events-actions" placeholder="event or action" value={s.event} aria-label={`Series ${i + 1} event`}
                   onChange={(v) => setSeries(i, { event: v })} />
                 {state.series.length > 1 && (
                   <IconButton icon="close" label="Remove series" onClick={() => set({ series: state.series.filter((_, k) => k !== i) })} />
@@ -161,7 +164,7 @@ export function Trends({ params, range, onChange, onInsight }: {
       </aside>
 
       <section className="content">
-        <SaveInsight kind="trends" query={state} params={params} onInsight={onInsight} />
+        <SaveInsight kind="trends" query={state} params={params} onInsight={onInsight} csv={q.data && trendsCsv(q.data)} />
         <Status state={q} empty={results.every((r) => r.total === 0)}>
           {current.length <= 4 && (
             <div className="stats">
@@ -181,7 +184,8 @@ export function Trends({ params, range, onChange, onInsight }: {
 
           <Card testId="trends-chart" title="Over time" meta={`${q.data?.timezone ?? ''} · ${ms(q.data?.took_ms ?? 0)}`}>
             <Legend items={chartSeries.map((s) => ({ label: s.label, colorIndex: s.colorIndex, dashed: s.dashed }))} />
-            <TimeChart buckets={buckets} interval={interval} series={chartSeries} mode={state.chart} />
+            <TimeChart buckets={buckets} interval={interval} series={chartSeries} mode={state.chart} notes={annotations.notes} />
+            <AnnotationNotes notes={annotations.notes} from={annotations.from} to={annotations.to} onChange={annotations.reload} />
             {current.length > MAX_SERIES && <p className="footnote">The chart shows the first {MAX_SERIES} series; the table has all of them.</p>}
             {state.compare && <p className="footnote">Dashed lines are the previous period of the same length, aligned bucket by bucket.</p>}
           </Card>

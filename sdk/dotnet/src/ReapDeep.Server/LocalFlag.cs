@@ -82,6 +82,8 @@ internal sealed class LocalCondition
 
     public bool Matches(IReadOnlyDictionary<string, string> properties)
     {
+        if (_op == "in_cohort") return false;
+        if (_op == "not_in_cohort") return true;
         var found = properties.TryGetValue(_property, out var actual);
         return _op switch
         {

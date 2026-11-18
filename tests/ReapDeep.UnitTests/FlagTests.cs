@@ -302,4 +302,35 @@ public class FlagValidationTests
         Assert.Null(back[1].Value);
         Assert.DoesNotContain("null", FlagRules.ConditionsJson(conditions));
     }
+
+    sealed class Members(params string[] ids) : IFlagCohorts
+    {
+        public bool Contains(long cohortId, string distinctId) => cohortId == 7 && ids.Contains(distinctId);
+    }
+
+    [Fact]
+    public void Cohort_conditions_need_a_cohort_id_and_ignore_the_property()
+    {
+        var c = FlagRules.Conditions([new FlagCondition("anything", "in_cohort", JsonDocument.Parse("7").RootElement)]);
+
+        Assert.Equal("$cohort", c[0].Property);
+        Assert.Equal([7L], FlagRules.CohortIds(c));
+        Assert.Throws<ValidationException>(() => FlagRules.Conditions([new FlagCondition("$cohort", "in_cohort", null)]));
+        Assert.Throws<ValidationException>(() => FlagRules.Conditions([new FlagCondition("$cohort", "not_in_cohort", JsonDocument.Parse("\"beta\"").RootElement)]));
+    }
+
+    [Fact]
+    public void A_cohort_condition_checks_the_identity_against_the_members()
+    {
+        var inBeta = new CompiledFlag("beta", "s", 100, [], [new FlagCondition("$cohort", "in_cohort", JsonDocument.Parse("7").RootElement)]);
+        var outsideBeta = new CompiledFlag("rest", "s", 100, [], [new FlagCondition("$cohort", "not_in_cohort", JsonDocument.Parse("7").RootElement)]);
+        var members = new Members("anon-1");
+
+        Assert.True(inBeta.Evaluate("anon-1", new Dictionary<string, string>(), members).Enabled);
+        Assert.False(inBeta.Evaluate("anon-2", new Dictionary<string, string>(), members).Enabled);
+        Assert.False(outsideBeta.Evaluate("anon-1", new Dictionary<string, string>(), members).Enabled);
+        Assert.True(outsideBeta.Evaluate("anon-2", new Dictionary<string, string>(), members).Enabled);
+        Assert.False(inBeta.Evaluate("anon-1", new Dictionary<string, string>()).Enabled);
+        Assert.Equal([7L], inBeta.CohortIds);
+    }
 }

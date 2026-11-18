@@ -29,8 +29,13 @@ public static class FlagOps
     public const string Lte = "lte";
     public const string IsSet = "is_set";
     public const string IsNotSet = "is_not_set";
+    public const string InCohort = "in_cohort";
+    public const string NotInCohort = "not_in_cohort";
+    public const string CohortProperty = "$cohort";
 
-    public static readonly string[] All = [Eq, Neq, Contains, NotContains, In, NotIn, Gt, Gte, Lt, Lte, IsSet, IsNotSet];
+    public static readonly string[] All = [Eq, Neq, Contains, NotContains, In, NotIn, Gt, Gte, Lt, Lte, IsSet, IsNotSet, InCohort, NotInCohort];
+
+    public static bool IsCohort(string op) => op is InCohort or NotInCohort;
 
     public static bool IsNumeric(string op) => op is Gt or Gte or Lt or Lte;
     public static bool IsList(string op) => op is In or NotIn;
@@ -91,8 +96,13 @@ public static partial class FlagRules
     static FlagCondition Condition(FlagCondition? c)
     {
         Ensure.That(c is not null, "A condition cannot be empty");
-        var property = ColumnMapper.Validate(c.Property?.Trim() ?? "");
         var op = Ensure.OneOf(c.Op, "op", FlagOps.All);
+        if (FlagOps.IsCohort(op))
+        {
+            Ensure.That(CohortId(c.Value) is > 0, $"'{op}' requires a cohort id as its value");
+            return new FlagCondition(FlagOps.CohortProperty, op, c.Value!.Value.Clone());
+        }
+        var property = ColumnMapper.Validate(c.Property?.Trim() ?? "");
         if (!FlagOps.HasValue(op)) return new FlagCondition(property, op);
 
         var value = c.Value is { ValueKind: not (JsonValueKind.Null or JsonValueKind.Undefined) } v
@@ -121,6 +131,12 @@ public static partial class FlagRules
             $"Values of '{property}' must be strings, numbers or booleans");
         Ensure.That(Text(value).Length <= MaxValueLength, $"Values of '{property}' can be at most {MaxValueLength} characters");
     }
+
+    public static long? CohortId(JsonElement? value) =>
+        value is { ValueKind: JsonValueKind.Number } v && v.TryGetInt64(out var id) ? id : null;
+
+    public static IEnumerable<long> CohortIds(IEnumerable<FlagCondition> conditions) =>
+        conditions.Where(c => FlagOps.IsCohort(c.Op)).Select(c => CohortId(c.Value)).OfType<long>().Distinct();
 
     public static string Text(JsonElement value) => value.ValueKind switch
     {

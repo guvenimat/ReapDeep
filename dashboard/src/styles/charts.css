@@ -37,3 +37,15 @@
 .tooltip .num { color: var(--text); font-weight: 600; }
 .line.dashed { stroke-dasharray: 5 4; opacity: 0.75; }
 .swatch.dashed { background: transparent; border: 2px dashed; width: 12px; height: 0; border-radius: 0; border-width: 2px 0 0; }
+
+.annotation-line { stroke: var(--accent); stroke-width: 1; stroke-dasharray: 2 4; opacity: 0.55; pointer-events: none; }
+.annotation-marker { fill: var(--accent); stroke: var(--surface); stroke-width: 2; pointer-events: none; }
+.tooltip-note { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--border); max-width: 260px; white-space: normal; }
+.tooltip-note .annotation-day, .annotation-day { color: var(--muted); font-variant-numeric: tabular-nums; }
+.annotations { margin-top: 12px; display: grid; gap: 8px; }
+.annotation-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.annotation-list li { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+.annotation-list .annotation-text { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.annotation-form { display: flex; flex-wrap: wrap; gap: 8px; }
+.annotation-form input[type=date] { width: 150px; }
+.annotation-form input:not([type=date]) { flex: 1; min-width: 200px; }

@@ -152,6 +152,21 @@ try {
     Check "plan=free, seats=50 -> false" ((Value (Flags "p-$tag" "pk_dev_local" @{ plan = "free"; seats = 50 }) $pro) -eq $false)
     Check "plan=pro, seats=3 -> false" ((Value (Flags "p-$tag" "pk_dev_local" @{ plan = "pro"; seats = 3 }) $pro) -eq $false)
 
+    Write-Host "`n8b) Cohort targeting"
+    $beta = (S POST "/cohorts" @{ name = "Beta $tag"; kind = "static"; members = @("beta-$tag-1", "beta-$tag-2") }).Json
+    Check "unknown cohort id -> 400" ((S POST "/flags" @{ key = "nc-$tag"; conditions = @(@{ property = '$cohort'; op = "in_cohort"; value = 999999999 }) }).Status -eq 400)
+    Check "in_cohort without a cohort id -> 400" ((S POST "/flags" @{ key = "nc2-$tag"; conditions = @(@{ property = '$cohort'; op = "in_cohort" }) }).Status -eq 400)
+    $inKey = "beta-$tag"; $outKey = "nobeta-$tag"
+    $inFlag = (S POST "/flags" @{ key = $inKey; enabled = $true; conditions = @(@{ property = '$cohort'; op = "in_cohort"; value = $beta.id }) }).Json; $created += $inFlag
+    $outFlag = (S POST "/flags" @{ key = $outKey; enabled = $true; conditions = @(@{ property = '$cohort'; op = "not_in_cohort"; value = $beta.id }) }).Json; $created += $outFlag
+    Check "flags with cohort conditions are created" ($inFlag.id -and $outFlag.id -and $inFlag.conditions[0].op -eq "in_cohort")
+    $synced = WaitFor { (Value (Flags "beta-$tag-1") $inKey) -eq $true } 120
+    Check "a cohort member gets the flag once the worker syncs the cohort" $synced
+    Check "the other member too, and not_in_cohort is off for them" ((Value (Flags "beta-$tag-2") $inKey) -eq $true -and (Value (Flags "beta-$tag-1") $outKey) -eq $false)
+    Check "someone outside the cohort: in_cohort off, not_in_cohort on" ((Value (Flags "stranger-$tag") $inKey) -eq $false -and (Value (Flags "stranger-$tag") $outKey) -eq $true)
+    $null = S DELETE "/cohorts/$($beta.id)"
+    Check "deleting the cohort turns the in_cohort flag off for its former members" (WaitFor { (Value (Flags "beta-$tag-1") $inKey) -eq $false } 60)
+
     Write-Host "`n9) Project isolation"
     $other = (S POST "/projects" @{ name = "Flags $tag" }).Json
     Check "second project created" ($other.id -gt 1 -and $other.public_key -like "pk_*")

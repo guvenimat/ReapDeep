@@ -54,6 +54,37 @@ $up = S PUT "/insights/$($tr.Json.id)" "{`"name`":`"Daily views $tag`"}"
 Check "rename keeps the query" ($up.Status -eq 200 -and $up.Json.name -eq "Daily views $tag" -and $up.Json.query.chart -eq "bar")
 Check "unknown insight -> 404" ((S PUT "/insights/999999" '{"name":"x"}').Status -eq 404)
 
+Write-Host "`n2b) Chart notes"
+$noteDay = [DateTime]::UtcNow.AddDays(-3).ToString("yyyy-MM-dd")
+$note = S POST "/annotations" ('{"day":"' + $noteDay + '","content":"Campaign launched ' + $tag + '"}')
+Check "a member adds a note to a day" ($note.Status -eq 201 -and $note.Json.day -eq $noteDay -and $note.Json.created_by)
+$from = [DateTime]::UtcNow.AddDays(-7).ToString("yyyy-MM-dd"); $to = [DateTime]::UtcNow.ToString("yyyy-MM-dd")
+$listed = @((K GET "/annotations?from=$from&to=$to").Json.annotations | Where-Object { $_.content -eq "Campaign launched $tag" })
+Check "a read key lists the notes of a range" ($listed.Count -eq 1)
+$outside = @((S GET "/annotations?from=$($([DateTime]::UtcNow.AddDays(-30)).ToString('yyyy-MM-dd'))&to=$($([DateTime]::UtcNow.AddDays(-10)).ToString('yyyy-MM-dd'))").Json.annotations | Where-Object { $_.content -eq "Campaign launched $tag" })
+Check "a range that does not include the day leaves it out" ($outside.Count -eq 0)
+Check "a read key cannot add notes -> 403" ((K POST "/annotations" ('{"day":"' + $noteDay + '","content":"x"}')).Status -eq 403)
+Check "invalid day -> 400" ((S POST "/annotations" '{"day":"18.11.2026","content":"x"}').Status -eq 400)
+Check "empty or longer than 300 characters -> 400" ((S POST "/annotations" ('{"day":"' + $noteDay + '","content":" "}')).Status -eq 400 -and (S POST "/annotations" ('{"day":"' + $noteDay + '","content":"' + ('a' * 301) + '"}')).Status -eq 400)
+Check "a range over 800 days -> 400" ((S GET "/annotations?from=2020-01-01&to=2026-01-01").Status -eq 400)
+Check "delete -> 204, then 404" ((S DELETE "/annotations/$($note.Json.id)").Status -eq 204 -and (S DELETE "/annotations/$($note.Json.id)").Status -eq 404)
+
+Write-Host "`n2c) Actions"
+$act = S POST "/actions" "{`"name`":`"Engaged $tag`",`"description`":`"viewed or bought`",`"events`":[`"view_$tag`",`"buy_$tag`",`"view_$tag`"]}"
+Check "a member creates an action; repeated events are kept once" ($act.Status -eq 201 -and @($act.Json.events).Count -eq 2)
+Check "the same name again -> 409" ((S POST "/actions" "{`"name`":`"Engaged $tag`",`"events`":[`"x`"]}").Status -eq 409)
+Check "an action without events -> 400" ((S POST "/actions" "{`"name`":`"Empty $tag`",`"events`":[]}").Status -eq 400)
+Check "a read key lists actions but cannot create them" (@((K GET "/actions").Json.actions | Where-Object { $_.name -eq "Engaged $tag" }).Count -eq 1 -and (K POST "/actions" "{`"name`":`"k`",`"events`":[`"x`"]}").Status -eq 403)
+$at = (K POST "/query/trends" "{`"series`":[{`"action`":`"Engaged $tag`"},{`"action`":`"Engaged $tag`",`"metric`":`"unique_users`"}]}").Json.results
+Check "a trend series from the action counts both events (4) and 3 persons -> $($at[0].total) / $($at[1].total)" ($at[0].total -eq 4 -and $at[1].total -eq 3 -and $at[0].event -eq "Engaged $tag")
+$af = (K POST "/query/funnels" "{`"steps`":[{`"action`":`"Engaged $tag`"},{`"event`":`"buy_$tag`"}]}").Json.results[0].steps
+Check "a funnel step from the action: 3 persons enter -> $($af[0].count)" ($af[0].count -eq 3 -and $af[0].event -eq "Engaged $tag")
+Check "an unknown action -> 400" ((K POST "/query/trends" "{`"series`":[{`"action`":`"Nope $tag`"}]}").Status -eq 400)
+$null = S PUT "/actions/$($act.Json.id)" "{`"name`":`"Engaged $tag`",`"events`":[`"buy_$tag`"]}"
+$at2 = (K POST "/query/trends" "{`"series`":[{`"action`":`"Engaged $tag`"}]}").Json.results
+Check "changing the action changes the result of the same query (1)" ($at2[0].total -eq 1)
+Check "delete -> 204, then the query reports the unknown action" ((S DELETE "/actions/$($act.Json.id)").Status -eq 204 -and (K POST "/query/trends" "{`"series`":[{`"action`":`"Engaged $tag`"}]}").Status -eq 400)
+
 Write-Host "`n3) Dashboards"
 $d = S POST "/dashboards" "{`"name`":`"Board $tag`",`"insight_ids`":[$($tr.Json.id),$($fu.Json.id)]}"
 Check "create a dashboard with two insights -> 201" ($d.Status -eq 201 -and @($d.Json.items).Count -eq 2 -and $d.Json.items[0].id -eq $tr.Json.id)

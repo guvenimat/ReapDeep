@@ -6,6 +6,7 @@ import { Card, Segmented, StatTile, Status } from '../../components/ui'
 import { dateTime, ms, num, pct } from '../../lib/format'
 import { useDebounced, useQuery } from '../../lib/hooks'
 import { SaveInsight } from '../insights/SaveInsight'
+import { retentionCsv } from '../../lib/csv'
 
 export interface RetentionState { start_event: string; return_event: string; period: 'day' | 'week'; periods: number; filters: Filter[] }
 
@@ -109,7 +110,7 @@ export function Retention({ params, range, onChange, onInsight }: {
         <FilterEditor filters={state.filters} onChange={(filters) => set({ filters })} />
       </aside>
       <section className="content">
-        <SaveInsight kind="retention" query={state} params={params} onInsight={onInsight} />
+        <SaveInsight kind="retention" query={state} params={params} onInsight={onInsight} csv={q.data && retentionCsv(q.data)} />
         <Status state={q} empty={q.data?.cohorts.every((c) => c.size === 0)}>
           <div className="stats">
             <StatTile label="People in cohorts" value={num(cohortSize)} hint={`${q.data?.cohorts.length ?? 0} cohorts`} />

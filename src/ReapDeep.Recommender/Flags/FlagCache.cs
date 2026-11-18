@@ -9,16 +9,27 @@ public sealed record ServerFlag(string Key, string Salt, int RolloutPercentage, 
 
 public sealed record FlagDefinitionsResponse(List<ServerFlag> Flags);
 
+public sealed class FlagCohorts(FrozenDictionary<long, FrozenSet<string>> members) : IFlagCohorts
+{
+    public static readonly FlagCohorts Empty = new(FrozenDictionary<long, FrozenSet<string>>.Empty);
+
+    public bool Contains(long cohortId, string distinctId) => members.TryGetValue(cohortId, out var ids) && ids.Contains(distinctId);
+}
+
 public sealed class FlagCache(NpgsqlDataSource db, IConfiguration cfg, ILogger<FlagCache> log) : BackgroundService
 {
     readonly TimeSpan _refreshInterval = TimeSpan.FromSeconds(int.TryParse(cfg["Recommender:FlagRefreshSeconds"], out var s) && s > 0 ? s : 5);
     static readonly TimeSpan RetryInterval = TimeSpan.FromSeconds(2);
 
-    internal sealed record VersionRecord(long Flags, DateTime? Updated);
+    internal sealed record VersionRecord(long Flags, DateTime? Updated, DateTime? CohortsSynced, long SyncedCohorts);
+    internal sealed record MemberRecord(long CohortId, string DistinctId);
     internal sealed record FlagRecord(long ProjectId, string Key, string Salt, int RolloutPercentage, string Variants, string Conditions);
 
     volatile FrozenDictionary<long, CompiledFlag[]>? _flags;
     volatile FrozenDictionary<long, ServerFlag[]> _definitions = FrozenDictionary<long, ServerFlag[]>.Empty;
+    volatile FlagCohorts _cohorts = FlagCohorts.Empty;
+
+    public IFlagCohorts Cohorts => _cohorts;
     VersionRecord? _version;
 
     public bool IsLoaded => _flags is not null;
@@ -46,7 +57,13 @@ public sealed class FlagCache(NpgsqlDataSource db, IConfiguration cfg, ILogger<F
     async Task RefreshAsync(CancellationToken ct)
     {
         await using var conn = await db.OpenConnectionAsync(ct);
-        var version = await conn.QuerySingleAsync<VersionRecord>("SELECT count(*) AS flags, max(updated_at) AS updated FROM feature_flags");
+        var version = await conn.QuerySingleAsync<VersionRecord>(
+            """
+            SELECT count(*) AS flags, max(updated_at) AS updated,
+                   (SELECT max(flag_synced_at) FROM cohorts) AS cohorts_synced,
+                   (SELECT count(*) FROM cohorts WHERE flag_synced_version IS NOT NULL) AS synced_cohorts
+            FROM feature_flags
+            """);
         if (IsLoaded && version == _version) return;
 
         var rows = await conn.QueryAsync<FlagRecord>("""
@@ -71,6 +88,11 @@ public sealed class FlagCache(NpgsqlDataSource db, IConfiguration cfg, ILogger<F
                 log.LogError(ex, "Project {Project}: flag {Flag} could not be loaded and is served as off", r.ProjectId, r.Key);
             }
         }
+        var cohortIds = compiled.Values.SelectMany(l => l).SelectMany(f => f.CohortIds).Distinct().ToArray();
+        var members = cohortIds.Length == 0 ? [] : (await conn.QueryAsync<MemberRecord>(
+            "SELECT cohort_id, distinct_id FROM flag_cohort_members WHERE cohort_id = ANY(@Ids)", new { Ids = cohortIds })).AsList();
+        _cohorts = new FlagCohorts(members.GroupBy(m => m.CohortId)
+            .ToFrozenDictionary(g => g.Key, g => g.Select(m => m.DistinctId).ToFrozenSet(StringComparer.Ordinal)));
         _definitions = definitions.ToFrozenDictionary(p => p.Key, p => p.Value.ToArray());
         _flags = compiled.ToFrozenDictionary(p => p.Key, p => p.Value.ToArray());
         _version = version;

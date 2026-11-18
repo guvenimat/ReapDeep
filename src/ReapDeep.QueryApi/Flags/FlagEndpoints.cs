@@ -34,6 +34,7 @@ public static class FlagEndpoints
     {
         var key = FlagRules.Key(req.Key);
         var values = Values(req, key, null);
+        await EnsureCohortsAsync(project, values, flags, ct);
         Ensure.That(await flags.CountAsync(project.ProjectId, ct) < FlagRules.MaxFlagsPerProject,
             $"A project can have at most {FlagRules.MaxFlagsPerProject} flags");
         var salt = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(8));
@@ -47,6 +48,7 @@ public static class FlagEndpoints
         if (await flags.GetAsync(project.ProjectId, id, ct) is not { } current) return ApiResults.NotFound("Flag not found");
         Ensure.That(req.Key is null || req.Key.Trim() == current.Key, "key cannot be changed; create a new flag instead");
         var values = Values(req, current.Key, current);
+        await EnsureCohortsAsync(project, values, flags, ct);
         var variantsChanged = !ExperimentRules.SameVariants(FlagRules.ParseVariants(values.Variants), current.Variants);
         if (variantsChanged && await experiments.NamesForFlagAsync(project.ProjectId, id, runningOnly: true, ct) is [var running, ..])
             return VariantsLocked(current.Key, running);
@@ -65,6 +67,15 @@ public static class FlagEndpoints
         if (await experiments.NamesForFlagAsync(project.ProjectId, id, runningOnly: false, ct) is { Count: > 0 } names)
             return ApiResults.Conflict($"The flag is used by the experiment{(names.Count > 1 ? "s" : "")} {string.Join(", ", names.Select(n => $"'{n}'"))}; delete them first");
         return await flags.DeleteAsync(project.ProjectId, id, ct) ? Results.NoContent() : ApiResults.NotFound("Flag not found");
+    }
+
+    static async Task EnsureCohortsAsync(ProjectContext project, FlagRepository.FlagValues values, FlagRepository flags, CancellationToken ct)
+    {
+        var ids = FlagRules.CohortIds(FlagRules.ParseConditions(values.Conditions)).ToArray();
+        if (ids.Length == 0) return;
+        var found = await flags.ExistingCohortsAsync(project.ProjectId, ids, ct);
+        var missing = ids.Except(found).ToList();
+        Ensure.That(missing.Count == 0, $"Unknown cohort in this project: {string.Join(", ", missing)}");
     }
 
     static FlagRepository.FlagValues Values(FlagBody req, string key, FeatureFlag? current)

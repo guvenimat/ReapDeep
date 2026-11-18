@@ -46,15 +46,16 @@ public static class FlagsEndpoint
             return Error(StatusCodes.Status400BadRequest, $"properties must be a JSON object of at most {MaxPropertiesLength} characters with at most {MaxProperties} string, number or boolean values; other values are ignored");
 
         ctx.Response.Headers.CacheControl = "private, no-store";
-        return Results.Json(new FlagsResponse(Evaluate(flags.Get(projectId), identity, props)), AppJsonContext.Default.FlagsResponse);
+        return Results.Json(new FlagsResponse(Evaluate(flags.Get(projectId), identity, props, flags.Cohorts)), AppJsonContext.Default.FlagsResponse);
     }
 
-    public static Dictionary<string, JsonElement> Evaluate(IReadOnlyList<CompiledFlag> flags, string identity, IReadOnlyDictionary<string, string> properties)
+    public static Dictionary<string, JsonElement> Evaluate(IReadOnlyList<CompiledFlag> flags, string identity, IReadOnlyDictionary<string, string> properties,
+        IFlagCohorts? cohorts = null)
     {
         var result = new Dictionary<string, JsonElement>(flags.Count, StringComparer.Ordinal);
         foreach (var flag in flags)
         {
-            var r = flag.Evaluate(identity, properties);
+            var r = flag.Evaluate(identity, properties, cohorts);
             result[flag.Key] = !r.Enabled ? False : r.Variant is null ? True : JsonSerializer.SerializeToElement(r.Variant, AppJsonContext.Default.String);
         }
         return result;

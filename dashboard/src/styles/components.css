@@ -512,3 +512,11 @@ button.link.active { text-decoration: underline; }
 .web-grid .card-head { flex-wrap: wrap; gap: 8px; }
 .web-table td.web-label { width: 100%; max-width: 0; }
 .web-table td.web-label .truncate { display: block; max-width: 100%; margin-bottom: 5px; }
+
+.action-list { list-style: none; margin: 0 0 12px; padding: 0; display: grid; gap: 6px; }
+.action-list li { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-size: 13px; }
+.action-events { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+.action-form { display: grid; gap: 8px; }
+.action-form .row input { flex: 1; min-width: 180px; }
+.action-event-inputs { flex-wrap: wrap; }
+.action-event-inputs > * { flex: 1 1 180px; }

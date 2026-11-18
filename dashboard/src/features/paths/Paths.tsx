@@ -7,6 +7,7 @@ import { Card, Segmented, Status } from '../../components/ui'
 import { ms, num, pct } from '../../lib/format'
 import { useDebounced, useQuery } from '../../lib/hooks'
 import { SaveInsight } from '../insights/SaveInsight'
+import { pathsCsv } from '../../lib/csv'
 
 export interface PathsState { start_event: string; depth: number; window_seconds: number; pageview_paths: boolean; filters: Filter[] }
 
@@ -106,7 +107,7 @@ export function Paths({ params, range, onChange, onInsight }: {
         <FilterEditor filters={state.filters} onChange={(filters) => set({ filters })} />
       </aside>
       <section className="content">
-        <SaveInsight kind="paths" query={state} params={params} onInsight={onInsight} />
+        <SaveInsight kind="paths" query={state} params={params} onInsight={onInsight} csv={q.data && pathsCsv(q.data)} />
         <Status state={q} empty={q.data?.persons === 0}>
           <Card testId="paths-card" title={<>Paths from <span className="chip">{q.data?.start_event}</span></>}
             meta={`${num(q.data?.persons ?? 0)} persons · ${ms(q.data?.took_ms ?? 0)}`}>

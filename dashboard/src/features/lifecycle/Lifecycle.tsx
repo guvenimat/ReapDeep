@@ -8,6 +8,7 @@ import { Card, Segmented, StatTile, Status } from '../../components/ui'
 import { bucketLabel, ms, num } from '../../lib/format'
 import { useDebounced, useQuery } from '../../lib/hooks'
 import { SaveInsight } from '../insights/SaveInsight'
+import { lifecycleCsv } from '../../lib/csv'
 
 type Period = 'day' | 'week' | 'month'
 export interface LifecycleState { event: string; period: Period; lookback_days: number; filters: Filter[] }
@@ -68,7 +69,7 @@ export function Lifecycle({ params, range, onChange, onInsight }: {
         <FilterEditor filters={state.filters} onChange={(filters) => set({ filters })} />
       </aside>
       <section className="content">
-        <SaveInsight kind="lifecycle" query={state} params={params} onInsight={onInsight} />
+        <SaveInsight kind="lifecycle" query={state} params={params} onInsight={onInsight} csv={q.data && lifecycleCsv(q.data)} />
         <Status state={q} empty={lifecycleEmpty(d)}>
           {d && (
             <>
