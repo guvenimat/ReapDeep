@@ -9,6 +9,7 @@ import { Card, FormMessage, IconButton, Segmented, StatTile, Status } from '../.
 import { duration, ms, num, pct, shortId } from '../../lib/format'
 import { useDebounced, useQuery } from '../../lib/hooks'
 import { SaveInsight } from '../insights/SaveInsight'
+import { funnelsCsv } from '../../lib/csv'
 
 export interface FunnelState { steps: string[]; window_seconds: number; filters: Filter[]; breakdown?: Breakdown; sampling: number }
 
@@ -87,7 +88,7 @@ export function Funnels({ params, range, onChange, onInsight }: {
       </aside>
 
       <section className="content">
-        <SaveInsight kind="funnels" query={state} params={params} onInsight={onInsight} />
+        <SaveInsight kind="funnels" query={state} params={params} onInsight={onInsight} csv={q.data && funnelsCsv(q.data)} />
         <Status state={q} empty={groups.every((g) => g.counts[0] === 0)}>
           {overall && last && (
             <div className="stats">

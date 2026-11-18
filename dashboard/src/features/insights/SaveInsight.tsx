@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { api, errorMessage } from '../../api/client'
 import type { Insight, InsightKind } from '../../api/types'
 import { Icon } from '../../components/icons'
+import { downloadCsv, type CsvTable } from '../../lib/csv'
 import { useQuery } from '../../lib/hooks'
 
 export const KIND_LABEL: Record<InsightKind, string> = { trends: 'Trend', funnels: 'Funnel', retention: 'Retention', paths: 'Paths', lifecycle: 'Lifecycle', rfm: 'RFM' }
@@ -20,8 +21,8 @@ export function insightHref(insight: Insight, params: URLSearchParams) {
   return `#/${insight.kind}?${p.toString()}`
 }
 
-export function SaveInsight({ kind, query, params, onInsight }: {
-  kind: InsightKind; query: object; params: URLSearchParams; onInsight: (id?: string) => void
+export function SaveInsight({ kind, query, params, onInsight, csv }: {
+  kind: InsightKind; query: object; params: URLSearchParams; onInsight: (id?: string) => void; csv?: CsvTable
 }) {
   const insightId = Number(params.get('insight')) || undefined
   const [version, setVersion] = useState(0)
@@ -75,6 +76,11 @@ export function SaveInsight({ kind, query, params, onInsight }: {
     return `Added to "${d.name}"`
   })
 
+  const exportButton = (
+    <button type="button" className="icon-button" onClick={() => csv && downloadCsv(csv)} disabled={!csv || csv.rows.length === 0}
+      aria-label="Download CSV" title="Download CSV" data-testid="export-csv"><Icon name="download" /></button>
+  )
+
   return (
     <div className="save-bar" data-testid="save-insight">
       <span className="save-icon"><Icon name="bookmark" /></span>
@@ -95,6 +101,7 @@ export function SaveInsight({ kind, query, params, onInsight }: {
           )}
           <button onClick={() => saveNew()} disabled={busy}>Save as new</button>
           <button className="primary" onClick={update} disabled={busy} data-testid="save-changes">Save changes</button>
+          {exportButton}
           <button className="icon-button" onClick={() => onInsight(undefined)} aria-label="Start a new insight" title="New"><Icon name="plus" /></button>
         </>
       ) : (
@@ -103,6 +110,7 @@ export function SaveInsight({ kind, query, params, onInsight }: {
             aria-label="Insight name" maxLength={200} />
           {message && <span className={`form-message ${message.error ? 'error' : 'good'}`} role="status">{message.text}</span>}
           <button type="submit" className="primary" disabled={busy || !name.trim()} data-testid="save-insight-button">Save</button>
+          {exportButton}
         </form>
       )}
     </div>

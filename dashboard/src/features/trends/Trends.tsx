@@ -8,6 +8,7 @@ import { Card, IconButton, Segmented, StatTile, Status } from '../../components/
 import { bucketLabel, ms, num, pct } from '../../lib/format'
 import { useDebounced, useQuery } from '../../lib/hooks'
 import { SaveInsight } from '../insights/SaveInsight'
+import { trendsCsv } from '../../lib/csv'
 
 export interface TrendState {
   series: Series[]
@@ -161,7 +162,7 @@ export function Trends({ params, range, onChange, onInsight }: {
       </aside>
 
       <section className="content">
-        <SaveInsight kind="trends" query={state} params={params} onInsight={onInsight} />
+        <SaveInsight kind="trends" query={state} params={params} onInsight={onInsight} csv={q.data && trendsCsv(q.data)} />
         <Status state={q} empty={results.every((r) => r.total === 0)}>
           {current.length <= 4 && (
             <div className="stats">

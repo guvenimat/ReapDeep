@@ -8,6 +8,7 @@ import { Card, FormMessage, Segmented, StatTile, Status } from '../../components
 import { compact, ms, num, pct } from '../../lib/format'
 import { useDebounced, useQuery } from '../../lib/hooks'
 import { SaveInsight } from '../insights/SaveInsight'
+import { rfmCsv } from '../../lib/csv'
 import { RFM_SEGMENT_NAMES, RFM_WINDOWS } from './segments'
 
 export interface RfmState { window_days: number; purchase_event: string; amount_property: string; filters: Filter[] }
@@ -122,7 +123,7 @@ export function Rfm({ params, onChange, onInsight, onCohortCreated }: {
         <FilterEditor filters={state.filters} onChange={(filters) => set({ filters })} />
       </aside>
       <section className="content">
-        <SaveInsight kind="rfm" query={state} params={params} onInsight={onInsight} />
+        <SaveInsight kind="rfm" query={state} params={params} onInsight={onInsight} csv={q.data && rfmCsv(q.data)} />
         <Status state={q} empty={d?.customers === 0} emptyTitle="No purchases in this window" emptyText="Send purchase events with an amount, or choose a longer window.">
           {d && (
             <>
