@@ -51,6 +51,32 @@ public static class FunnelSql
         return b.Build($"SELECT person, COUNT(*) OVER () AS total FROM ({inner}) f WHERE {match} ORDER BY person LIMIT {limit}");
     }
 
+    public const int MinCorrelationPersons = 3;
+    public const double MinOddsRatio = 1.25;
+
+    public static SqlQuery Correlation(SqlBuilder b, IReadOnlyList<FunnelStep> steps, long windowSeconds, int limit)
+    {
+        var conds = steps.Select(st =>
+        {
+            var parts = new List<string> { SqlFragments.EventIs(b, st.Event, st.Events) };
+            parts.AddRange(st.Filters?.Select(b.Condition) ?? []);
+            return "(" + string.Join(" AND ", parts) + ")";
+        }).ToList();
+        var stepEvents = steps.SelectMany(st => st.Events is { Count: > 0 } events ? events : [st.Event]).Distinct().Select(e => b.P(e));
+        var other = $"e.event NOT IN ({string.Join(", ", stepEvents)})";
+        var inner = b.Select($"{b.Person()} AS person, window_funnel({windowSeconds}, e.timestamp, 0, [{string.Join(", ", conds)}]) AS lvl, " +
+                             $"array_distinct(array_agg(IF({other}, e.event, NULL))) AS evs", groupBy: "1");
+        return b.Build(
+            $"WITH p AS (SELECT person, IF(lvl >= {steps.Count}, 1, 0) AS ok, evs FROM ({inner}) x WHERE lvl > 0), " +
+            "t AS (SELECT SUM(ok) AS s, SUM(1 - ok) AS f FROM p), " +
+            "u AS (SELECT p.ok, u.ev FROM p, unnest(p.evs) AS u(ev) WHERE u.ev IS NOT NULL) " +
+            "SELECT u.ev, SUM(u.ok) AS sw, SUM(1 - u.ok) AS fw, MAX(t.s) AS s, MAX(t.f) AS f FROM u CROSS JOIN t GROUP BY u.ev " +
+            $"HAVING COUNT(*) >= {MinCorrelationPersons} ORDER BY COUNT(*) DESC, u.ev LIMIT {limit}");
+    }
+
+    public static double OddsRatio(long convertedWith, long convertedTotal, long droppedWith, long droppedTotal) =>
+        ((convertedWith + 1.0) / (convertedTotal - convertedWith + 1.0)) / ((droppedWith + 1.0) / (droppedTotal - droppedWith + 1.0));
+
     public static SqlQuery Build(SqlBuilder b, IReadOnlyList<FunnelStep> steps, long windowSeconds, Breakdown? bd, double sampling)
     {
         var conds = Conditions(b, steps);

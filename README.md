@@ -209,6 +209,10 @@ A trend series counts events, counts unique persons, or aggregates a numeric eve
 - **Segment movement:** pick a segment to see where today's members were N days ago (7, 30 or 90) and where that segment's members of N days ago are now, including "not a customer then" and "no purchase in the window now". The person profile shows each customer's segment, scores, days since the last purchase, orders and spend.
 - **Segments as cohorts:** one click saves a segment as a dynamic cohort with an `rfm_segment` condition. The cohort job recalculates it like any other cohort, so a segment can filter or break down every analysis, for example a funnel of "Customers at risk". Both analyses merge anonymous and identified IDs before counting.
 
+### Funnel correlation
+
+Under a funnel, "What sets converters apart" (`POST /api/v1/query/funnels/correlation`, same body as the funnel) lists the other events that were clearly more common among the persons who converted, and those more common among the persons who dropped off. Each event shows the share of both groups that did it and a smoothed odds ratio; only events done by at least 3 persons and with odds of at least 1.25× either way are listed. It shows association, not cause.
+
 ### Stickiness
 
 The Stickiness tab (`POST /api/v1/query/stickiness`) counts, for an event or an action, how many different days or weeks each person did it in the date range, and shows how many persons fall in each count with the average and the share of regulars (active in at least half of the periods). Persons are merged across their ids, like everywhere else.
@@ -513,7 +517,7 @@ cd deploy/local
 .\ai-test.ps1           # platform and customer AI switches and features, platform admin access, explanations, the rule-based experiment decision, questions to trends and funnels, the weekly note, caching (fake model only)
 .\server-test.ps1       # server keys, /batch with historical timestamps and duplicates, flag definitions, the .NET SDK sample run inside the compose network, revocation
 .\account-test.ps1      # invitation and password reset emails through Mailpit: single use, expiry, no account enumeration, rate limits
-.\insights-test.ps1     # saved insights and dashboards, API and browser
+.\insights-test.ps1     # saved insights and dashboards, chart notes, actions, funnel correlation, API and browser
 .\cohort-test.ps1       # cohorts: rules, identity merge, static lists, filters and breakdowns, recalculation, deletion
 .\rfm-lifecycle-test.ps1  # RFM scores and segments with known answers, rfm_segment cohorts, lifecycle states and look-back
 .\alerts-test.ps1       # alerts: validation, firing and resolving, signed webhooks to a local receiver, manual retry, test notifications, change and formula conditions, errors

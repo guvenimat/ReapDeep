@@ -255,6 +255,8 @@ export interface StickinessResponse {
   event: string; interval: 'day' | 'week'; total_periods: number; persons: number; average_periods: number | null; timezone: string
   buckets: { periods: number; persons: number; share: number }[]; took_ms: number
 }
+export interface FunnelCorrelation { event: string; converted_with: number; dropped_with: number; converted_share: number; dropped_share: number; odds_ratio: number }
+export interface FunnelCorrelationResponse { converted: number; dropped: number; positive: FunnelCorrelation[]; negative: FunnelCorrelation[]; min_persons: number; took_ms: number }
 export interface NotificationItem { id: number; kind: string; title: string; body: string; link: string; created_at: string; unread: boolean }
 export interface AiNote { id: number; trigger: 'manual' | 'schedule'; period_from: string; period_to: string; emailed_to: string[]; created_at: string; answer: AiAnswer }
 export type DigestFrequency = 'off' | 'daily' | 'weekly' | 'monthly'

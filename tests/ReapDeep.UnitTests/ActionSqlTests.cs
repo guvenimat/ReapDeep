@@ -55,4 +55,24 @@ public class ActionSqlTests
         Assert.DoesNotContain("INNER JOIN", q.Sql);
         Assert.EndsWith("SELECT periods, COUNT(*) AS persons FROM c GROUP BY periods ORDER BY periods", q.Sql);
     }
+
+    [Fact]
+    public void Funnel_correlation_scans_all_events_once_and_leaves_the_steps_out_of_the_candidates()
+    {
+        var q = FunnelSql.Correlation(Builder(), [new FunnelStep("view", null), new FunnelStep("Buying", null, "Buying", ["cart", "buy"])], 3600, 100);
+
+        Assert.Matches(@"window_funnel\(3600, e\.timestamp, 0, \[\(e\.event = @p\d+\), \(e\.event IN \(@p\d+, @p\d+\)\)\]\)", q.Sql);
+        Assert.Matches(@"e\.event NOT IN \(@p\d+, @p\d+, @p\d+\)", q.Sql);
+        Assert.DoesNotContain("e.event IN (@p", q.Sql.Split("window_funnel")[0]);
+        Assert.Contains("COALESCE(pdi.person_id", q.Sql);
+        Assert.Contains($"HAVING COUNT(*) >= {FunnelSql.MinCorrelationPersons}", q.Sql);
+    }
+
+    [Fact]
+    public void Odds_ratio_is_smoothed_so_empty_cells_stay_finite()
+    {
+        Assert.Equal(1, FunnelSql.OddsRatio(5, 10, 5, 10), 6);
+        Assert.True(FunnelSql.OddsRatio(10, 10, 0, 10) > 100);
+        Assert.True(FunnelSql.OddsRatio(0, 10, 10, 10) < 0.01);
+    }
 }

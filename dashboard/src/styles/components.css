@@ -559,3 +559,6 @@ button.link.active { text-decoration: underline; }
 .sticky-track { height: 14px; border-radius: 4px; background: var(--border); overflow: hidden; }
 .sticky-fill { display: block; height: 100%; background: var(--series-1, var(--accent)); border-radius: 4px; }
 .sticky-value { text-align: right; }
+
+.corr td .chip { font-size: 12px; }
+.corr-card .ai-section + .ai-section { margin-top: 20px; }

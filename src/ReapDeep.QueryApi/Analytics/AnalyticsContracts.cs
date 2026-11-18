@@ -74,3 +74,7 @@ public sealed record WebBreakdown(string Dimension, List<WebBreakdownRow> Rows);
 public sealed record WebAnalyticsResponse(
     string Interval, string Timezone, string DateFrom, string DateTo, string PreviousFrom, WebSummary Current, WebSummary Previous,
     List<WebPoint> Series, List<WebPage> Pages, List<WebBreakdown> Breakdowns, double TookMs);
+
+public sealed record FunnelCorrelation(string Event, long ConvertedWith, long DroppedWith, double ConvertedShare, double DroppedShare, double OddsRatio);
+public sealed record FunnelCorrelationResponse(long Converted, long Dropped, List<FunnelCorrelation> Positive, List<FunnelCorrelation> Negative, int MinPersons,
+    double TookMs);

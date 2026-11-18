@@ -85,6 +85,24 @@ $at2 = (K POST "/query/trends" "{`"series`":[{`"action`":`"Engaged $tag`"}]}").J
 Check "changing the action changes the result of the same query (1)" ($at2[0].total -eq 1)
 Check "delete -> 204, then the query reports the unknown action" ((S DELETE "/actions/$($act.Json.id)").Status -eq 204 -and (K POST "/query/trends" "{`"series`":[{`"action`":`"Engaged $tag`"}]}").Status -eq 400)
 
+Write-Host "`n2d) Funnel correlation"
+function At([int]$minutesAgo) { [DateTime]::UtcNow.AddMinutes(-$minutesAgo).ToString("o") }
+function Ev([string]$who, [string]$name, [int]$ago) { "{`"event`":`"$name`",`"distinct_id`":`"$who`",`"timestamp`":`"$(At $ago)`"}" }
+$corr = @()
+foreach ($k in 1..3) { $corr += (Ev "cv$k-$tag" "cview_$tag" 10); $corr += (Ev "cv$k-$tag" "coupon_$tag" 9); $corr += (Ev "cv$k-$tag" "cbuy_$tag" 8) }
+foreach ($k in 1..3) { $corr += (Ev "dv$k-$tag" "cview_$tag" 10); $corr += (Ev "dv$k-$tag" "faq_$tag" 9) }
+$content = New-Object System.Net.Http.StringContent(('{"api_key":"pk_dev_local","batch":[' + ($corr -join ",") + ']}'), [Text.Encoding]::UTF8, "text/plain")
+if ([int]$plain.PostAsync("http://localhost:8000/capture", $content).Result.StatusCode -ne 202) { throw "capture failed" }
+$corrBody = "{`"steps`":[{`"event`":`"cview_$tag`"},{`"event`":`"cbuy_$tag`"}],`"window_seconds`":86400}"
+$deadline = (Get-Date).AddSeconds(40)
+do { Start-Sleep 2; $cr = (K POST "/query/funnels/correlation" $corrBody).Json; $fs = (K POST "/query/funnels" $corrBody).Json.results[0].steps } until (($cr.converted + $cr.dropped -eq 6 -and $fs[0].count -eq 6) -or (Get-Date) -gt $deadline)
+Check "3 converted (the coupon users) and 3 dropped (the faq readers), as in the funnel itself -> $($cr.converted) / $($cr.dropped)" ($cr.converted -eq 3 -and $cr.dropped -eq 3 -and $fs[1].count -eq 3)
+$coupon = @($cr.positive | Where-Object { $_.event -eq "coupon_$tag" })[0]
+$faq = @($cr.negative | Where-Object { $_.event -eq "faq_$tag" })[0]
+Check "the coupon is more common among converters: all 3 users converted, none dropped" ($coupon -and $coupon.converted_with -eq 3 -and $coupon.dropped_with -eq 0 -and $coupon.odds_ratio -gt 1)
+Check "the faq is more common among those who dropped: none converted, all 3 dropped" ($faq -and $faq.converted_with -eq 0 -and $faq.dropped_with -eq 3 -and $faq.odds_ratio -lt 1)
+Check "the funnel's own steps are never candidates" (-not (@($cr.positive) + @($cr.negative) | Where-Object { $_.event -in "cview_$tag", "cbuy_$tag" }))
+
 Write-Host "`n3) Dashboards"
 $d = S POST "/dashboards" "{`"name`":`"Board $tag`",`"insight_ids`":[$($tr.Json.id),$($fu.Json.id)]}"
 Check "create a dashboard with two insights -> 201" ($d.Status -eq 201 -and @($d.Json.items).Count -eq 2 -and $d.Json.items[0].id -eq $tr.Json.id)
