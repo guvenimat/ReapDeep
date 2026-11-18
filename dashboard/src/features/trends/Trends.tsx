@@ -8,6 +8,7 @@ import { Card, IconButton, Segmented, StatTile, Status } from '../../components/
 import { bucketLabel, ms, num, pct } from '../../lib/format'
 import { useDebounced, useQuery } from '../../lib/hooks'
 import { SaveInsight } from '../insights/SaveInsight'
+import { AnnotationNotes, useAnnotations } from '../insights/Annotations'
 import { trendsCsv } from '../../lib/csv'
 
 export interface TrendState {
@@ -100,6 +101,7 @@ export function Trends({ params, range, onChange, onInsight }: {
   const visible = visibleResults(q.data)
   const current = visible.filter((r) => !r.compare)
   const buckets = current[0]?.data.map((d) => d.bucket) ?? []
+  const annotations = useAnnotations(buckets, interval)
   const chartSeries = trendChartSeries(q.data)
   const previousOf = (r: TrendResult) => visible.find((p) => p.compare && sameSeries(p, r))
 
@@ -182,7 +184,8 @@ export function Trends({ params, range, onChange, onInsight }: {
 
           <Card testId="trends-chart" title="Over time" meta={`${q.data?.timezone ?? ''} · ${ms(q.data?.took_ms ?? 0)}`}>
             <Legend items={chartSeries.map((s) => ({ label: s.label, colorIndex: s.colorIndex, dashed: s.dashed }))} />
-            <TimeChart buckets={buckets} interval={interval} series={chartSeries} mode={state.chart} />
+            <TimeChart buckets={buckets} interval={interval} series={chartSeries} mode={state.chart} notes={annotations.notes} />
+            <AnnotationNotes notes={annotations.notes} from={annotations.from} to={annotations.to} onChange={annotations.reload} />
             {current.length > MAX_SERIES && <p className="footnote">The chart shows the first {MAX_SERIES} series; the table has all of them.</p>}
             {state.compare && <p className="footnote">Dashed lines are the previous period of the same length, aligned bucket by bucket.</p>}
           </Card>

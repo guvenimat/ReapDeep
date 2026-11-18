@@ -54,6 +54,21 @@ $up = S PUT "/insights/$($tr.Json.id)" "{`"name`":`"Daily views $tag`"}"
 Check "rename keeps the query" ($up.Status -eq 200 -and $up.Json.name -eq "Daily views $tag" -and $up.Json.query.chart -eq "bar")
 Check "unknown insight -> 404" ((S PUT "/insights/999999" '{"name":"x"}').Status -eq 404)
 
+Write-Host "`n2b) Chart notes"
+$noteDay = [DateTime]::UtcNow.AddDays(-3).ToString("yyyy-MM-dd")
+$note = S POST "/annotations" ('{"day":"' + $noteDay + '","content":"Campaign launched ' + $tag + '"}')
+Check "a member adds a note to a day" ($note.Status -eq 201 -and $note.Json.day -eq $noteDay -and $note.Json.created_by)
+$from = [DateTime]::UtcNow.AddDays(-7).ToString("yyyy-MM-dd"); $to = [DateTime]::UtcNow.ToString("yyyy-MM-dd")
+$listed = @((K GET "/annotations?from=$from&to=$to").Json.annotations | Where-Object { $_.content -eq "Campaign launched $tag" })
+Check "a read key lists the notes of a range" ($listed.Count -eq 1)
+$outside = @((S GET "/annotations?from=$($([DateTime]::UtcNow.AddDays(-30)).ToString('yyyy-MM-dd'))&to=$($([DateTime]::UtcNow.AddDays(-10)).ToString('yyyy-MM-dd'))").Json.annotations | Where-Object { $_.content -eq "Campaign launched $tag" })
+Check "a range that does not include the day leaves it out" ($outside.Count -eq 0)
+Check "a read key cannot add notes -> 403" ((K POST "/annotations" ('{"day":"' + $noteDay + '","content":"x"}')).Status -eq 403)
+Check "invalid day -> 400" ((S POST "/annotations" '{"day":"18.11.2026","content":"x"}').Status -eq 400)
+Check "empty or longer than 300 characters -> 400" ((S POST "/annotations" ('{"day":"' + $noteDay + '","content":" "}')).Status -eq 400 -and (S POST "/annotations" ('{"day":"' + $noteDay + '","content":"' + ('a' * 301) + '"}')).Status -eq 400)
+Check "a range over 800 days -> 400" ((S GET "/annotations?from=2020-01-01&to=2026-01-01").Status -eq 400)
+Check "delete -> 204, then 404" ((S DELETE "/annotations/$($note.Json.id)").Status -eq 204 -and (S DELETE "/annotations/$($note.Json.id)").Status -eq 404)
+
 Write-Host "`n3) Dashboards"
 $d = S POST "/dashboards" "{`"name`":`"Board $tag`",`"insight_ids`":[$($tr.Json.id),$($fu.Json.id)]}"
 Check "create a dashboard with two insights -> 201" ($d.Status -eq 201 -and @($d.Json.items).Count -eq 2 -and $d.Json.items[0].id -eq $tr.Json.id)

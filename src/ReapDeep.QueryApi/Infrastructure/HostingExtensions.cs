@@ -4,6 +4,7 @@ using System.Threading.RateLimiting;
 using MySqlConnector;
 using Npgsql;
 using ReapDeep.QueryApi.Alerts;
+using ReapDeep.QueryApi.Annotations;
 using ReapDeep.QueryApi.Analytics;
 using ReapDeep.QueryApi.Auth;
 using ReapDeep.QueryApi.Catalog;
@@ -87,6 +88,7 @@ public static class HostingExtensions
         services.AddSingleton<PersonRepository>();
         services.AddSingleton<MetadataRepository>();
         services.AddSingleton<InsightRepository>();
+        services.AddSingleton<AnnotationRepository>();
         services.AddSingleton<DashboardRepository>();
         services.AddSingleton<MemberRepository>();
         services.AddSingleton<ApiKeyRepository>();

@@ -33,3 +33,17 @@ describe('csv', () => {
     expect(r.rows.at(-1)).toEqual(['average', null, 1, 0.4])
   })
 })
+
+describe('annotations', () => {
+  it('places a note on the bucket that contains its day', async () => {
+    const { annotationIndex } = await import('../features/insights/Annotations')
+    const days = ['2026-11-01', '2026-11-02', '2026-11-03']
+
+    expect(annotationIndex(days, 'day', '2026-11-02')).toBe(1)
+    expect(annotationIndex(days, 'day', '2026-11-04')).toBe(-1)
+    expect(annotationIndex(['2026-11-02 00:00', '2026-11-02 01:00', '2026-11-03 00:00'], 'hour', '2026-11-03')).toBe(2)
+    expect(annotationIndex(['2026-10-26', '2026-11-02'], 'week', '2026-11-05')).toBe(1)
+    expect(annotationIndex(['2026-10-26', '2026-11-02'], 'week', '2026-11-09')).toBe(-1)
+    expect(annotationIndex(['2026-10-01', '2026-11-01'], 'month', '2026-11-30')).toBe(1)
+  })
+})

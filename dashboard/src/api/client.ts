@@ -1,4 +1,4 @@
-import type {
+import type { Annotation,
   Alert, AlertEvent, AlertInput, AlertTestInput, AlertTestResult, AuthTokenInfo, Experiment, ExperimentInput, ExperimentResults, FeatureFlag, FlagInput,
   ApiKey, CatalogItem, CatalogItemDetail, CatalogItemInput, Cohort, CohortDefinition, CohortKind, CohortPerson, Dashboard, DashboardSummary, DateRange, DeletionRequest, EventRow, FunnelPersonsResponse, FunnelRequest, FunnelResponse, Insight, InsightKind,
   HitRate, KeyScope, Me, Member, Metadata, ModelRun, LifecycleResponse, PathsResponse, WebAnalyticsResponse, Person, PersonCohortsResponse, RecommendationPerformanceResponse, RetentionResponse, RfmMigrationResponse, RfmPerson, RfmResponse, Role, TrendRequest, TrendResponse, ProjectDetail,
@@ -115,6 +115,10 @@ export const api = {
   createInsight: (body: { name: string; kind: InsightKind; query: object }) => request<Insight>('POST', '/api/v1/insights', body),
   updateInsight: (id: number, body: { name?: string; query?: object }) => request<Insight>('PUT', `/api/v1/insights/${id}`, body),
   deleteInsight: (id: number) => request<void>('DELETE', `/api/v1/insights/${id}`),
+  annotations: (from: string, to: string, signal?: AbortSignal) =>
+    request<{ annotations: Annotation[] }>('GET', `/api/v1/annotations?from=${from}&to=${to}`, undefined, signal),
+  createAnnotation: (body: { day: string; content: string }) => request<Annotation>('POST', '/api/v1/annotations', body),
+  deleteAnnotation: (id: number) => request<void>('DELETE', `/api/v1/annotations/${id}`),
   dashboards: (signal?: AbortSignal) => request<{ dashboards: DashboardSummary[] }>('GET', '/api/v1/dashboards', undefined, signal),
   dashboard: (id: number, signal?: AbortSignal) => request<Dashboard>('GET', `/api/v1/dashboards/${id}`, undefined, signal),
   createDashboard: (body: { name: string; description?: string; insight_ids?: number[] }) => request<Dashboard>('POST', '/api/v1/dashboards', body),
