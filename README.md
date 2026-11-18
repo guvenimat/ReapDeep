@@ -188,7 +188,7 @@ The Web analytics page (`POST /api/v1/query/web`) is built from `$pageview` even
 
 ### Trend metrics and formulas
 
-![Revenue per buyer with the previous period](docs/images/trends.png)
+![Revenue per buyer with the previous period and a chart note on the day a newsletter was sent](docs/images/trends.png)
 
 A trend series counts events, counts unique persons, or aggregates a numeric event property (sum, average, median, 90th percentile, minimum, maximum), for example the daily sum of `amount` on `purchase`. Series are named A, B, C... and a formula combines them with `+ - * /` and parentheses: `A / B` with A = sum of `amount` and B = unique buyers is revenue per buyer. Formulas are evaluated per bucket and on the period totals (so unique-user totals stay correct), per breakdown value, and division by zero gives 0. "Compare to previous period" runs every series over the preceding range of the same length and draws it as a dashed line; the tiles show the change in percent.
 
