@@ -1,4 +1,4 @@
-import type { PlatformAuditEntry, AiNote, DigestSchedule, DigestFrequency, AiAccess, AiFeature, PlatformOrganization, AiAnswer, AiQueryAnswer, ActionDef, Annotation,
+import type { MemberLink, PlatformAuditEntry, AiNote, DigestSchedule, DigestFrequency, AiAccess, AiFeature, PlatformOrganization, AiAnswer, AiQueryAnswer, ActionDef, Annotation,
   Alert, AlertEvent, AlertInput, AlertTestInput, AlertTestResult, AuthTokenInfo, Experiment, ExperimentInput, ExperimentResults, FeatureFlag, FlagInput,
   ApiKey, CatalogItem, CatalogItemDetail, CatalogItemInput, Cohort, CohortDefinition, CohortKind, CohortPerson, Dashboard, DashboardSummary, DateRange, DeletionRequest, EventRow, FunnelPersonsResponse, FunnelRequest, FunnelResponse, Insight, InsightKind,
   HitRate, KeyScope, Me, Member, Metadata, ModelRun, LifecycleResponse, PathsResponse, WebAnalyticsResponse, Person, PersonCohortsResponse, RecommendationPerformanceResponse, RetentionResponse, RfmMigrationResponse, RfmPerson, RfmResponse, Role, TrendRequest, TrendResponse, ProjectDetail,
@@ -103,6 +103,7 @@ export const api = {
   changeRole: (userId: number, role: Role) => request<Member>('PATCH', `/api/v1/members/${userId}`, { role }),
   removeMember: (userId: number) => request<void>('DELETE', `/api/v1/members/${userId}`),
   resendInvite: (userId: number) => request<void>('POST', `/api/v1/members/${userId}/invite`),
+  memberLink: (userId: number) => request<MemberLink>('POST', `/api/v1/members/${userId}/link`),
   apiKeys: (signal?: AbortSignal) => request<{ api_keys: ApiKey[] }>('GET', '/api/v1/api-keys', undefined, signal),
   createApiKey: (name: string, scope: KeyScope) => request<{ api_key: ApiKey; key: string }>('POST', '/api/v1/api-keys', { name, scope }),
   revokeApiKey: (id: number) => request<void>('DELETE', `/api/v1/api-keys/${id}`),

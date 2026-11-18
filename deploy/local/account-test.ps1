@@ -137,6 +137,30 @@ Start-Sleep 4
 $resets = @(Mails $invitee | Where-Object { $_.Subject -eq "Reset your ReapDeep password" }).Count
 Check "at most 3 reset emails per user and hour (got $resets)" ($resets -eq 3)
 
+Write-Host "`n2b) Links to share without e-mail"
+$linkUser = "link_$tag@example.com"
+$lu = Send $owner POST "/members" @{ email = $linkUser; role = "member" }
+$linkId = $lu.Json.user_id
+Check "with SMTP the new member is e-mailed and no link is returned" ($lu.Status -eq 201 -and -not $lu.Json.invite_link)
+$inv = Send $owner POST "/members/$linkId/link"
+Check "a manager gets a single-use invite link for a pending member" ($inv.Status -eq 200 -and $inv.Json.purpose -eq "invite" -and $inv.Json.link -match "#/invite\?token=")
+$invToken = TokenFrom $inv.Json.link "invite"
+Pace
+$set = Send (New-Client) POST "/auth/password/reset" @{ token = $invToken; new_password = "link-pass-$tag" }
+Check "the invite link sets the password and signs the member in" ($set.Status -eq 200 -and $set.Json.user.email -eq $linkUser -and (Login (New-Client) $linkUser "link-pass-$tag") -eq 200)
+Pace
+Check "the same link cannot be used twice" ((Send (New-Client) POST "/auth/password/reset" @{ token = $invToken; new_password = "again-pass-$tag" }).Status -eq 400)
+$rst = Send $owner POST "/members/$linkId/link"
+Check "for an active member the link is a one-hour password reset link" ($rst.Status -eq 200 -and $rst.Json.purpose -eq "reset" -and ([DateTime]$rst.Json.expires_at).ToUniversalTime() -lt [DateTime]::UtcNow.AddMinutes(61))
+Pace
+$reset = Send (New-Client) POST "/auth/password/reset" @{ token = (TokenFrom $rst.Json.link "reset"); new_password = "reset-pass-$tag" }
+Check "the reset link changes the password: the new one works, the old one does not" ($reset.Status -eq 200 -and (Login (New-Client) $linkUser "reset-pass-$tag") -eq 200 -and (Login (New-Client) $linkUser "link-pass-$tag") -eq 401)
+$ownerId = (Send $owner GET "/auth/me").Json.user.id
+Check "a manager cannot make a link for themselves -> 400" ((Send $owner POST "/members/$ownerId/link").Status -eq 400)
+Check "a read key cannot make links -> 403" ((Send (New-Client) POST "/members/$linkId/link" $null @{ Authorization = "Bearer $($envValues.READ_API_KEY)" }).Status -eq 403)
+$null = Send $owner DELETE "/members/$linkId"
+$null = Pg "DELETE FROM users WHERE email = '$linkUser'"
+
 Write-Host "`n3) Rate limit"
 $script:noPacing = $true
 $statuses = for ($i = 0; $i -lt 12; $i++) { (Send (New-Client) POST "/auth/token" @{ token = ("y" * 43) }).Status }

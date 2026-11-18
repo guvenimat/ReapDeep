@@ -3,6 +3,8 @@ using ReapDeep.QueryApi.Alerts;
 
 namespace ReapDeep.QueryApi.Auth;
 
+public readonly record struct MemberLinkResult(string? Link, DateTime ExpiresAt);
+
 public sealed class AccountMailer(AuthTokenRepository tokens, EmailSender email, IConfiguration cfg, ILogger<AccountMailer> log) : BackgroundService
 {
     public const string SenderName = "ReapDeep";
@@ -16,6 +18,16 @@ public sealed class AccountMailer(AuthTokenRepository tokens, EmailSender email,
     public void QueueReset(string address)
     {
         if (!_resets.Writer.TryWrite(address)) log.LogWarning("Password reset queue is full; a request was dropped");
+    }
+
+    public async Task<MemberLinkResult> CreateLinkAsync(long userId, string purpose, CancellationToken ct)
+    {
+        var token = AuthTokens.NewToken();
+        var lifetime = AuthTokens.Lifetime(purpose);
+        var limit = purpose == AuthTokens.Invite ? MaxInvitesPerHour : AuthTokens.MaxResetsPerHour;
+        return await tokens.CreateAsync(userId, purpose, AuthTokens.Hash(token), lifetime, limit, ct)
+            ? new MemberLinkResult(AuthTokens.Link(_publicUrl, purpose, token), DateTime.UtcNow + lifetime)
+            : new MemberLinkResult(null, default);
     }
 
     public async Task<string?> SendInviteAsync(long projectId, long inviterId, long userId, string address, CancellationToken ct)
