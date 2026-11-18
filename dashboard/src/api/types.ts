@@ -106,7 +106,7 @@ export type Role = Project['role']
 export interface Member { user_id: number; email: string; name: string; role: Role; created_at: string; pending: boolean }
 export type AuthTokenPurpose = 'invite' | 'reset'
 export interface AuthTokenInfo { email: string; purpose: AuthTokenPurpose }
-export type KeyScope = 'read' | 'catalog_write'
+export type KeyScope = 'read' | 'catalog_write' | 'server'
 export interface ApiKey { id: number; name: string; prefix: string; scope: KeyScope; created_by: string | null; created_at: string; revoked_at: string | null }
 
 export type InsightKind = 'trends' | 'funnels' | 'retention' | 'paths' | 'rfm' | 'lifecycle'

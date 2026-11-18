@@ -15,8 +15,9 @@ public static class KeyScopes
 {
     public const string Read = "read";
     public const string CatalogWrite = "catalog_write";
+    public const string Server = "server";
 
-    public static readonly string[] All = [Read, CatalogWrite];
+    public static readonly string[] All = [Read, CatalogWrite, Server];
 }
 
 public sealed record ProjectContext(long ProjectId, string TimeZoneId, TimeZoneInfo TimeZone, string? Role, long? UserId, string? KeyScope = null)

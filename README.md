@@ -337,7 +337,7 @@ Any trend or funnel can be saved by name from its tab (`/api/v1/insights`). A da
 
 ### Authentication
 
-- **API keys** (`Authorization: Bearer <key>`) are scoped to one project and are read-only; they cannot create deletion requests. Use them for scripts and integrations.
+- **API keys** (`Authorization: Bearer <key>`) are scoped to one project. A `read` key (`rk_...`) queries analytics and cannot create deletion requests; a `catalog_write` key (`ck_...`) only reaches the catalog endpoints; a `server` key (`sk_...`) works only with the ingestion `/batch` endpoint and the Recommender's flag definitions, and the Query API refuses it.
 - **Dashboard sessions:** `POST /api/v1/auth/login` sets an HttpOnly, `SameSite=Strict` cookie valid for 14 days. Requests then name the project in the `X-Project-Id` header, and the API checks the user's organization membership. `GET /api/v1/auth/me` returns the user and their projects; `POST /api/v1/auth/logout` revokes the session.
 - Passwords are hashed with PBKDF2-SHA256 (600K iterations), and sign-in is rate limited to 10 attempts per minute per client IP.
 - On first start, the Query API creates the `ADMIN_EMAIL` user as owner of every organization when the `users` table is empty.
@@ -356,6 +356,19 @@ Any trend or funnel can be saved by name from its tab (`/api/v1/insights`). A da
 ```
 
 Page views (including SPA navigation), sessions, UTM parameters, batching, retries and `sendBeacon` on page unload are handled automatically. See [`sdk/js/README.md`](sdk/js/README.md).
+
+### Send events from a server
+
+Orders confirmed by a payment provider, back-office changes and history from another system belong on the server. A `server` key (Settings → API keys, `sk_...`) opens `POST /batch` on the Ingestion API:
+
+```bash
+curl -X POST http://localhost:8000/batch -H "Authorization: Bearer sk_..." -H "Content-Type: application/json" \
+  -d '{"batch":[{"event":"order_completed","distinct_id":"customer-42","event_id":"order-1001","timestamp":"2026-09-20T10:15:00Z","properties":{"amount":49.9,"$ip":"203.0.113.7"}}]}'
+```
+
+Unlike the browser endpoint, a batch holds up to 5,000 events (10 MB), timestamps are stored as sent (anything older than 364 days or more than an hour ahead is rejected rather than moved), and no IP address or user agent is taken from the request: an optional `$ip` property supplies the visitor's address, anonymized like browser traffic. Event ids deduplicate retries for 10 minutes (`Ingestion__DedupSeconds`), so re-running a finished import later stores the events again; the per-project ingestion limit applies, answering `429` with `Retry-After`. Ingestion and the Recommender load server keys every 30 seconds, so a revoked key stops working within that time.
+
+The .NET client in [`sdk/dotnet`](sdk/dotnet/README.md) wraps this: a background queue with retries for live events, `ImportAsync` for history, and feature flags evaluated in process from definitions it refreshes every 30 seconds (`GET /flags/definitions` on the Recommender, server key only), with the same hashing as the browser so the two agree for the same identity.
 
 ## Example integration: an online store
 
@@ -463,6 +476,7 @@ cd deploy/local
 .\auth-test.ps1         # sign-in, sessions, project access, CORS, X-Forwarded-For, StarRocks grants
 .\deletion-test.ps1     # deletion requests and the batch job, end to end
 .\settings-test.ps1     # members, roles, password change, API keys, projects, IP anonymization
+.\server-test.ps1       # server keys, /batch with historical timestamps and duplicates, flag definitions, the .NET SDK sample run inside the compose network, revocation
 .\account-test.ps1      # invitation and password reset emails through Mailpit: single use, expiry, no account enumeration, rate limits
 .\insights-test.ps1     # saved insights and dashboards, API and browser
 .\cohort-test.ps1       # cohorts: rules, identity merge, static lists, filters and breakdowns, recalculation, deletion
@@ -513,6 +527,7 @@ src/ReapDeep.Analytics      shared library: every StarRocks analytics query is b
 src/ReapDeep.ServiceDefaults  telemetry and health helpers shared by the services
 src/ReapDeep.Migrations     PostgreSQL and StarRocks migrations, StarRocks users and grants
 sdk/js                      browser SDK
+sdk/dotnet                  .NET server SDK (ReapDeep.Server) and a sample app
 dashboard                   React dashboard, served by nginx
 tests/ReapDeep.LoadTest     load generator, 100M seeder, demo data and query benchmark
 tests/ReapDeep.UnitTests    unit tests for the pure logic
@@ -533,7 +548,7 @@ ReapDeep is an early v1. It runs end to end locally but has not been operated in
 - RFM scores are relative to the customers in the report: a filter re-ranks only the matching customers. Amounts are summed without currency conversion (the report warns when it sees several currencies).
 - Cohort membership is the current membership: a 90-day trend filtered by a cohort uses who is in the cohort now, not who was in it on each day. Behavioral windows are limited to 90 days.
 - Web analytics has no country breakdown (it would need a GeoIP database and a new column). A session that started before the selected range is counted from its first event inside it in the tables, while the tiles count it in the period in which it started; sessions are split only by the SDK's session id, not by a change of source.
-- Not in v1: session replay, mobile SDKs, autocapture. Flags cannot target cohorts yet and are evaluated only in the browser SDK.
+- Not in v1: session replay, mobile SDKs, autocapture. Flags cannot target cohorts yet. The server SDK exists only for .NET; other back ends call `POST /batch` directly.
 - Experiments use fixed-horizon frequentist tests: looking at the results repeatedly while an experiment runs inflates false positives, and several variants are each compared with the control without a multiple-comparison correction. There are no secondary metrics, sample size planner or metric filters yet.
 - Behind a load balancer, set `ForwardedHeaders__TrustedNetworks` (CIDR list) on the ingestion and Query APIs; `X-Forwarded-For` is ignored otherwise. The Query API sends no CORS headers unless `QueryApi__CorsOrigins` is set.
 - The deletion job runs every 30 s in the local compose file so tests finish quickly; the default is once a day (`Deletion__IntervalSeconds`). Raw events also stay in Kafka for its 7-day retention.

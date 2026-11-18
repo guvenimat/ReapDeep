@@ -35,6 +35,11 @@ public sealed class ProjectAccessMiddleware(RequestDelegate next, ApiKeyAuthenti
             await ApiResults.Forbidden("A catalog_write key can only be used for the catalog endpoints").ExecuteAsync(ctx);
             return;
         }
+        if (project.KeyScope == KeyScopes.Server)
+        {
+            await ApiResults.Forbidden("A server key works with the Ingestion API and the Recommender, not with the Query API").ExecuteAsync(ctx);
+            return;
+        }
         ProjectContext.Set(ctx, project);
         await next(ctx);
     }
