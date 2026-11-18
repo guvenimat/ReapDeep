@@ -15,8 +15,9 @@ The [README](../README.md) covers setup and usage.
 | Trend query | p95 < 1 s (30 days, project with 100M events/month) | 110 ms totals, ~1.1 s unique users |
 | Funnel query | p95 < 3 s (same data) | 4.1 s exact, 0.8-1.2 s sampled |
 
-Other constraints: multi-tenant from day one, only MIT or Apache 2.0 code dependencies (no AGPL or BSL,
-which rules out MinIO, Redpanda and k6; the dashboard font, Inter, is SIL OFL 1.1), data stored in a single region, events kept for one year.
+Other constraints: multi-tenant from day one, permissively licensed code dependencies only (MIT, Apache 2.0,
+BSD-2-Clause and the PostgreSQL License; no AGPL or BSL, which rules out MinIO, Redpanda and k6; the dashboard
+font, Inter, is SIL OFL 1.1), data stored in a single region, events kept for one year.
 
 ## 2. Components
 
@@ -527,7 +528,11 @@ unit tests on every push.
 ## 11. Known limits and what production would need
 
 - Multi-node StarRocks and Kafka replication, then a repeat of the benchmark.
-- Observability: metrics for ingestion latency, Kafka lag, Routine Load errors and the deletion job.
-- Sessions and API keys are cached in Redis and every access change deletes the cached entries, so
-  revocations apply on all Query API instances at once; without Redis every request reads PostgreSQL.
-- No invitation or password reset emails.
+- Observability exists for the local stack (OTLP to Grafana, a provisioned dashboard, health checks and a
+  Routine Load watchdog), but production would need an external collector, long-term storage, paging and
+  retention policies.
+- Redis carries the session and API-key cache, request quotas and the result cache. It is optional: without
+  it every Query API instance reads PostgreSQL and counts quotas on its own, results are not cached, and
+  ingestion stops enforcing the per-project event quota.
+- Invitation and password reset e-mails need SMTP. Without it managers share single-use links themselves
+  and "Forgot your password?" answers `503`.

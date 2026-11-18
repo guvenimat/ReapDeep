@@ -36,7 +36,7 @@ function Overview({ version }: { version: number }) {
   const runs = new Map((models.data?.models ?? []).map((m) => [m.model, m]))
   return (
     <>
-      <div className="stats">
+      <div className="stats models">
         {MODELS.map((m) => <ModelTile key={m.id} label={m.label} description={m.description} run={runs.get(m.id)} />)}
       </div>
       <Quality />
