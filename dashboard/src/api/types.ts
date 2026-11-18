@@ -7,6 +7,7 @@ export type Interval = 'hour' | 'day' | 'week' | 'month'
 export interface Filter { scope: Scope; property: string; op: Op; value?: string }
 export interface Breakdown { scope: Scope; property: string; limit?: number; cohort_ids?: number[] }
 export interface Series { event: string; metric: Metric; property?: string }
+export interface ActionDef { id: number; name: string; description: string; events: string[]; created_by: string | null; updated_at: string }
 export interface DateRange { date_from?: string; date_to?: string }
 
 export interface TrendResult {

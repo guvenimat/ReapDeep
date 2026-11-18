@@ -4,7 +4,7 @@ import type { Breakdown, Filter, FunnelResponse } from '../../api/types'
 import { readState, toDateRange, type Range } from '../../app/route'
 import { Legend, MAX_SERIES, seriesColor } from '../../components/charts/common'
 import { FunnelChart, type FunnelGroup } from '../../components/charts/FunnelChart'
-import { AddButton, BreakdownEditor, completeBreakdown, completeFilters, EditorSection, FilterEditor, SuggestInput } from '../../components/editors'
+import { AddButton, BreakdownEditor, completeBreakdown, completeFilters, EditorSection, FilterEditor, SuggestInput, eventOrAction } from '../../components/editors'
 import { Card, FormMessage, IconButton, Segmented, StatTile, Status } from '../../components/ui'
 import { duration, ms, num, pct, shortId } from '../../lib/format'
 import { useDebounced, useQuery } from '../../lib/hooks'
@@ -21,9 +21,11 @@ const SAMPLING = [
   { id: 1, label: 'Exact' }, { id: 0.25, label: '25%' }, { id: 0.1, label: '10%' },
 ]
 
+const stepName = (s: { event: string } | { action: string }) => ('action' in s ? s.action : s.event)
+
 export function funnelBody(state: FunnelState, range: Range) {
   return {
-    steps: state.steps.filter((s) => s.trim()).map((event) => ({ event })),
+    steps: state.steps.filter((s) => s.trim()).map(eventOrAction),
     window_seconds: state.window_seconds,
     filters: completeFilters(state.filters),
     breakdown: completeBreakdown(state.breakdown),
@@ -68,7 +70,7 @@ export function Funnels({ params, range, onChange, onInsight }: {
           {state.steps.map((s, i) => (
             <div className="row step-row" key={i}>
               <span className="step-no">{i + 1}</span>
-              <SuggestInput list="events" placeholder="event" value={s} aria-label={`Step ${i + 1}`}
+              <SuggestInput list="events-actions" placeholder="event or action" value={s} aria-label={`Step ${i + 1}`}
                 onChange={(v) => set({ steps: state.steps.map((x, k) => (k === i ? v : x)) })} />
               {state.steps.length > 2 && (
                 <IconButton icon="close" label="Remove step" onClick={() => set({ steps: state.steps.filter((_, k) => k !== i) })} />
@@ -177,7 +179,8 @@ function DroppedPersons({ body, step, from, to, onClose }: {
     setBusy(true)
     setMessage(undefined)
     try {
-      const steps = body.steps.map((s) => s.event)
+      if (body.steps.some((s) => 'action' in s)) throw new Error('A dynamic cohort cannot follow a funnel with actions yet; save a static cohort instead')
+      const steps = body.steps.map(stepName)
       const cohort = await api.createCohort({
         name: `Dropped after ${from} (dynamic)`,
         description: `Reached ${from} but not ${to} in the funnel ${steps.join(' > ')}; recalculated with the cohorts`,
@@ -203,7 +206,7 @@ function DroppedPersons({ body, step, from, to, onClose }: {
       const all = await api.funnelPersons({ ...request, limit: 10000 })
       const cohort = await api.createCohort({
         name: `Dropped after ${from} (${new Date().toISOString().slice(0, 10)})`,
-        description: `Reached ${from} but not ${to} in the funnel ${body.steps.map((s) => s.event).join(' > ')}`,
+        description: `Reached ${from} but not ${to} in the funnel ${body.steps.map(stepName).join(' > ')}`,
         kind: 'static',
         members: all.persons.map((p) => p.id),
       })

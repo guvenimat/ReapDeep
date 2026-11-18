@@ -21,7 +21,7 @@ public static class TrendSql
 
     static SqlQuery EventCount(SqlBuilder b, Series s, string interval, TimeRange range, string tz, Breakdown? bd, bool distinct, bool withBucket)
     {
-        b.Where($"e.event = {b.P(s.Event)}");
+        b.Where(SqlFragments.EventIs(b, s.Event, s.Events));
         var bucket = withBucket ? $"{SqlFragments.Bucket(b, interval, range, tz)} AS bucket" : "NULL AS bucket";
         var value = distinct ? ", xx_hash3_64(e.event_id) AS v" : "";
         var agg = distinct ? "COUNT(DISTINCT v)" : "COUNT(*)";
@@ -37,7 +37,7 @@ public static class TrendSql
 
     static SqlQuery PropertyAggregate(SqlBuilder b, Series s, string interval, TimeRange range, string tz, Breakdown? bd, bool withBucket)
     {
-        b.Where($"e.event = {b.P(s.Event)}");
+        b.Where(SqlFragments.EventIs(b, s.Event, s.Events));
         var value = $"CAST({ColumnMapper.Expression(b, "event", s.Property ?? "")} AS DOUBLE)";
         var bucket = withBucket ? $"{SqlFragments.Bucket(b, interval, range, tz)} AS bucket" : "NULL AS bucket";
         var agg = Aggregate(s.Metric!, "base.v");
@@ -63,7 +63,7 @@ public static class TrendSql
 
     static SqlQuery UniqueUsers(SqlBuilder b, Series s, string interval, TimeRange range, string tz, Breakdown? bd, bool withBucket)
     {
-        b.Where($"e.event = {b.P(s.Event)}");
+        b.Where(SqlFragments.EventIs(b, s.Event, s.Events));
         var inner = new List<string> { "e.project_id", "e.distinct_id" };
         if (withBucket) inner.Add($"{SqlFragments.Bucket(b, interval, range, tz)} AS bucket");
 

@@ -1,13 +1,14 @@
 using System.Diagnostics;
 using ReapDeep.Analytics;
 using ReapDeep.Analytics.Sql;
+using ReapDeep.QueryApi.Actions;
 using ReapDeep.QueryApi.Auth;
 using ReapDeep.QueryApi.Cohorts;
 using ReapDeep.QueryApi.Infrastructure;
 
 namespace ReapDeep.QueryApi.Analytics;
 
-public sealed class TrendService(StarRocksClient starRocks, CohortService cohorts)
+public sealed class TrendService(StarRocksClient starRocks, CohortService cohorts, ActionRepository actions)
 {
     public const string Previous = "previous";
     public const string FormulaMetric = "formula";
@@ -52,7 +53,7 @@ public sealed class TrendService(StarRocksClient starRocks, CohortService cohort
 
     async Task<Plan> BuildPlanAsync(ProjectContext project, TrendRequest req, CancellationToken ct)
     {
-        var requested = req.Series ?? [];
+        var requested = await actions.ApplyAsync(project.ProjectId, req.Series ?? [], ct);
         Ensure.That(requested.Count is > 0 and <= 10, "series must contain 1-10 items");
         foreach (var s in requested)
         {

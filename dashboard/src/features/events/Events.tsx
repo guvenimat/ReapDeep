@@ -7,6 +7,7 @@ import { Card, JsonView, Status } from '../../components/ui'
 import { dateTime, ms, num, shortId } from '../../lib/format'
 import { useDebounced, useQuery } from '../../lib/hooks'
 import { SuggestInput } from '../../components/editors'
+import { Actions } from './Actions'
 
 interface EventsState { event: string; distinct_id: string; person_id: string; limit: number }
 const DEFAULT: EventsState = { event: '', distinct_id: '', person_id: '', limit: 50 }
@@ -44,6 +45,7 @@ export function Events({ params, range, onChange, openPerson }: {
           <EventsTable events={q.data?.events ?? []} openPerson={openPerson} />
         </Card>
       </Status>
+      <Actions />
     </div>
   )
 }

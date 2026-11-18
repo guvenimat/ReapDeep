@@ -4,6 +4,10 @@ static class SqlFragments
 {
     public const string NoValue = "$none";
 
+    public static string EventIs(SqlBuilder b, string eventName, IReadOnlyList<string>? events) => events is { Count: > 0 }
+        ? $"e.event IN ({string.Join(", ", events.Select(b.P))})"
+        : $"e.event = {b.P(eventName)}";
+
     public static string LocalTime(SqlBuilder b, TimeRange range, string tz) => range.FixedOffsetSeconds is { } offset
         ? $"seconds_add(e.timestamp, {offset})"
         : $"convert_tz(e.timestamp, 'UTC', {b.P(tz)})";
