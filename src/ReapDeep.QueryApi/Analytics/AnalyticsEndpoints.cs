@@ -17,6 +17,7 @@ public static class AnalyticsEndpoints
         api.MapPost("/query/rfm/migration", RfmMigration);
         api.MapGet("/persons/{personId}/rfm", PersonRfm);
         api.MapPost("/query/lifecycle", Lifecycle);
+        api.MapPost("/query/stickiness", Stickiness);
         api.MapPost("/query/web", Web);
         api.MapGet("/events", Events);
     }
@@ -65,6 +66,13 @@ public static class AnalyticsEndpoints
     static async Task<IResult> PersonRfm(string personId, ProjectContext project, RfmService rfm,
         [FromQuery(Name = "window_days")] int? windowDays, [FromQuery(Name = "purchase_event")] string? purchaseEvent, CancellationToken ct) =>
         ApiResults.Ok(await rfm.PersonAsync(project, personId, windowDays, purchaseEvent, ct), AppJsonContext.Default.RfmPersonResponse);
+
+    static async Task<IResult> Stickiness(StickinessRequest req, ProjectContext project, StickinessService stickiness, AnalyticsCache cache, HttpContext http,
+        CancellationToken ct) => req.Explain
+        ? ApiResults.Ok(await stickiness.ExplainAsync(project, req, ct), AppJsonContext.Default.ExplainResponse)
+        : ApiResults.Ok(await cache.GetOrRunAsync(http, project, "stickiness", req, AppJsonContext.Default.StickinessRequest, req.Filters, null,
+            AppJsonContext.Default.StickinessResponse, () => stickiness.RunAsync(project, req, ct), (r, ms) => r with { TookMs = ms }, ct),
+            AppJsonContext.Default.StickinessResponse);
 
     static async Task<IResult> Lifecycle(LifecycleRequest req, ProjectContext project, LifecycleService lifecycle, AnalyticsCache cache, HttpContext http,
         CancellationToken ct) => req.Explain

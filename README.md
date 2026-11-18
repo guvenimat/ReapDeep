@@ -209,6 +209,10 @@ A trend series counts events, counts unique persons, or aggregates a numeric eve
 - **Segment movement:** pick a segment to see where today's members were N days ago (7, 30 or 90) and where that segment's members of N days ago are now, including "not a customer then" and "no purchase in the window now". The person profile shows each customer's segment, scores, days since the last purchase, orders and spend.
 - **Segments as cohorts:** one click saves a segment as a dynamic cohort with an `rfm_segment` condition. The cohort job recalculates it like any other cohort, so a segment can filter or break down every analysis, for example a funnel of "Customers at risk". Both analyses merge anonymous and identified IDs before counting.
 
+### Stickiness
+
+The Stickiness tab (`POST /api/v1/query/stickiness`) counts, for an event or an action, how many different days or weeks each person did it in the date range, and shows how many persons fall in each count with the average and the share of regulars (active in at least half of the periods). Persons are merged across their ids, like everywhere else.
+
 ### Alerts
 
 ![An alert being edited: a daily threshold on a saved trend, sent by email, above the list of webhook, email and Slack alerts](docs/images/alerts.png)

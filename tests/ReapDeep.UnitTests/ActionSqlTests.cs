@@ -43,4 +43,16 @@ public class ActionSqlTests
         Assert.Matches(@"e\.event IN \(@p\d+, @p\d+, @p\d+\)", q.Sql);
         Assert.Equal(["product_viewed", "category_viewed", "purchase"], q.Parameters.Select(p => p.Value).OfType<string>().Where(v => v is "product_viewed" or "category_viewed" or "purchase").Distinct());
     }
+
+    [Fact]
+    public void Stickiness_counts_active_periods_per_person_with_tenant_filters_and_actions()
+    {
+        var q = StickinessSql.Build(Builder(), "Engaged", ["product_viewed", "purchase"], "day", Range(), "UTC");
+
+        Assert.Matches(@"e\.project_id = @p\d+ AND e\.timestamp >= @p\d+ AND e\.timestamp < @p\d+", q.Sql);
+        Assert.Matches(@"e\.event IN \(@p\d+, @p\d+\)", q.Sql);
+        Assert.Contains("COALESCE(pdi.person_id, d.distinct_id) AS person", q.Sql);
+        Assert.DoesNotContain("INNER JOIN", q.Sql);
+        Assert.EndsWith("SELECT periods, COUNT(*) AS persons FROM c GROUP BY periods ORDER BY periods", q.Sql);
+    }
 }
