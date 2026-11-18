@@ -142,6 +142,12 @@ public class AiTests
         Assert.True(admins.IsAdmin("BOSS@example.com "));
         Assert.False(admins.IsAdmin("customer@example.com"));
         Assert.False(new PlatformAdmins(new ConfigurationBuilder().Build()).IsAdmin("ops@example.com"));
+        var roles = new PlatformAdmins(new ConfigurationBuilder().AddInMemoryCollection([
+            KeyValuePair.Create("Platform:AdminEmails", (string?)"ops@example.com"),
+            KeyValuePair.Create("Platform:ViewerEmails", (string?)"ops@example.com, look@example.com")]).Build());
+        Assert.Equal(PlatformAdmins.Admin, roles.RoleOf("OPS@example.com"));
+        Assert.Equal(PlatformAdmins.Viewer, roles.RoleOf("look@example.com"));
+        Assert.Null(roles.RoleOf("customer@example.com"));
     }
 
     static readonly TimeZoneInfo Istanbul = TimeZoneInfo.FindSystemTimeZoneById("Europe/Istanbul");

@@ -45,7 +45,7 @@ public static class AuthEndpoints
             return ApiResults.BadRequest(InvalidLink);
         await sessions.InvalidateUserAsync(userId);
         return await sessions.SignInUserAsync(ctx, userId) is { } me
-            ? ApiResults.Ok(me with { PlatformAdmin = ctx.RequestServices.GetRequiredService<ReapDeep.QueryApi.Ai.PlatformAdmins>().IsAdmin(me.User.Email) }, AppJsonContext.Default.MeResponse)
+            ? ApiResults.Ok(WithPlatformRole(me, ctx), AppJsonContext.Default.MeResponse)
             : ApiResults.Unauthorized("Not signed in");
     }
 
@@ -54,7 +54,7 @@ public static class AuthEndpoints
         if (string.IsNullOrWhiteSpace(req.Email) || string.IsNullOrEmpty(req.Password) || req.Password.Length > PasswordHasher.MaxLength)
             return ApiResults.BadRequest("email and password are required");
         return await sessions.SignInAsync(ctx, req.Email, req.Password) is { } me
-            ? ApiResults.Ok(me with { PlatformAdmin = ctx.RequestServices.GetRequiredService<ReapDeep.QueryApi.Ai.PlatformAdmins>().IsAdmin(me.User.Email) }, AppJsonContext.Default.MeResponse)
+            ? ApiResults.Ok(WithPlatformRole(me, ctx), AppJsonContext.Default.MeResponse)
             : ApiResults.Unauthorized("Invalid email or password");
     }
 
@@ -66,7 +66,7 @@ public static class AuthEndpoints
 
     static async Task<IResult> Me(HttpContext ctx, SessionService sessions) =>
         await sessions.GetCurrentAsync(ctx) is { } me
-            ? ApiResults.Ok(me with { PlatformAdmin = ctx.RequestServices.GetRequiredService<ReapDeep.QueryApi.Ai.PlatformAdmins>().IsAdmin(me.User.Email) }, AppJsonContext.Default.MeResponse)
+            ? ApiResults.Ok(WithPlatformRole(me, ctx), AppJsonContext.Default.MeResponse)
             : ApiResults.Unauthorized("Not signed in");
 
     static async Task<IResult> ChangePassword(PasswordChangeRequest req, HttpContext ctx, SessionService sessions)
@@ -77,5 +77,11 @@ public static class AuthEndpoints
         return await sessions.ChangePasswordAsync(ctx, me.User.Id, req.CurrentPassword, req.NewPassword)
             ? Results.NoContent()
             : ApiResults.BadRequest("Current password is incorrect");
+    }
+
+    static MeResponse WithPlatformRole(MeResponse me, HttpContext ctx)
+    {
+        var role = ctx.RequestServices.GetRequiredService<ReapDeep.QueryApi.Ai.PlatformAdmins>().RoleOf(me.User.Email);
+        return me with { PlatformAdmin = role == ReapDeep.QueryApi.Ai.PlatformAdmins.Admin, PlatformRole = role };
     }
 }

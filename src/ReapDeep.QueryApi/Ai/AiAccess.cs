@@ -91,5 +91,35 @@ public sealed class AiAccessRepository(NpgsqlDataSource db)
             """, new { Id = organizationId, Enabled = enabled, Features = features });
     }
 
+    public sealed record AuditRecord(long Id, string ActorEmail, long? OrganizationId, string OrganizationName, string Action, string BeforeState,
+        string AfterState, DateTime CreatedAt);
+
+    public async Task AuditAsync(string actor, long organizationId, string organizationName, string action, string before, string after, CancellationToken ct)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand("""
+            INSERT INTO platform_audit (actor_email, organization_id, organization_name, action, before_state, after_state)
+            VALUES ($1, $2, $3, $4, $5::jsonb, $6::jsonb)
+            """, conn);
+        cmd.Parameters.Add(new NpgsqlParameter<string> { TypedValue = actor });
+        cmd.Parameters.Add(new NpgsqlParameter<long> { TypedValue = organizationId });
+        cmd.Parameters.Add(new NpgsqlParameter<string> { TypedValue = organizationName });
+        cmd.Parameters.Add(new NpgsqlParameter<string> { TypedValue = action });
+        cmd.Parameters.Add(new NpgsqlParameter<string> { TypedValue = before });
+        cmd.Parameters.Add(new NpgsqlParameter<string> { TypedValue = after });
+        await cmd.ExecuteNonQueryAsync(ct);
+    }
+
+    public async Task<List<PlatformAuditEntry>> AuditLogAsync(int limit, CancellationToken ct)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        var rows = await conn.QueryAsync<AuditRecord>("""
+            SELECT id, actor_email, organization_id, organization_name, action, before_state::text AS before_state, after_state::text AS after_state, created_at
+            FROM platform_audit ORDER BY created_at DESC, id DESC LIMIT @Limit
+            """, new { Limit = limit });
+        return [.. rows.Select(r => new PlatformAuditEntry(r.Id, r.ActorEmail, r.OrganizationId, r.OrganizationName, r.Action,
+            System.Text.Json.JsonDocument.Parse(r.BeforeState).RootElement.Clone(), System.Text.Json.JsonDocument.Parse(r.AfterState).RootElement.Clone(), r.CreatedAt))];
+    }
+
     static List<string> Split(string text) => [.. text.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)];
 }

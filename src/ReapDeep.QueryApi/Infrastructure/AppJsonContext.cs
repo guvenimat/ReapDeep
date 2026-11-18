@@ -82,6 +82,7 @@ namespace ReapDeep.QueryApi.Infrastructure;
 [JsonSerializable(typeof(AiAccessResponse))]
 [JsonSerializable(typeof(AiAccessBody))]
 [JsonSerializable(typeof(PlatformOrganizationsResponse))]
+[JsonSerializable(typeof(PlatformAuditResponse))]
 [JsonSerializable(typeof(AiExplainRequest))]
 [JsonSerializable(typeof(AiQueryRequest))]
 [JsonSerializable(typeof(AiQueryAnswer))]

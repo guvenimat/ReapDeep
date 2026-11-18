@@ -104,7 +104,7 @@ export function Workspace({ me, onLogout, onAccessChanged }: { me: Me; onLogout:
               {route.tab === 'alerts' && <Alerts canManage={canManage} />}
               {route.tab === 'flags' && <Flags canManage={canManage} />}
               {route.tab === 'ai' && <AiPage canManage={canManage} />}
-              {route.tab === 'platform' && (me.platform_admin ? <PlatformPage /> : <p className="editor-hint">Only platform administrators can open this page.</p>)}
+              {route.tab === 'platform' && (me.platform_role ? <PlatformPage canEdit={me.platform_role === 'admin'} /> : <p className="editor-hint">Only the platform team can open this page.</p>)}
               {route.tab === 'experiments' && <Experiments id={route.id} canManage={canManage} navigate={(id) => navigate('experiments', id)} />}
               {route.tab === 'events' && <Events params={route.params} range={range} onChange={onQuery} openPerson={openPerson} />}
               {route.tab === 'persons' && <Persons id={route.id} openPerson={openPerson} canManage={canManage} />}

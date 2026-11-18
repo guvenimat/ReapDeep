@@ -1,4 +1,4 @@
-import type { AiNote, DigestSchedule, DigestFrequency, AiAccess, AiFeature, PlatformOrganization, AiAnswer, AiQueryAnswer, ActionDef, Annotation,
+import type { PlatformAuditEntry, AiNote, DigestSchedule, DigestFrequency, AiAccess, AiFeature, PlatformOrganization, AiAnswer, AiQueryAnswer, ActionDef, Annotation,
   Alert, AlertEvent, AlertInput, AlertTestInput, AlertTestResult, AuthTokenInfo, Experiment, ExperimentInput, ExperimentResults, FeatureFlag, FlagInput,
   ApiKey, CatalogItem, CatalogItemDetail, CatalogItemInput, Cohort, CohortDefinition, CohortKind, CohortPerson, Dashboard, DashboardSummary, DateRange, DeletionRequest, EventRow, FunnelPersonsResponse, FunnelRequest, FunnelResponse, Insight, InsightKind,
   HitRate, KeyScope, Me, Member, Metadata, ModelRun, LifecycleResponse, PathsResponse, WebAnalyticsResponse, Person, PersonCohortsResponse, RecommendationPerformanceResponse, RetentionResponse, RfmMigrationResponse, RfmPerson, RfmResponse, Role, TrendRequest, TrendResponse, ProjectDetail,
@@ -113,6 +113,7 @@ export const api = {
   platformOrganizations: (signal?: AbortSignal) =>
     request<{ organizations: PlatformOrganization[]; model: string | null }>('GET', '/api/v1/platform/organizations', undefined, signal),
   setPlatformAi: (id: number, body: { enabled?: boolean; features?: AiFeature[] }) => request<unknown>('PUT', `/api/v1/platform/organizations/${id}/ai`, body),
+  platformAudit: (signal?: AbortSignal) => request<{ entries: PlatformAuditEntry[] }>('GET', '/api/v1/platform/audit?limit=50', undefined, signal),
   explainExperiment: (id: number) => request<AiAnswer>('POST', `/api/v1/experiments/${id}/explain`),
   explainInsight: (kind: 'trends' | 'funnels' | 'retention', query: object) => request<AiAnswer>('POST', '/api/v1/ai/explain', { kind, query }),
   aiQuery: (question: string) => request<AiQueryAnswer>('POST', '/api/v1/ai/query', { question }),
