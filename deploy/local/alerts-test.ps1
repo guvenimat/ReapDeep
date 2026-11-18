@@ -146,6 +146,37 @@ try {
     $g = (S POST "/alerts/$($gone.id)/check").Json.event
     Start-Sleep 12
     Check "410 is not retried: failed after 1 attempt" ($g.delivery_status -eq "failed" -and $g.attempts -eq 1 -and @(Hooks "/gone").Count -eq 1 -and @((S GET "/alerts/$($gone.id)/events").Json.events)[0].attempts -eq 1)
+
+    Write-Host "`n4d) Retrying a failed delivery by hand"
+    $retry = S POST "/alerts/$($gone.id)/events/$($g.id)/retry"
+    Check "retry of a failed delivery makes one more attempt -> still 410, failed, attempt 2" ($retry.Status -eq 200 -and $retry.Json.delivery_status -eq "failed" -and $retry.Json.attempts -eq 2 -and $retry.Json.response_status -eq 410 -and @(Hooks "/gone").Count -eq 2)
+    $goneTries = @(Hooks "/gone")
+    Check "the retry keeps the delivery id and body and sends attempt 2" ($goneTries[1].delivery -eq "$($g.id)" -and $goneTries[1].attempt -eq "2" -and $goneTries[1].body -eq $goneTries[0].body)
+    $null = S PUT "/alerts/$($gone.id)" @{ webhook_url = "http://host.docker.internal:$port/fixed" }
+    $fixed = S POST "/alerts/$($gone.id)/events/$($g.id)/retry"
+    Check "after fixing the URL a retry delivers to the alert's current destination (attempt 3)" ($fixed.Status -eq 200 -and $fixed.Json.delivery_status -eq "delivered" -and $fixed.Json.attempts -eq 3 -and @(Hooks "/fixed").Count -eq 1 -and (Hooks "/fixed")[0].signature -eq ("sha256=" + (Hmac $gone.secret (Hooks "/fixed")[0].body)))
+    Check "a delivered event cannot be retried -> 409" ((S POST "/alerts/$($gone.id)/events/$($g.id)/retry").Status -eq 409)
+    Check "a pending or unknown event -> 409 / 404" ((S POST "/alerts/$($flaky.id)/events/$($first.id)/retry").Status -eq 409 -and (S POST "/alerts/$($gone.id)/events/999999999/retry").Status -eq 404)
+    Check "a read API key cannot retry -> 403" ((K POST "/alerts/$($gone.id)/events/$($g.id)/retry").Status -eq 403)
+    Check "the history shows the retried event once" (@((S GET "/alerts/$($gone.id)/events").Json.events).Count -eq 1)
+
+    Write-Host "`n4e) Test notifications"
+    $eventsBefore = @((S GET "/alerts/$($flaky.id)/events").Json.events).Count
+    $t1 = S POST "/alerts/test" @{ name = "Draft $tag"; channel = "webhook"; webhook_url = "http://host.docker.internal:$port/testhook" }
+    $th = @(Hooks "/testhook")
+    $tBody = if ($th.Count) { $th[0].body | ConvertFrom-Json } else { $null }
+    Check "test webhook for an unsaved alert is delivered with state test" ($t1.Status -eq 200 -and $t1.Json.delivered -eq $true -and $t1.Json.response_status -eq 200 -and $th.Count -eq 1 -and $tBody.state -eq "test" -and $tBody.alert_name -eq "Draft $tag" -and $th[0].delivery -eq "0")
+    $t2 = S POST "/alerts/test" @{ alert_id = $flaky.id }
+    $fh = @(Hooks "/flaky")
+    Check "test for a saved alert uses its destination and signs with its secret" ($t2.Json.delivered -eq $true -and $fh.Count -eq 4 -and ($fh[3].body | ConvertFrom-Json).state -eq "test" -and $fh[3].signature -eq ("sha256=" + (Hmac $flaky.secret $fh[3].body)))
+    Check "a test does not change the alert or its history" (@((S GET "/alerts/$($flaky.id)/events").Json.events).Count -eq $eventsBefore)
+    $t3 = S POST "/alerts/test" @{ channel = "webhook"; webhook_url = "http://host.docker.internal:$port/gone" }
+    Check "a failing test reports the receiver's answer -> HTTP 410" ($t3.Status -eq 200 -and $t3.Json.delivered -eq $false -and $t3.Json.response_status -eq 410 -and $t3.Json.error -eq "HTTP 410")
+    Check "test destinations go through the URL and DNS checks -> 400" ((S POST "/alerts/test" @{ channel = "webhook"; webhook_url = "http://user:pw@example.com/x" }).Status -eq 400 -and (S POST "/alerts/test" @{ channel = "webhook"; webhook_url = "http://no-such-host-$tag.invalid/x" }).Status -eq 400)
+    Check "unknown alert -> 404, read API key -> 403" ((S POST "/alerts/test" @{ alert_id = 999999999 }).Status -eq 404 -and (Send $plain POST "/alerts/test" '{"alert_id":1}' @{ Authorization = "Bearer $readKey" }).Status -eq 403)
+    $t4 = S POST "/alerts/test" @{ name = "Mail test $tag"; channel = "email"; email_to = @("test-$tag@example.com") }
+    $testMail = WaitFor { @((Invoke-RestMethod "http://127.0.0.1:8026/api/v1/messages?limit=50").messages | Where-Object { $_.Subject -eq "[ReapDeep] Test notification for Mail test $tag" }).Count -eq 1 } 30
+    Check "test email arrives with a test subject" ($t4.Json.delivered -eq $true -and $testMail)
     foreach ($a in @($flaky, $gone)) { $null = S DELETE "/alerts/$($a.id)" }
 
     Write-Host "`n4c) Slack and email channels"

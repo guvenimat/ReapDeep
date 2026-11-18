@@ -173,6 +173,8 @@ export interface Alert {
   last_value: number | null; previous_value: number | null; last_error: string | null; last_checked_at: string | null
   next_check_at: string; created_by: string | null; created_at: string
 }
+export interface AlertTestInput { alert_id?: number; name?: string; channel: AlertChannel; webhook_url?: string; email_to?: string[] }
+export interface AlertTestResult { delivered: boolean; response_status: number | null; error: string | null }
 export interface AlertEvent {
   id: number; kind: 'fired' | 'resolved' | 'error'; value: number | null; previous_value: number | null; message: string
   response_status: number | null; delivery_error: string | null

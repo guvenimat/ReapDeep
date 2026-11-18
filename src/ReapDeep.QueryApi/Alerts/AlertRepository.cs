@@ -139,6 +139,25 @@ public sealed class AlertRepository(NpgsqlDataSource db)
         return row.ToContract();
     }
 
+    internal async Task<DeliveryRecord?> ClaimFailedAsync(long projectId, long alertId, long eventId, DateTime leaseUntil, CancellationToken ct)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        return await conn.QuerySingleOrDefaultAsync<DeliveryRecord>("""
+            UPDATE alert_events e SET delivery_status = 'pending', next_attempt_at = @LeaseUntil
+            FROM alerts a
+            WHERE e.id = @EventId AND e.alert_id = @AlertId AND e.project_id = @ProjectId AND e.delivery_status = 'failed' AND a.id = e.alert_id
+            RETURNING e.id AS event_id, e.alert_id, e.channel, a.webhook_url, a.email_to, a.secret, e.payload, e.attempts
+            """, new { ProjectId = projectId, AlertId = alertId, EventId = eventId, LeaseUntil = leaseUntil });
+    }
+
+    public async Task<string?> DeliveryStatusAsync(long projectId, long alertId, long eventId, CancellationToken ct)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        return await conn.ExecuteScalarAsync<string?>(
+            "SELECT delivery_status FROM alert_events WHERE id = @EventId AND alert_id = @AlertId AND project_id = @ProjectId",
+            new { ProjectId = projectId, AlertId = alertId, EventId = eventId });
+    }
+
     internal async Task<List<DeliveryRecord>> ClaimRetriesAsync(int limit, DateTime leaseUntil, CancellationToken ct)
     {
         await using var conn = await db.OpenConnectionAsync(ct);

@@ -88,6 +88,11 @@ function Section([string]$html, [string]$id) {
 Write-Host "`n0) Sign-in"
 $html = Dom "" "document.querySelector('[data-testid=login-form]')"
 Check "login screen is shown without a session" ($html -match 'data-testid="login-form"' -and $html -notmatch 'data-testid="trends-chart"')
+$html = Dom "" "(function(){const l=document.querySelector('[data-testid=forgot-link]');if(l&&!window.__fg){window.__fg=1;l.click()}return false})() || document.querySelector('[data-testid=forgot-form]')"
+Check "'Forgot your password?' opens the reset request form" ((Section $html "forgot-form") -match 'Send reset link')
+$badToken = "x" * 43
+$html = Dom "#/reset?token=$badToken" "document.querySelector('[data-testid=set-password-invalid] .error')"
+Check "a reset link with an unknown token shows that it cannot be used" ((Section $html "set-password-form") -match 'cannot be used' -and $html -match 'invalid, already used or expired')
 $fill = "(function(){const f=document.querySelector('[data-testid=login-form]');if(!f)return true;const set=(n,v)=>{const i=f.querySelector('input[name='+n+']');Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(i,v);i.dispatchEvent(new Event('input',{bubbles:true}))};if(!window.__step){set('email','$($envValues.ADMIN_EMAIL)');set('password','$($envValues.ADMIN_PASSWORD)');window.__step=1;return false}if(window.__step===1){window.__step=2;f.requestSubmit()}return false})() && document.querySelector('[data-testid=user-email]')"
 $html = Dom "" $fill
 Check "signing in through the form shows the workspace with the user's email" ((Section $html "user-email") -match [regex]::Escape($envValues.ADMIN_EMAIL))
@@ -169,6 +174,8 @@ Check "Web analytics: the page, the direct source and the desktop device are lis
 
 $html = Dom "#/alerts" "document.querySelector('[data-testid=alerts-card]') && !document.querySelector('.skeleton')"
 Check "Alerts tab renders for the owner with a 'New alert' action" ($html -match 'data-testid="alerts-card"' -and $html -match 'data-testid="new-alert"')
+$html = Dom "#/alerts" "(function(){const b=document.querySelector('[data-testid=new-alert]');if(b&&!window.__na){window.__na=1;b.click()}return false})() || document.querySelector('[data-testid=alert-send-test]')"
+Check "the alert editor offers 'Send test'" ($html -match 'data-testid="alert-editor"' -and $html -match '>Create alert<' -and $html -match 'data-testid="alert-send-test"[^>]*>Send test<')
 $html = Dom "#/flags" "document.querySelector('[data-testid=flags-card]') && !document.querySelector('.skeleton')"
 Check "Feature flags tab renders for the owner with a 'New flag' action" ($html -match 'data-testid="flags-card"' -and $html -match 'data-testid="new-flag"')
 $html = Dom "#/flags" "(function(){const b=document.querySelector('[data-testid=new-flag]');if(b&&!window.__f){window.__f=1;b.click();return false}const a=document.querySelector('[data-testid=flag-editor] .add-button');if(a&&window.__f===1){window.__f=2;a.click()}return false})() || document.querySelector('[data-testid=flag-editor] .suggest input')"

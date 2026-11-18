@@ -17,6 +17,10 @@ public sealed record AlertEventsResponse(List<AlertEventRow> Events);
 
 public sealed record AlertCheckResponse(string State, double? Value, double? PreviousValue, string Message, AlertEventRow? Event);
 
+public sealed record AlertTestRequest(long? AlertId, string? Name, string? Channel, string? WebhookUrl, List<string>? EmailTo);
+
+public sealed record AlertTestResponse(bool Delivered, int? ResponseStatus, string? Error);
+
 public sealed record AlertWebhookInsight(long Id, string Name);
 
 public sealed record SlackMessage(string Text);

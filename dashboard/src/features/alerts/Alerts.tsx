@@ -3,7 +3,7 @@ import { api, errorMessage } from '../../api/client'
 import type { Alert, AlertChannel, AlertCondition, AlertEvent, AlertWindow } from '../../api/types'
 import { Badge, Card, FormMessage, IconButton, Status } from '../../components/ui'
 import { ago, dateTime, num } from '../../lib/format'
-import { useQuery } from '../../lib/hooks'
+import { useAction, useQuery } from '../../lib/hooks'
 
 const CONDITIONS: { id: AlertCondition; label: string; unit: string }[] = [
   { id: 'above', label: 'is above', unit: '' },
@@ -107,7 +107,7 @@ export function Alerts({ canManage }: { canManage: boolean }) {
           </div>
         </Status>
       </Card>
-      {current && <AlertHistory key={`${current.id}-${version}`} alert={current} />}
+      {current && <AlertHistory key={`${current.id}-${version}`} alert={current} canManage={canManage} />}
     </div>
   )
 }
@@ -131,14 +131,18 @@ function destination(a: Alert) {
   return a.channel === 'email' ? (a.email_to ?? []).join(', ') : a.webhook_url ?? ''
 }
 
-function AlertHistory({ alert }: { alert: Alert }) {
-  const events = useQuery((signal) => api.alertEvents(alert.id, signal), [alert.id])
+function AlertHistory({ alert, canManage }: { alert: Alert; canManage: boolean }) {
+  const [version, setVersion] = useState(0)
+  const events = useQuery((signal) => api.alertEvents(alert.id, signal), [alert.id, version])
+  const action = useAction()
+  const retry = (e: AlertEvent) => action.run(() => api.retryAlertEvent(alert.id, e.id).then(() => setVersion((v) => v + 1)))
   return (
     <Card testId="alert-history" title={`History of ${alert.name}`} meta={destination(alert)}>
+      <FormMessage error={action.error} />
       <Status state={events} empty={events.data?.events.length === 0} emptyTitle="Nothing happened yet" emptyText="Events appear when the alert fires, resolves or fails.">
         <div className="table-wrap">
           <table>
-            <thead><tr><th>When</th><th>Event</th><th>Details</th><th>Webhook</th></tr></thead>
+            <thead><tr><th>When</th><th>Event</th><th>Details</th><th>Delivery</th>{canManage && <th><span className="sr-only">Actions</span></th>}</tr></thead>
             <tbody>
               {events.data?.events.map((e) => (
                 <tr key={e.id}>
@@ -146,6 +150,13 @@ function AlertHistory({ alert }: { alert: Alert }) {
                   <td><Badge tone={e.kind === 'resolved' ? 'good' : 'danger'}>{e.kind}</Badge></td>
                   <td>{e.message}</td>
                   <td className="nowrap"><Delivery e={e} /></td>
+                  {canManage && (
+                    <td className="num">
+                      {e.delivery_status === 'failed' && (
+                        <button type="button" className="link retry-delivery" data-event={e.id} onClick={() => retry(e)} disabled={action.busy}>Retry</button>
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -172,7 +183,26 @@ function AlertEditor({ alert, onSaved, onCancel }: { alert?: Alert; onSaved: (a:
   const [enabled, setEnabled] = useState(alert?.enabled ?? true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
+  const [testResult, setTestResult] = useState<string>()
   const unit = CONDITIONS.find((c) => c.id === condition)!.unit
+
+  const sendTest = async () => {
+    setBusy(true)
+    setError(undefined)
+    setTestResult(undefined)
+    try {
+      const r = await api.testAlert({
+        alert_id: alert?.id, name: name.trim() || undefined, channel,
+        ...(channel === 'email' ? { email_to: recipients } : { webhook_url: url.trim() }),
+      })
+      if (r.delivered) setTestResult(`Test notification sent${r.response_status && channel !== 'email' ? ` (HTTP ${r.response_status})` : ''}`)
+      else setError(`Test notification failed: ${r.error ?? 'unknown error'}`)
+    } catch (err) {
+      setError(errorMessage(err))
+    } finally {
+      setBusy(false)
+    }
+  }
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -195,6 +225,7 @@ function AlertEditor({ alert, onSaved, onCancel }: { alert?: Alert; onSaved: (a:
     <form onSubmit={submit} data-testid="alert-editor">
       <Card title={alert ? `Edit ${alert.name}` : 'New alert'} actions={<>
         <button type="button" onClick={onCancel}>Cancel</button>
+        <button type="button" onClick={sendTest} disabled={busy || !target} data-testid="alert-send-test">Send test</button>
         <button type="submit" className="primary" disabled={busy || !name.trim() || insightId === '' || threshold === '' || !target}>
           {busy ? 'Saving…' : alert ? 'Save changes' : 'Create alert'}
         </button>
@@ -244,7 +275,7 @@ function AlertEditor({ alert, onSaved, onCancel }: { alert?: Alert; onSaved: (a:
           Check automatically
         </label>
         <p className="footnote">The alert follows the trend's first series, or its formula when it has one; breakdowns are ignored. It is checked every 10 minutes for an hourly window, hourly for a day and every 6 hours for a week.</p>
-        <FormMessage error={error} />
+        <div data-testid="alert-editor-message"><FormMessage error={error} success={error ? undefined : testResult} /></div>
       </Card>
     </form>
   )

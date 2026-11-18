@@ -1,5 +1,5 @@
 import type {
-  Alert, AlertEvent, AlertInput, AuthTokenInfo, Experiment, ExperimentInput, ExperimentResults, FeatureFlag, FlagInput,
+  Alert, AlertEvent, AlertInput, AlertTestInput, AlertTestResult, AuthTokenInfo, Experiment, ExperimentInput, ExperimentResults, FeatureFlag, FlagInput,
   ApiKey, CatalogItem, CatalogItemDetail, CatalogItemInput, Cohort, CohortDefinition, CohortKind, CohortPerson, Dashboard, DashboardSummary, DateRange, DeletionRequest, EventRow, FunnelPersonsResponse, FunnelRequest, FunnelResponse, Insight, InsightKind,
   HitRate, KeyScope, Me, Member, Metadata, ModelRun, LifecycleResponse, PathsResponse, WebAnalyticsResponse, Person, PersonCohortsResponse, RecommendationPerformanceResponse, RetentionResponse, RfmMigrationResponse, RfmPerson, RfmResponse, Role, TrendRequest, TrendResponse, ProjectDetail,
 } from './types'
@@ -154,6 +154,8 @@ export const api = {
   checkAlert: (id: number) =>
     request<{ state: Alert['state']; value: number | null; previous_value: number | null; message: string; event: AlertEvent | null }>('POST', `/api/v1/alerts/${id}/check`),
   alertEvents: (id: number, signal?: AbortSignal) => request<{ events: AlertEvent[] }>('GET', `/api/v1/alerts/${id}/events`, undefined, signal),
+  retryAlertEvent: (id: number, eventId: number) => request<AlertEvent>('POST', `/api/v1/alerts/${id}/events/${eventId}/retry`),
+  testAlert: (body: AlertTestInput) => request<AlertTestResult>('POST', '/api/v1/alerts/test', body),
 
   flags: (signal?: AbortSignal) => request<{ flags: FeatureFlag[] }>('GET', '/api/v1/flags', undefined, signal),
   createFlag: (body: FlagInput) => request<FeatureFlag>('POST', '/api/v1/flags', body),
