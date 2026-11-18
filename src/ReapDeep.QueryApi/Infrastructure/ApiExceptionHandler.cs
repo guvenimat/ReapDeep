@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Diagnostics;
 using MySqlConnector;
 using ReapDeep.Analytics;
+using ReapDeep.QueryApi.Ai;
 using ReapDeep.QueryApi.Cohorts;
 
 namespace ReapDeep.QueryApi.Infrastructure;
@@ -17,6 +18,9 @@ public sealed class ApiExceptionHandler(ILogger<ApiExceptionHandler> log) : IExc
             ValidationException e => (StatusCodes.Status400BadRequest, e.Message),
             CohortNotFoundException e => (StatusCodes.Status404NotFound, e.Message),
             CohortNotReadyException e => (StatusCodes.Status409Conflict, e.Message),
+            AiDisabledException e => (StatusCodes.Status403Forbidden, e.Message),
+            AiQuotaException e => (StatusCodes.Status429TooManyRequests, e.Message),
+            AiUnavailableException e => (StatusCodes.Status503ServiceUnavailable, e.Message),
             MySqlException => failure switch
             {
                 StarRocksFailure.ResourceLimit => (StatusCodes.Status503ServiceUnavailable, "Query exceeded the database resource limits; narrow the date range or filters"),

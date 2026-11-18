@@ -13,6 +13,6 @@ public sealed record CreatedApiKey(ApiKeyRow ApiKey, string Key);
 public sealed record CreateProjectRequest(string? Name, string? Timezone);
 public sealed record DeleteProjectRequest(string? Confirm);
 public sealed record ProjectDetail(long Id, string Name, long OrganizationId, string OrganizationName, string Timezone, string PublicKey, DateTime CreatedAt,
-    bool AnonymizeIp, int? IngestEventsPerSecond, string? RecommendationSecret = null);
-public sealed record ProjectSettingsRequest(bool? AnonymizeIp);
+    bool AnonymizeIp, int? IngestEventsPerSecond, string? RecommendationSecret = null, bool AiEnabled = false, string? AiModel = null);
+public sealed record ProjectSettingsRequest(bool? AnonymizeIp, bool? AiEnabled = null);
 public sealed record RecommendationSecretResponse(string RecommendationSecret);

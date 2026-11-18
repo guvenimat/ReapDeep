@@ -4,6 +4,7 @@ using System.Threading.RateLimiting;
 using MySqlConnector;
 using Npgsql;
 using ReapDeep.QueryApi.Actions;
+using ReapDeep.QueryApi.Ai;
 using ReapDeep.QueryApi.Alerts;
 using ReapDeep.QueryApi.Annotations;
 using ReapDeep.QueryApi.Analytics;
@@ -102,6 +103,10 @@ public static class HostingExtensions
         services.AddSingleton<CatalogService>();
         services.AddSingleton<AlertRepository>();
         services.AddSingleton<WebhookSender>();
+        var ai = AiOptions.From(cfg);
+        services.AddSingleton(ai);
+        services.AddSingleton<IChatModel>(_ => ai.Provider == AiOptions.Fake ? new FakeChatModel() : new OpenAiCompatibleChatModel(new HttpClient { Timeout = TimeSpan.FromSeconds(100) }, ai));
+        services.AddSingleton<AiGateway>();
         services.AddSingleton<EmailSender>();
         services.AddSingleton<AuthTokenRepository>();
         services.AddSingleton<AccountMailer>();

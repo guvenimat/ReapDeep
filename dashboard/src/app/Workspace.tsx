@@ -23,6 +23,7 @@ import { useQuery } from '../lib/hooks'
 import { RangePicker } from './RangePicker'
 import { rangeFromParams, TABS, useRoute } from './route'
 import { Sidebar } from './Sidebar'
+import { AiPage } from '../features/ai/Ai'
 
 function pickProject(me: Me): number | undefined {
   const stored = storedProjectId()
@@ -69,7 +70,7 @@ export function Workspace({ me, onLogout, onAccessChanged }: { me: Me; onLogout:
   const onQuery = (q: string) => setParams({ q })
   const onInsight = (id?: string) => setParams({ insight: id })
   const openPerson = (id?: string) => navigate('persons', id)
-  const showRange = route.tab !== 'persons' && route.tab !== 'settings' && route.tab !== 'cohorts' && route.tab !== 'catalog' && route.tab !== 'rfm' && route.tab !== 'alerts' && route.tab !== 'flags' && route.tab !== 'experiments'
+  const showRange = route.tab !== 'persons' && route.tab !== 'settings' && route.tab !== 'cohorts' && route.tab !== 'catalog' && route.tab !== 'rfm' && route.tab !== 'alerts' && route.tab !== 'flags' && route.tab !== 'experiments' && route.tab !== 'ai'
 
   return (
     <MetaContext.Provider value={meta.data}>
@@ -97,6 +98,7 @@ export function Workspace({ me, onLogout, onAccessChanged }: { me: Me; onLogout:
               {route.tab === 'rfm' && <Rfm params={route.params} onChange={onQuery} onInsight={onInsight} onCohortCreated={() => setCohortsVersion((v) => v + 1)} />}
               {route.tab === 'alerts' && <Alerts canManage={canManage} />}
               {route.tab === 'flags' && <Flags canManage={canManage} />}
+              {route.tab === 'ai' && <AiPage canManage={canManage} />}
               {route.tab === 'experiments' && <Experiments id={route.id} canManage={canManage} navigate={(id) => navigate('experiments', id)} />}
               {route.tab === 'events' && <Events params={route.params} range={range} onChange={onQuery} openPerson={openPerson} />}
               {route.tab === 'persons' && <Persons id={route.id} openPerson={openPerson} canManage={canManage} />}

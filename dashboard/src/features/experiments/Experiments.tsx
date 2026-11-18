@@ -6,6 +6,7 @@ import { Icon } from '../../components/icons'
 import { Badge, Card, FormMessage, IconButton, Segmented, StatTile, Status } from '../../components/ui'
 import { ago, dateTime, duration, num } from '../../lib/format'
 import { useQuery } from '../../lib/hooks'
+import { ExplainCard } from '../ai/AiAnswer'
 
 const KINDS: { id: MetricKind; label: string }[] = [
   { id: 'conversion', label: 'Conversion' },
@@ -182,6 +183,8 @@ function ExperimentResultsCard({ experiment, version }: { experiment: Experiment
               <StatTile label="Goal" value={revenue ? 'Revenue' : experiment.metric.kind === 'funnel' ? 'Funnel' : 'Conversion'} hint={describeMetric(experiment.metric)} />
             </div>
             <ResultsTable results={r} revenue={revenue} />
+            <ExplainCard title="AI interpretation" load={() => api.explainExperiment(experiment.id)}
+              hint="A plain-language reading of these results with a rule-based decision (ship, keep running, stop) and follow-up ideas." />
           </div>
         )}
       </Status>

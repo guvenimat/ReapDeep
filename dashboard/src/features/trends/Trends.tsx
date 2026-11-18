@@ -10,6 +10,7 @@ import { useDebounced, useQuery } from '../../lib/hooks'
 import { SaveInsight } from '../insights/SaveInsight'
 import { AnnotationNotes, useAnnotations } from '../insights/Annotations'
 import { trendsCsv } from '../../lib/csv'
+import { ExplainCard } from '../ai/AiAnswer'
 
 export interface TrendState {
   series: Series[]
@@ -189,6 +190,9 @@ export function Trends({ params, range, onChange, onInsight }: {
             {current.length > MAX_SERIES && <p className="footnote">The chart shows the first {MAX_SERIES} series; the table has all of them.</p>}
             {state.compare && <p className="footnote">Dashed lines are the previous period of the same length, aligned bucket by bucket.</p>}
           </Card>
+
+          <ExplainCard load={() => api.explainInsight('trends', JSON.parse(request))}
+            hint="What changed, the peaks and drops, and how it compares with the previous period, in plain language." />
 
           <Card title="Breakdown table">
             <div className="table-wrap">

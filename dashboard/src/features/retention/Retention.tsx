@@ -7,6 +7,7 @@ import { dateTime, ms, num, pct } from '../../lib/format'
 import { useDebounced, useQuery } from '../../lib/hooks'
 import { SaveInsight } from '../insights/SaveInsight'
 import { retentionCsv } from '../../lib/csv'
+import { ExplainCard } from '../ai/AiAnswer'
 
 export interface RetentionState { start_event: string; return_event: string; period: 'day' | 'week'; periods: number; filters: Filter[] }
 
@@ -118,6 +119,8 @@ export function Retention({ params, range, onChange, onInsight }: {
               <StatTile key={k} label={`${unit} ${k} retention`} value={avg[k] === null ? '—' : pct(avg[k]!)} hint="Average across cohorts" />
             ))}
           </div>
+          <ExplainCard load={() => api.explainInsight('retention', JSON.parse(request))}
+            hint="How quickly people stop coming back and which cohorts hold up better." />
           <Card testId="retention-card" title="Cohort retention" meta={`${q.data?.timezone ?? ''} · ${ms(q.data?.took_ms ?? 0)}`}>
             {q.data && <RetentionTable data={q.data} />}
             <p className="footnote">Each cell is the share of the cohort that did the return event in that period; period 0 is the cohort's own period.</p>

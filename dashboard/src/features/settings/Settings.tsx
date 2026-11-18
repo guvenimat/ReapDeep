@@ -53,6 +53,10 @@ function ProjectInfo({ project, onAccessChanged }: { project: Project; onAccessC
       setVersion((v) => v + 1)
     }
   }
+  const aiAction = useAction()
+  const setAiEnabled = async (enabled: boolean) => {
+    if (await aiAction.run(() => api.updateProject({ ai_enabled: enabled }))) setVersion((v) => v + 1)
+  }
   const setAnonymizeIp = async (anonymize: boolean) => {
     if (await privacyAction.run(() => api.updateProject({ anonymize_ip: anonymize }))) setVersion((v) => v + 1)
   }
@@ -91,6 +95,21 @@ function ProjectInfo({ project, onAccessChanged }: { project: Project; onAccessC
                       Anonymize visitor IP addresses before storing (IPv4 keeps the first three parts, IPv6 the first 48 bits)
                     </label>
                   : <span>Visitor IP addresses: {detail.data.anonymize_ip ? 'anonymized before storing' : 'stored in full'}</span>}
+              </dd>
+            </div>
+            <div className="full" data-field="ai">
+              <dt>AI analysis</dt>
+              <dd className="ingestion-facts">
+                {!detail.data.ai_model
+                  ? <span className="muted">No AI provider is configured on the server (Ai__ApiKey).</span>
+                  : canManage
+                    ? <label className="switch">
+                        <input type="checkbox" checked={detail.data.ai_enabled} disabled={aiAction.busy} onChange={(e) => void setAiEnabled(e.target.checked)} />
+                        <span className="switch-track" aria-hidden />
+                        Let {detail.data.ai_model} explain results and write notes. Only aggregated numbers and event and property names are sent, never persons.
+                      </label>
+                    : <span>AI analysis: {detail.data.ai_enabled ? `on (${detail.data.ai_model})` : 'off'}</span>}
+                <FormMessage error={aiAction.error} />
               </dd>
             </div>
             {canManage && (

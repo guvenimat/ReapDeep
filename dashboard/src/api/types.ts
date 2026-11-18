@@ -232,4 +232,12 @@ export type ProjectDetail = {
   id: number; name: string; organization_id: number; organization_name: string; timezone: string; public_key: string; created_at: string
   anonymize_ip: boolean; ingest_events_per_second: number | null
   recommendation_secret?: string | null
+  ai_enabled: boolean; ai_model?: string | null
 }
+export interface AiVerdict { decision: 'ship' | 'stop' | 'keep_running' | 'no_difference' | 'investigate'; variant: string; reason: string }
+export interface AiExperimentIdea { name: string; hypothesis: string; goal_event: string; flag_key: string }
+export interface AiAnswer {
+  summary: string; findings: string[]; recommendation: string | null; caveats: string[]; next_steps: string[]; model: string; cached: boolean
+  generated_at: string; verdict?: AiVerdict | null; experiments?: AiExperimentIdea[] | null
+}
+export interface AiQueryAnswer { kind: 'trends' | 'funnels'; query: Record<string, unknown>; explanation: string; model: string; cached: boolean }

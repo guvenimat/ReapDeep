@@ -10,6 +10,7 @@ import { duration, ms, num, pct, shortId } from '../../lib/format'
 import { useDebounced, useQuery } from '../../lib/hooks'
 import { SaveInsight } from '../insights/SaveInsight'
 import { funnelsCsv } from '../../lib/csv'
+import { ExplainCard } from '../ai/AiAnswer'
 
 export interface FunnelState { steps: string[]; window_seconds: number; filters: Filter[]; breakdown?: Breakdown; sampling: number }
 
@@ -104,6 +105,8 @@ export function Funnels({ params, range, onChange, onInsight }: {
             </div>
           )}
 
+          <ExplainCard load={() => api.explainInsight('funnels', JSON.parse(request))}
+            hint="Where people drop off the most and what to try at that step." />
           <Card testId="funnel-chart" title="Conversion"
             meta={<>{q.data && q.data.sampling < 1 && <span data-testid="funnel-sampled">Sampled: {pct(q.data.sampling)} of persons, counts scaled · </span>}{ms(q.data?.took_ms ?? 0)}</>}>
             <Legend items={groups.map((g) => ({ label: g.label, colorIndex: g.colorIndex }))} />

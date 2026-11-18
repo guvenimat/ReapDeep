@@ -17,6 +17,11 @@ x-query-api-environment: &query-api-environment
   Auth__BootstrapPassword: ${ADMIN_PASSWORD:?Missing ADMIN_PASSWORD in .env - run run-local.ps1 or smoke-test.sh}
   Auth__SecureCookie: "false"
   Auth__PublicUrl: http://localhost:3000
+  Ai__Provider: ${AI_PROVIDER:-fake}
+  Ai__ApiKey: ${DEEPSEEK_API_KEY:-}
+  Ai__BaseUrl: ${AI_BASE_URL:-https://api.deepseek.com}
+  Ai__Model: ${AI_MODEL:-deepseek-chat}
+  Ai__DailyCallsPerProject: ${AI_DAILY_CALLS:-200}
   ForwardedHeaders__TrustedNetworks: 172.16.0.0/12
   OTEL_EXPORTER_OTLP_ENDPOINT: *otel-endpoint
   OTEL_METRIC_EXPORT_INTERVAL: "10000"
