@@ -74,7 +74,8 @@ public static class ExperimentVerdicts
         var tested = r.Variants.Where(v => !v.IsControl && v.Comparison is not null).ToList();
         var winners = tested.Where(v => v.Comparison!.Significant && v.Comparison.Difference > 0).OrderByDescending(v => v.Comparison!.Difference).ToList();
         if (winners.Count > 0)
-            return new(Ship, winners[0].Key, $"{winners[0].Key} beats {r.ControlVariant} and the 95% confidence interval of the difference stays above zero.");
+            return new(Ship, winners[0].Key, $"{winners[0].Key} beats {r.ControlVariant} and the 95% confidence interval of the difference stays above zero" +
+                (status == "running" ? "; ship it if the result still holds at the planned end, since looking early overstates wins." : ".")); 
         var losers = tested.Where(v => v.Comparison!.Significant && v.Comparison.Difference < 0).Select(v => v.Key).ToList();
         if (losers.Count == tested.Count && losers.Count > 0)
             return new(Stop, r.ControlVariant, $"Every variant does worse than {r.ControlVariant}; keep the control.");
