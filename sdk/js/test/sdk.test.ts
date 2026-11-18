@@ -318,6 +318,22 @@ describe('feature flags', () => {
     expect(JSON.parse(sentProps()!)).toEqual({ plan: 'pro', country: 'TR', seats: 3 })
   })
 
+  it('setPersonProperties sends $set, $set_once and $unset and keeps the remembered properties in step', async () => {
+    const rd = client({ recommendHost: 'http://reco.local' })
+    const sentProps = () => new URL(fetchMock.mock.calls.at(-1)![0]).searchParams.get('properties')
+    rd.identify('user_1', { plan: 'free', country: 'TR' })
+    rd.setPersonProperties({ plan: 'pro' }, { first_seen: '2026-11-01', plan: 'trial' }, ['country'])
+    await vi.advanceTimersByTimeAsync(3000)
+    const last = sentEvents().at(-1)!
+    expect(last).toMatchObject({ event: '$set', distinct_id: 'user_1' })
+    expect(last.properties).toMatchObject({ $set: { plan: 'pro' }, $set_once: { first_seen: '2026-11-01', plan: 'trial' }, $unset: ['country'] })
+
+    rd.setPersonProperties(undefined, { first_seen: '2026-12-01' })
+    fetchMock.mockResolvedValueOnce(flagsResponse({}))
+    await rd.loadFlags()
+    expect(JSON.parse(sentProps()!)).toEqual({ plan: 'pro', first_seen: '2026-11-01' })
+  })
+
   it('forgets remembered person properties on reset but keeps the flag identity', async () => {
     const rd = client({ recommendHost: 'http://reco.local' })
     const anon = rd.getDistinctId()

@@ -179,6 +179,14 @@ export class ReapDeep {
     this.capture('$identify', { $anon_distinct_id: anon, $set: personProperties })
   }
 
+  setPersonProperties(set?: Properties, setOnce?: Properties, unset?: string[]): void {
+    const props: Properties = { ...setOnce, ...this.state.personProps, ...set }
+    for (const k of unset ?? []) delete props[k]
+    this.state.personProps = props
+    this.save()
+    this.capture('$set', { $set: set, $set_once: setOnce, $unset: unset })
+  }
+
   reset(): void {
     this.state = { ...this.newState(), anonId: this.state.anonId }
     this.save()

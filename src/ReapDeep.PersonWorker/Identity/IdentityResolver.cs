@@ -11,14 +11,14 @@ public sealed class IdentityResolver(NpgsqlDataSource db, ILogger<IdentityResolv
         var persons = new PersonTransaction(conn, tx, e.ProjectId, e.TimestampMicros);
 
         await persons.LockAsync(e.DistinctId, e.AnonId);
-        if (e.IsIdentify) await IdentifyAsync(persons, e.DistinctId, e.AnonId, e.SetJson);
-        else if (e.SetJson is not null) await SetAsync(persons, e.DistinctId, e.SetJson);
+        if (e.IsIdentify) await IdentifyAsync(persons, e.DistinctId, e.AnonId, e.Changes);
+        else if (!e.Changes.IsEmpty) await SetAsync(persons, e.DistinctId, e.Changes);
 
         await persons.WriteOutboxAsync();
         await tx.CommitAsync(ct);
     }
 
-    async Task IdentifyAsync(PersonTransaction t, string user, string? anon, string? set)
+    async Task IdentifyAsync(PersonTransaction t, string user, string? anon, PersonChanges set)
     {
         var pUser = await t.FindAsync(user);
         if (anon is null)
@@ -69,7 +69,7 @@ public sealed class IdentityResolver(NpgsqlDataSource db, ILogger<IdentityResolv
         }
     }
 
-    static async Task SetAsync(PersonTransaction t, string distinctId, string set)
+    static async Task SetAsync(PersonTransaction t, string distinctId, PersonChanges set)
     {
         if (await t.FindAsync(distinctId) is { } p) await t.UpdateAsync(p.Id, set, identify: false);
         else await t.LinkAsync(distinctId, await t.CreateAsync(identified: false, set));

@@ -93,8 +93,41 @@ public class IdentityEventTests
         Assert.False(e!.HasWork);
     }
 
+    [Fact]
+    public void Set_once_and_unset_are_parsed_and_count_as_work()
+    {
+        var e = IdentityEvent.Parse(Message("""
+            {"project_id":1,"event":"$pageview","distinct_id":"u","properties":{"$set_once":{"first":"a"},"$unset":["plan","",7,"plan","trial"]}}
+            """));
+        Assert.Null(e!.SetJson);
+        Assert.Equal("""{"first":"a"}""", e.Changes.SetOnce);
+        Assert.Equal("""["plan","trial"]""", e.Changes.Unset);
+        Assert.True(e.HasWork);
+    }
+
+    [Theory]
+    [InlineData("""{"plan":"x"}""")]
+    [InlineData("""[]""")]
+    [InlineData("""[1,null,""]""")]
+    public void Unset_needs_a_non_empty_array_of_names(string unset)
+    {
+        var e = IdentityEvent.Parse(Message("""{"project_id":1,"event":"x","distinct_id":"u","properties":{"$unset":""" + unset + "}}"));
+        Assert.Null(e!.Changes.Unset);
+        Assert.False(e.HasWork);
+    }
+
+    [Fact]
+    public void Unset_keeps_at_most_the_key_limit()
+    {
+        var keys = string.Join(",", Enumerable.Range(0, IdentityEvent.MaxUnsetKeys + 5).Select(i => $"\"k{i}\""));
+        var e = IdentityEvent.Parse(Message("""{"project_id":1,"event":"x","distinct_id":"u","properties":{"$unset":[""" + keys + "]}}"));
+        Assert.Equal(IdentityEvent.MaxUnsetKeys, System.Text.Json.JsonDocument.Parse(e!.Changes.Unset!).RootElement.GetArrayLength());
+    }
+
     [Theory]
     [InlineData("""{"project_id":1,"event":"$pageview","distinct_id":"u"}""", false)]
+    [InlineData("""{"properties":{"$set_once":{}}}""", true)]
+    [InlineData("""{"properties":{"$unset":["a"]}}""", true)]
     [InlineData("""{"event":"$identify"}""", true)]
     [InlineData("""{"properties":{"$set":{}}}""", true)]
     public void Messages_are_prefiltered_without_parsing(string json, bool expected)

@@ -175,8 +175,9 @@ Routine Load, so no separate consumer service is needed.
 ## 5. Identity resolution
 
 The SDK sends `$identify` with the new user ID as `distinct_id` and the previous anonymous ID in
-`$anon_distinct_id`, and `$set` for property updates. The person worker consumes the events topic and
-only processes those two events.
+`$anon_distinct_id`, and `$set` for property updates. Any event may also carry `$set_once`
+(properties to set only when missing) and `$unset` (a list of names to remove). The person worker
+consumes the events topic and only processes `$identify` and events that carry one of these.
 
 **PostgreSQL is the source of truth** for persons and mappings. Each event is handled in one
 transaction with advisory locks on the involved distinct IDs. The rules:
@@ -201,7 +202,15 @@ the event time of every property in `property_times` (microseconds), and the SQL
 `person_props_set`, `person_times_set` and `person_times_merge` only let a value
 replace another one with an older or equal time. A merge keeps the identified person's value where
 both have one, with its time, and takes the anonymous person's other properties with theirs. A late
-event still adds properties the person does not have yet. Properties written before this change
+event still adds properties the person does not have yet.
+
+`$set_once` and `$unset` use the same times (migration 0009, `person_props_apply` /
+`person_times_apply`). Within one event the order is `$set_once`, `$set`, `$unset`. A value written by
+`$set_once` stores its time negated: any `$set` replaces it, and an earlier `$set_once` that arrives
+late replaces it too, so the first one wins whatever the processing order. `$unset` removes a
+property whose time is not newer and leaves its time as a tombstone, so an older `$set` or
+`$set_once` arriving later does not bring it back while a newer one does. In a merge the identified
+person's tombstones also drop the anonymous person's value for that property. Properties written before this change
 have no time and lose to any timed value. A person's `created_at` is the time of its first identity
 event, so backfilled data gets its real date.
 
