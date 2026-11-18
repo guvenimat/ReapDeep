@@ -553,3 +553,9 @@ button.link.active { text-decoration: underline; }
 
 .share-link { display: grid; gap: 8px; margin: 12px 0; padding: 12px; border: 1px solid var(--border); border-radius: 10px; }
 .share-link .row input { flex: 1; min-width: 240px; font-family: var(--mono, monospace); font-size: 12px; }
+
+.sticky-bars { display: grid; gap: 6px; }
+.sticky-row { display: grid; grid-template-columns: 90px 1fr 130px; align-items: center; gap: 12px; font-size: 13px; }
+.sticky-track { height: 14px; border-radius: 4px; background: var(--border); overflow: hidden; }
+.sticky-fill { display: block; height: 100%; background: var(--series-1, var(--accent)); border-radius: 4px; }
+.sticky-value { text-align: right; }

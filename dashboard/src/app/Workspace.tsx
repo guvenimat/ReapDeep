@@ -26,6 +26,7 @@ import { rangeFromParams, TABS, useRoute } from './route'
 import { Sidebar } from './Sidebar'
 import { AiPage } from '../features/ai/Ai'
 import { AiFeaturesContext, PlatformPage } from '../features/ai/AiAccess'
+import { Stickiness } from '../features/stickiness/Stickiness'
 
 function pickProject(me: Me): number | undefined {
   const stored = storedProjectId()
@@ -107,6 +108,7 @@ export function Workspace({ me, onLogout, onAccessChanged }: { me: Me; onLogout:
               {route.tab === 'rfm' && <Rfm params={route.params} onChange={onQuery} onInsight={onInsight} onCohortCreated={() => setCohortsVersion((v) => v + 1)} />}
               {route.tab === 'alerts' && <Alerts canManage={canManage} />}
               {route.tab === 'flags' && <Flags canManage={canManage} />}
+              {route.tab === 'stickiness' && <Stickiness params={route.params} range={range} onChange={onQuery} />}
               {route.tab === 'ai' && <AiPage canManage={canManage} />}
               {route.tab === 'platform' && (me.platform_role ? <PlatformPage canEdit={me.platform_role === 'admin'} /> : <p className="editor-hint">Only the platform team can open this page.</p>)}
               {route.tab === 'experiments' && <Experiments id={route.id} canManage={canManage} navigate={(id) => navigate('experiments', id)} />}

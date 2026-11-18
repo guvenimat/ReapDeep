@@ -203,6 +203,13 @@ Check "monthly periods start on the 1st" (@($monthly.periods | Where-Object { ([
 Check "lookback_days 3 -> 400" ((Lifecycle @{ lookback_days = 3 }).Status -eq 400)
 Check "period hour -> 400" ((Lifecycle @{ period = "hour" }).Status -eq 400)
 
+Write-Host "`n4b) Stickiness"
+$st = (S POST "/query/stickiness" @{ event = $act; interval = "day"; date_from = $today.AddDays(-4).ToString("yyyy-MM-dd"); date_to = $today.ToString("yyyy-MM-dd") }).Json
+$byDays = @($st.buckets | ForEach-Object { $_.persons }) -join ","
+Check "five persons over five days: p2, p3 and p4 on one day, p5 on two (anonymous then identified), p1 on all five -> $byDays" ($st.persons -eq 5 -and $st.total_periods -eq 5 -and $byDays -eq "3,1,0,0,1")
+Check "average days active (1+1+1+2+5)/5 = 2" ($st.average_periods -eq 2)
+Check "weekly counting and validation" ((S POST "/query/stickiness" @{ event = $act; interval = "week" }).Status -eq 200 -and (S POST "/query/stickiness" @{ interval = "day" }).Status -eq 400 -and (S POST "/query/stickiness" @{ event = $act; interval = "month" }).Status -eq 400)
+
 Write-Host "`n5) Saved insights"
 $i1 = S POST "/insights" @{ name = "RFM $tag"; kind = "rfm"; query = @{ window_days = 365; purchase_event = $buy } }
 $i2 = S POST "/insights" @{ name = "Lifecycle $tag"; kind = "lifecycle"; query = @{ event = $act; period = "week" } }

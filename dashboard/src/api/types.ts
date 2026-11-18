@@ -251,6 +251,10 @@ export interface AiAnswer {
   summary: string; findings: string[]; recommendation: string | null; caveats: string[]; next_steps: string[]; model: string; cached: boolean
   generated_at: string; verdict?: AiVerdict | null; experiments?: AiExperimentIdea[] | null
 }
+export interface StickinessResponse {
+  event: string; interval: 'day' | 'week'; total_periods: number; persons: number; average_periods: number | null; timezone: string
+  buckets: { periods: number; persons: number; share: number }[]; took_ms: number
+}
 export interface NotificationItem { id: number; kind: string; title: string; body: string; link: string; created_at: string; unread: boolean }
 export interface AiNote { id: number; trigger: 'manual' | 'schedule'; period_from: string; period_to: string; emailed_to: string[]; created_at: string; answer: AiAnswer }
 export type DigestFrequency = 'off' | 'daily' | 'weekly' | 'monthly'
