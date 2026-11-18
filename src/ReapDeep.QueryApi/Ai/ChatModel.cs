@@ -33,6 +33,11 @@ public sealed record AiOptions(string Provider, string BaseUrl, string Model, st
 
 public sealed class AiUnavailableException(string message) : Exception(message);
 
+public sealed class AiTransientException(string message, TimeSpan? retryAfter) : Exception(message)
+{
+    public TimeSpan? RetryAfter { get; } = retryAfter;
+}
+
 public interface IChatModel
 {
     Task<string> CompleteJsonAsync(string system, string user, CancellationToken ct);
@@ -40,7 +45,39 @@ public interface IChatModel
 
 public sealed class OpenAiCompatibleChatModel(HttpClient http, AiOptions options) : IChatModel
 {
+    public const int Attempts = 3;
+
+    public Func<TimeSpan, CancellationToken, Task> Delay { get; init; } = Task.Delay;
+
+    public static bool IsTransient(int status) => status is 408 or 429 || status >= 500;
+
+    public static TimeSpan Backoff(int attempt, TimeSpan? retryAfter) =>
+        retryAfter is { } r && r > TimeSpan.Zero ? (r > TimeSpan.FromSeconds(20) ? TimeSpan.FromSeconds(20) : r) : TimeSpan.FromSeconds(Math.Pow(2, attempt));
+
     public async Task<string> CompleteJsonAsync(string system, string user, CancellationToken ct)
+    {
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                return await SendOnceAsync(system, user, ct);
+            }
+            catch (AiTransientException e) when (attempt < Attempts)
+            {
+                await Delay(Backoff(attempt, e.RetryAfter), ct);
+            }
+            catch (HttpRequestException) when (attempt < Attempts)
+            {
+                await Delay(Backoff(attempt, null), ct);
+            }
+            catch (AiTransientException e)
+            {
+                throw new AiUnavailableException(e.Message);
+            }
+        }
+    }
+
+    async Task<string> SendOnceAsync(string system, string user, CancellationToken ct)
     {
         var body = new JsonObject
         {
@@ -62,7 +99,11 @@ public sealed class OpenAiCompatibleChatModel(HttpClient http, AiOptions options
         using var res = await http.SendAsync(req, ct);
         var text = await res.Content.ReadAsStringAsync(ct);
         if (!res.IsSuccessStatusCode)
-            throw new AiUnavailableException($"The model provider answered {(int)res.StatusCode}");
+        {
+            var message = $"The model provider answered {(int)res.StatusCode}";
+            if (IsTransient((int)res.StatusCode)) throw new AiTransientException(message, res.Headers.RetryAfter?.Delta);
+            throw new AiUnavailableException(message);
+        }
         using var doc = JsonDocument.Parse(text);
         var choice = doc.RootElement.GetProperty("choices")[0];
         if (choice.TryGetProperty("finish_reason", out var reason) && reason.ValueKind == JsonValueKind.String && reason.GetString() == "length")

@@ -59,5 +59,16 @@ public static class DigestRules
             "the previous calendar month, compared with the same number of days before it"),
     };
 
+    public const int MaxRetries = 3;
+    public static readonly TimeSpan RetryDelay = TimeSpan.FromMinutes(15);
+
+    public static (DateTime Next, int FailedAttempts, bool GaveUp) AfterRun(string frequency, int weekday, int monthDay, int hour, TimeZoneInfo tz,
+        DateTime nowUtc, bool transientFailure, int failedAttempts)
+    {
+        if (transientFailure && failedAttempts < MaxRetries) return (nowUtc + RetryDelay, failedAttempts + 1, false);
+        var regular = NextRunUtc(frequency, weekday, monthDay, hour, tz, nowUtc);
+        return (regular, 0, transientFailure);
+    }
+
     public static DigestPeriod OnDemand(DateOnly today) => new(today.AddDays(-6), null, "the last 7 days up to now, compared with the 7 days before");
 }
