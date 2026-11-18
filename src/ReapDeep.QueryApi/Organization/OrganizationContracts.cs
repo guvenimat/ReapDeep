@@ -2,7 +2,7 @@ namespace ReapDeep.QueryApi.Organization;
 
 public sealed record AddMemberRequest(string? Email, string? Name, string? Password, string? Role);
 public sealed record RoleChangeRequest(string? Role);
-public sealed record MemberRow(long UserId, string Email, string Name, string Role, DateTime CreatedAt);
+public sealed record MemberRow(long UserId, string Email, string Name, string Role, DateTime CreatedAt, bool Pending);
 public sealed record MembersResponse(List<MemberRow> Members);
 
 public sealed record CreateApiKeyRequest(string? Name, string? Scope);

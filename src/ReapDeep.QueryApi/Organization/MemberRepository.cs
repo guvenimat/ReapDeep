@@ -15,7 +15,7 @@ public sealed class MemberRepository(NpgsqlDataSource db)
     internal sealed record MembershipRecord(long OrganizationId, long UserId, string Role);
 
     const string Select = """
-        SELECT u.id AS user_id, u.email, u.name, m.role, m.created_at
+        SELECT u.id AS user_id, u.email, u.name, m.role, m.created_at, u.password_hash IS NULL AS pending
         FROM organization_members m JOIN users u ON u.id = m.user_id
         WHERE m.organization_id = (SELECT organization_id FROM projects WHERE id = @ProjectId)
         """;
@@ -33,7 +33,7 @@ public sealed class MemberRepository(NpgsqlDataSource db)
     }
 
     public async Task<(AddMemberResult Result, long UserId)> AddAsync(long projectId, string email, string name, string? passwordHash, string role,
-        CancellationToken ct)
+        bool allowInvite, CancellationToken ct)
     {
         await using var conn = await db.OpenConnectionAsync(ct);
         await using var tx = await conn.BeginTransactionAsync(ct);
@@ -41,7 +41,7 @@ public sealed class MemberRepository(NpgsqlDataSource db)
         var userId = await conn.ExecuteScalarAsync<long?>("SELECT id FROM users WHERE email = @Email", new { Email = email }, tx);
         if (userId is null)
         {
-            if (passwordHash is null) return (AddMemberResult.PasswordRequired, 0);
+            if (passwordHash is null && !allowInvite) return (AddMemberResult.PasswordRequired, 0);
             userId = await conn.ExecuteScalarAsync<long>(
                 "INSERT INTO users (email, name, password_hash) VALUES (@Email, @Name, @Hash) RETURNING id",
                 new { Email = email, Name = name, Hash = passwordHash }, tx);

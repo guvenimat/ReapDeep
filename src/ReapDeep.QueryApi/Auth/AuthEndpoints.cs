@@ -6,6 +6,8 @@ namespace ReapDeep.QueryApi.Auth;
 public static class AuthEndpoints
 {
     public const string LoginRateLimit = "login";
+    public const string AccountRateLimit = "account";
+    public const string InvalidLink = "This link is invalid, already used or expired";
 
     public static void MapAuth(this RouteGroupBuilder group)
     {
@@ -13,6 +15,38 @@ public static class AuthEndpoints
         group.MapPost("/logout", Logout);
         group.MapGet("/me", Me);
         group.MapPost("/password", ChangePassword);
+        group.MapPost("/password/forgot", ForgotPassword).RequireRateLimiting(AccountRateLimit);
+        group.MapPost("/token", TokenInfo).RequireRateLimiting(AccountRateLimit);
+        group.MapPost("/password/reset", ResetPassword).RequireRateLimiting(AccountRateLimit);
+    }
+
+    static IResult ForgotPassword(ForgotPasswordRequest req, AccountMailer mailer)
+    {
+        var email = SessionService.NormalizeEmail(req.Email ?? "");
+        Ensure.That(email.Length is >= 3 and <= 254 && email.Contains('@'), "A valid email is required");
+        if (!mailer.CanSend) return ApiResults.Error(StatusCodes.Status503ServiceUnavailable, "Password reset by email is not available: no SMTP server is configured");
+        mailer.QueueReset(email);
+        return Results.Accepted();
+    }
+
+    static async Task<IResult> TokenInfo(AuthTokenRequest req, AuthTokenRepository tokens, CancellationToken ct)
+    {
+        if (!AuthTokens.IsWellFormed(req.Token)) return ApiResults.BadRequest(InvalidLink);
+        return await tokens.PeekAsync(AuthTokens.Hash(req.Token!), ct) is { } info
+            ? ApiResults.Ok(new AuthTokenInfo(info.Email, info.Purpose), AppJsonContext.Default.AuthTokenInfo)
+            : ApiResults.BadRequest(InvalidLink);
+    }
+
+    static async Task<IResult> ResetPassword(ResetPasswordRequest req, HttpContext ctx, AuthTokenRepository tokens, SessionService sessions)
+    {
+        Ensure.That(PasswordHasher.IsValidLength(req.NewPassword), PasswordHasher.LengthRule);
+        if (!AuthTokens.IsWellFormed(req.Token)) return ApiResults.BadRequest(InvalidLink);
+        if (await tokens.ConsumeAsync(AuthTokens.Hash(req.Token!), PasswordHasher.Hash(req.NewPassword!), ctx.RequestAborted) is not { } userId)
+            return ApiResults.BadRequest(InvalidLink);
+        await sessions.InvalidateUserAsync(userId);
+        return await sessions.SignInUserAsync(ctx, userId) is { } me
+            ? ApiResults.Ok(me, AppJsonContext.Default.MeResponse)
+            : ApiResults.Unauthorized("Not signed in");
     }
 
     static async Task<IResult> Login(LoginRequest req, HttpContext ctx, SessionService sessions)

@@ -1,5 +1,5 @@
 import type {
-  Alert, AlertEvent, AlertInput, Experiment, ExperimentInput, ExperimentResults, FeatureFlag, FlagInput,
+  Alert, AlertEvent, AlertInput, AuthTokenInfo, Experiment, ExperimentInput, ExperimentResults, FeatureFlag, FlagInput,
   ApiKey, CatalogItem, CatalogItemDetail, CatalogItemInput, Cohort, CohortDefinition, CohortKind, CohortPerson, Dashboard, DashboardSummary, DateRange, DeletionRequest, EventRow, FunnelPersonsResponse, FunnelRequest, FunnelResponse, Insight, InsightKind,
   HitRate, KeyScope, Me, Member, Metadata, ModelRun, LifecycleResponse, PathsResponse, WebAnalyticsResponse, Person, PersonCohortsResponse, RecommendationPerformanceResponse, RetentionResponse, RfmMigrationResponse, RfmPerson, RfmResponse, Role, TrendRequest, TrendResponse, ProjectDetail,
 } from './types'
@@ -57,7 +57,9 @@ async function request<T>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', p
     }
     throw new ApiError(res.status, msg)
   }
-  return (res.status === 204 ? undefined : await res.json()) as T
+  if (res.status === 204) return undefined as T
+  const text = await res.text()
+  return (text ? JSON.parse(text) : undefined) as T
 }
 
 const qs = (params: object) => {
@@ -70,6 +72,9 @@ export const api = {
   me: () => request<Me>('GET', '/api/v1/auth/me'),
   login: (email: string, password: string) => request<Me>('POST', '/api/v1/auth/login', { email, password }),
   logout: () => request<void>('POST', '/api/v1/auth/logout'),
+  forgotPassword: (email: string) => request<void>('POST', '/api/v1/auth/password/forgot', { email }),
+  authToken: (token: string) => request<AuthTokenInfo>('POST', '/api/v1/auth/token', { token }),
+  resetPassword: (token: string, new_password: string) => request<Me>('POST', '/api/v1/auth/password/reset', { token, new_password }),
   changePassword: (current_password: string, new_password: string) =>
     request<void>('POST', '/api/v1/auth/password', { current_password, new_password }),
 
@@ -97,6 +102,7 @@ export const api = {
   addMember: (body: { email: string; name?: string; password?: string; role: Role }) => request<Member>('POST', '/api/v1/members', body),
   changeRole: (userId: number, role: Role) => request<Member>('PATCH', `/api/v1/members/${userId}`, { role }),
   removeMember: (userId: number) => request<void>('DELETE', `/api/v1/members/${userId}`),
+  resendInvite: (userId: number) => request<void>('POST', `/api/v1/members/${userId}/invite`),
   apiKeys: (signal?: AbortSignal) => request<{ api_keys: ApiKey[] }>('GET', '/api/v1/api-keys', undefined, signal),
   createApiKey: (name: string, scope: KeyScope) => request<{ api_key: ApiKey; key: string }>('POST', '/api/v1/api-keys', { name, scope }),
   revokeApiKey: (id: number) => request<void>('DELETE', `/api/v1/api-keys/${id}`),

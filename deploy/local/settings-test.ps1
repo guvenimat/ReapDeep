@@ -42,7 +42,7 @@ $ownerId = ($members | Where-Object { $_.email -eq $envValues.ADMIN_EMAIL }).use
 Check "owner lists members (self = owner)" ($ownerId -and ($members | Where-Object { $_.user_id -eq $ownerId }).role -eq "owner")
 
 Write-Host "`n2) Adding a member"
-Check "new user without a password -> 400" ((Send $owner POST "/members" "{`"email`":`"$memberEmail`",`"role`":`"member`"}").Status -eq 400)
+Check "new user with a too short password -> 400" ((Send $owner POST "/members" "{`"email`":`"$memberEmail`",`"password`":`"short`",`"role`":`"member`"}").Status -eq 400)
 $r = Send $owner POST "/members" "{`"email`":`"$memberEmail`",`"name`":`"Member $tag`",`"password`":`"$memberPassword`",`"role`":`"member`"}"
 Check "owner adds a member with a temporary password -> 201" ($r.Status -eq 201 -and $r.Json.role -eq "member")
 $memberId = $r.Json.user_id

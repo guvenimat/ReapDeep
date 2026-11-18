@@ -416,6 +416,15 @@ above the current value produces a "resolved" notification instead of silently r
 - **Dashboard sessions:** email and password (PBKDF2-SHA256, 600K iterations; unknown emails still
   compute a hash so timing does not reveal accounts), a random token in an HttpOnly, `SameSite=Strict`
   cookie, stored hashed in a `sessions` table. Sign-in is rate limited per client IP.
+- **Invitations and password reset:** a member added without a password gets an invitation email;
+  "Forgot your password?" emails a reset link. Both carry a random 256-bit token that is stored only as
+  a SHA-256 hash in `auth_tokens` (migration 0010), works once, and expires (invitation 7 days, reset 1
+  hour). Using one sets the password, revokes the user's other open tokens, signs out every session and
+  signs in. The reset request always answers `202` and does the lookup and the sending in a background
+  queue, so neither the answer nor its timing reveals whether an account exists; at most 3 reset emails
+  per user and hour. The token, reset and forgot endpoints share a per-IP limit of 10 per minute, like
+  sign-in but in their own window. Mail goes through the alert SMTP settings; links point at
+  `Auth__PublicUrl`.
 - **Project selection:** session requests name the project in `X-Project-Id`; membership comes from
   `organization_members` (owner, admin, member). Role changes, removals and password changes invalidate
   the cached session immediately.

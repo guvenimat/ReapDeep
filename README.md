@@ -124,7 +124,7 @@ On first start, `.env` is created with random local credentials: the PostgreSQL 
 | StarRocks (MySQL protocol) | `localhost:9030`, user `root` |
 | PostgreSQL | `localhost:5432`, user `reapdeep`, password in `.env` |
 | Grafana (traces, metrics, logs) | http://localhost:3005 |
-| Mailpit (alert emails sent locally) | http://localhost:8026 |
+| Mailpit (alert, invitation and reset emails sent locally) | http://localhost:8026 |
 | Kafka | `localhost:9092` (optional web UI at http://localhost:8080 with `--profile tools`) |
 
 ### Send an event
@@ -326,7 +326,7 @@ Any trend or funnel can be saved by name from its tab (`/api/v1/insights`). A da
 - **Dashboard sessions:** `POST /api/v1/auth/login` sets an HttpOnly, `SameSite=Strict` cookie valid for 14 days. Requests then name the project in the `X-Project-Id` header, and the API checks the user's organization membership. `GET /api/v1/auth/me` returns the user and their projects; `POST /api/v1/auth/logout` revokes the session.
 - Passwords are hashed with PBKDF2-SHA256 (600K iterations), and sign-in is rate limited to 10 attempts per minute per client IP.
 - On first start, the Query API creates the `ADMIN_EMAIL` user as owner of every organization when the `users` table is empty.
-- **Settings** (dashboard tab and `/api/v1/members`, `/api/v1/api-keys`, `/api/v1/auth/password`): owners and admins add members with a temporary password, change roles and remove members; anyone can change their own password, which signs out their other sessions. Admins cannot create or change owners, and the last owner cannot be demoted or leave. API keys are shown once at creation and stored only as a SHA-256 hash; revoking one takes effect immediately.
+- **Settings** (dashboard tab and `/api/v1/members`, `/api/v1/api-keys`, `/api/v1/auth/password`): owners and admins add members, either with a temporary password or by an invitation email whose single-use link (7 days) lets the new member set their own password, resend pending invitations, change roles and remove members; "Forgot your password?" on the sign-in screen emails a one-hour reset link (`POST /api/v1/auth/password/forgot`, always `202`, so it does not reveal which emails have accounts); anyone can change their own password, which signs out their other sessions. Admins cannot create or change owners, and the last owner cannot be demoted or leave. API keys are shown once at creation and stored only as a SHA-256 hash; revoking one takes effect immediately.
 - **Projects** (`/api/v1/project`, `/api/v1/projects`): the settings tab shows the current project's public key for the JS SDK and the ingestion API, its ingestion limit and whether visitor IP addresses are anonymized (`PATCH /api/v1/project` with `{"anonymize_ip": false}`, owners and admins). Owners can create more projects in their organization; ingestion and the recommender pick up a new key or setting within 30 seconds.
 
 ### Add the SDK to a page
@@ -448,6 +448,7 @@ cd deploy/local
 .\auth-test.ps1         # sign-in, sessions, project access, CORS, X-Forwarded-For, StarRocks grants
 .\deletion-test.ps1     # deletion requests and the batch job, end to end
 .\settings-test.ps1     # members, roles, password change, API keys, projects, IP anonymization
+.ccount-test.ps1      # invitation and password reset emails through Mailpit: single use, expiry, no account enumeration, rate limits
 .\insights-test.ps1     # saved insights and dashboards, API and browser
 .\cohort-test.ps1       # cohorts: rules, identity merge, static lists, filters and breakdowns, recalculation, deletion
 .\rfm-lifecycle-test.ps1  # RFM scores and segments with known answers, rfm_segment cohorts, lifecycle states and look-back
@@ -511,7 +512,7 @@ Shared build settings and every NuGet package version live in `src/Directory.Bui
 ReapDeep is an early v1. It runs end to end locally but has not been operated in production yet.
 
 - An alert notifies a single channel. Slack is reached through an incoming webhook rather than a Slack app, and e-mail alerts can only be created when an SMTP server is configured (`Alerts__Smtp__Host`).
-- Members are added with a temporary password; there are no invitation emails or password reset by email.
+- Invitation and reset emails need SMTP (`Alerts__Smtp__*`); without it members are added with a temporary password and reset by email answers `503`. Users are never deleted, only their memberships.
 - A person's `created_at` is the time of their first `$identify` or `$set` event; earlier anonymous events without person properties do not move it.
 - Retention and paths read raw events and join persons on every query; they are fast on the demo and test data but were not part of the 100M-event benchmark.
 - RFM scores are relative to the customers in the report: a filter re-ranks only the matching customers. Amounts are summed without currency conversion (the report warns when it sees several currencies).

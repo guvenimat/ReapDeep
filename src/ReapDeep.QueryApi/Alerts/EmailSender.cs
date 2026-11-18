@@ -27,11 +27,13 @@ public sealed class EmailSender(IConfiguration cfg)
         return list;
     }
 
-    public async Task<WebhookResult> SendAsync(string[] to, string payload, CancellationToken ct)
+    public Task<WebhookResult> SendAsync(string[] to, string payload, CancellationToken ct) =>
+        SendAsync(to, JsonSerializer.Deserialize(payload, AppJsonContext.Default.EmailMessage)!, "ReapDeep alerts", ct);
+
+    public async Task<WebhookResult> SendAsync(string[] to, EmailMessage message, string senderName, CancellationToken ct)
     {
         if (!Configured) return new WebhookResult(null, "No SMTP server is configured", false);
-        var message = JsonSerializer.Deserialize(payload, AppJsonContext.Default.EmailMessage)!;
-        using var mail = new MailMessage { From = new MailAddress(_from, "ReapDeep alerts"), Subject = message.Subject, Body = message.Text, IsBodyHtml = false };
+        using var mail = new MailMessage { From = new MailAddress(_from, senderName), Subject = message.Subject, Body = message.Text, IsBodyHtml = false };
         foreach (var r in to) mail.To.Add(r);
         using var smtp = new SmtpClient(_host, _port) { EnableSsl = _ssl, Timeout = 10_000, DeliveryMethod = SmtpDeliveryMethod.Network };
         if (!string.IsNullOrEmpty(_user)) smtp.Credentials = new NetworkCredential(_user, _password);
