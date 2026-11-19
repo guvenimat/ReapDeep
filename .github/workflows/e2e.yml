@@ -1,0 +1,95 @@
+name: E2E
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: e2e
+  cancel-in-progress: false
+
+jobs:
+  stack:
+    name: Local stack end-to-end tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Make the Windows docker alias work
+        run: |
+          sudo tee /usr/local/bin/docker.exe >/dev/null <<'EOF'
+          #!/usr/bin/env bash
+          exec docker "$@"
+          EOF
+          sudo chmod +x /usr/local/bin/docker.exe
+
+      - name: Create local credentials
+        working-directory: deploy/local
+        run: cp .env.example .env
+
+      - name: Start the data stack and migrations
+        working-directory: deploy/local
+        run: |
+          docker compose --profile app up -d --build migrate
+          for i in $(seq 1 90); do
+            status=$(docker inspect -f '{{.State.Status}}' reapdeep-migrate)
+            [ "$status" = "exited" ] && break
+            sleep 2
+          done
+          docker logs reapdeep-migrate
+          test "$(docker inspect -f '{{.State.ExitCode}}' reapdeep-migrate)" = "0"
+
+      - name: Start the application services
+        working-directory: deploy/local
+        run: docker compose --profile app up -d --build
+
+      - name: Wait for the services
+        run: |
+          for i in $(seq 1 90); do
+            if curl -fsS http://localhost:8000/healthz >/dev/null &&
+               curl -fsS http://localhost:8001/healthz >/dev/null &&
+               curl -fsS http://localhost:8002/healthz >/dev/null &&
+               curl -fsS http://localhost:3000/ >/dev/null; then
+              exit 0
+            fi
+            sleep 5
+          done
+          exit 1
+
+      - name: Query API
+        run: pwsh -NoProfile -File deploy/local/query-test.ps1
+
+      - name: Web analytics
+        run: pwsh -NoProfile -File deploy/local/web-test.ps1
+
+      - name: Cohorts
+        run: pwsh -NoProfile -File deploy/local/cohort-test.ps1
+
+      - name: RFM, lifecycle and stickiness
+        run: pwsh -NoProfile -File deploy/local/rfm-lifecycle-test.ps1
+
+      - name: Insights and dashboards
+        run: pwsh -NoProfile -File deploy/local/insights-test.ps1
+
+      - name: Dashboard in the browser
+        run: pwsh -NoProfile -File deploy/local/dashboard-test.ps1
+
+      - name: Collect logs
+        if: failure()
+        run: docker compose -f deploy/local/docker-compose.yml --profile app logs --no-color > e2e-logs.txt
+
+      - name: Upload logs
+        if: failure()
+        uses: actions/upload-artifact@v6
+        with:
+          name: e2e-logs
+          path: e2e-logs.txt
+
+      - name: Stop the stack
+        if: always()
+        run: docker compose -f deploy/local/docker-compose.yml --profile app down -v

@@ -153,7 +153,11 @@ $fromSeg = ($mig.rows | Where-Object { $_.from -ne "none" } | Measure-Object per
 $toNone = ($mig.rows | Where-Object { $_.to -eq "none" } | Measure-Object persons -Sum).Sum
 Check "30 days ago 7 of the 10 were customers; c8, c9 and c10 are new -> $fromSeg / $fromNone" ($fromSeg -eq 7 -and $fromNone -eq 3 -and -not $toNone)
 Check "period_days 14 -> 400" ((S POST "/query/rfm/migration" @{ purchase_event = $buy; period_days = 14 }).Status -eq 400)
-function SleepCleanups { [int](cmd /c "docker exec reapdeep-starrocks sh -c ""grep -c __MySqlConnector__Sleep /data/deploy/starrocks/fe/log/fe.audit.log"" 2>nul") }
+function SleepCleanups {
+    $out = & docker exec reapdeep-starrocks sh -c "grep -c __MySqlConnector__Sleep /data/deploy/starrocks/fe/log/fe.audit.log" 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $out) { return 0 }
+    return [int]$out
+}
 $cleanupsBefore = SleepCleanups
 $since = (Get-Date).ToUniversalTime().AddSeconds(-1).ToString("o")
 foreach ($delay in 20, 40, 60, 90, 120) {

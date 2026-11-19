@@ -432,6 +432,9 @@ above the current value produces a "resolved" notification instead of silently r
 - **Least privilege in StarRocks:** the Query API connects as a SELECT-only user; the deletion job has
   SELECT and DELETE. `root` is used only by init scripts and tests.
 - **CORS** on the Query API is off unless configured; the dashboard is served from the same origin.
+- **Public rate limit.** The Recommender limits `/recommend` and `/flags` per client IP (6,000 requests
+  per minute by default, `Recommender__RequestsPerMinutePerIp`, `0` disables it) and answers `429` with
+  `Retry-After: 60`. `X-Forwarded-For` is honored only from `ForwardedHeaders__TrustedNetworks`.
 
 ## 8. Deletion requests
 

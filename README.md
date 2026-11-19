@@ -27,7 +27,8 @@ retention, path and person questions over hundreds of millions of events.
 ## Architecture
 
 The design decisions, alternatives and measurements behind each component are written up in
-[docs/architecture.md](docs/architecture.md); the key choices are summarized as decision records in
+[docs/architecture.md](docs/architecture.md), and the customer-facing endpoints are described in
+[docs/openapi.yaml](docs/openapi.yaml). The key choices are summarized as decision records in
 [docs/adr](docs/adr): [StarRocks for events](docs/adr/0001-starrocks-for-events.md),
 [a durable 202 through Kafka](docs/adr/0002-durable-202-through-kafka.md),
 [shared tables behind one SQL builder](docs/adr/0003-shared-tables-one-sql-builder.md),
@@ -89,6 +90,7 @@ flowchart LR
 - **Query queue.** The Query API runs as `reapdeep_query` in the `rg_query` resource group (8 concurrent queries), and each request runs at most 4 of its queries at once. A query over a group's limit waits in the StarRocks query queue instead of failing, for at most 15 s, which is half of the Query API's 30 s command timeout. If it is still waiting then, or the queue is full, the API answers `503` with `Retry-After: 5` and "The analytics database is busy; try again in a few seconds". The settings (`enable_query_queue_select`, `enable_group_level_query_queue`, `query_queue_pending_timeout_second`) are StarRocks global variables that `ReapDeep.Migrations` sets on every run, so a recreated database gets them too. StarRocks copies them into each new connection, so services started before a change keep the old values until they reconnect.
 - **Result cache.** Trend, funnel, retention, path, RFM and lifecycle results are cached in Redis for 45 s (`QueryApi__ResultCacheSeconds`, `0` turns it off), keyed by project, time zone, request body and the versions of the cohorts it uses, so a recalculated cohort is never served from an old entry. Responses carry `X-Cache: HIT` or `MISS`, and a request with `Cache-Control: no-cache` skips the cached copy. Without Redis every request runs its query.
 - **Request quotas.** Project endpoints are limited per minute to 300 requests per user or API key and 1,200 per project (`QueryApi__RequestsPerMinutePerPrincipal`, `QueryApi__RequestsPerMinutePerProject`). The counters live in Redis, so the limit holds across instances; past it the API answers `429` with `Retry-After`. Without Redis each instance counts on its own.
+- **Public endpoint limit.** The Recommender limits `/recommend` and `/flags` per client IP (`Recommender__RequestsPerMinutePerIp`, 6,000 by default; `0` turns it off) and answers `429` with `Retry-After: 60`. It honors `X-Forwarded-For` only from the networks in `ForwardedHeaders__TrustedNetworks`; set that list when it runs behind a proxy.
 
 ![ReapDeep overview dashboard in Grafana](docs/images/grafana-overview.png)
 
@@ -542,6 +544,8 @@ npm test                # SDK unit tests (vitest + jsdom)
 ```
 
 The contract tests keep the hand-synchronized formats honest without running the stack: the event JSON written by ingestion must have exactly the fields the `events_from_kafka` routine load reads and the `events` table has; the person and distinct id payloads that the person worker and the deletion job write to the outbox must match their routine loads; no text ingestion writes may be longer, in UTF-8 bytes, than its StarRocks column; the SDK may only send fields the ingestion contract reads; and every field the dashboard's TypeScript types use must exist on the Query API contract of the same name.
+
+The end-to-end suite also runs in GitHub Actions (`.github/workflows/e2e.yml`): nightly at 03:00 UTC or on demand, it builds the local stack, runs the Query API, web analytics, cohort, RFM/lifecycle, insights and dashboard tests, and uploads the container logs when a step fails.
 
 Useful commands:
 

@@ -7,7 +7,8 @@ $envValues = Initialize-LocalEnv
 $readKey = $envValues.READ_API_KEY
 $tag = "dt" + [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 $anonA = "anonA_$tag"; $user = "user_$tag"; $anonB = "anonB_$tag"
-$chrome = "$env:ProgramFiles\Google\Chrome\Application\chrome.exe"
+$chrome = if ($env:OS -eq 'Windows_NT') { "$env:ProgramFiles\Google\Chrome\Application\chrome.exe" } else { "/usr/bin/google-chrome" }
+$temp = if ($env:TEMP) { $env:TEMP } else { [IO.Path]::GetTempPath() }
 $ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
 $dash = "http://localhost:3000"
 $script:failed = 0
@@ -31,7 +32,7 @@ function Api([string]$path, [string]$body) {
 }
 
 $cdpPort = 9333
-$cdpProfile = Join-Path $env:TEMP "rd-dash-$tag"
+$cdpProfile = Join-Path $temp "rd-dash-$tag"
 Start-Process $chrome -ArgumentList @("--headless=new", "--disable-gpu", "--no-first-run", "--remote-debugging-port=$cdpPort",
     "--user-data-dir=$cdpProfile", "--window-size=1400,900", "about:blank")
 $deadline = (Get-Date).AddSeconds(15)

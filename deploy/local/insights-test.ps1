@@ -112,8 +112,9 @@ Check "unknown insight id -> 400" ((S PUT "/dashboards/$($d.Json.id)" '{"insight
 Check "dashboard list shows the item count" ((((S GET "/dashboards").Json.dashboards) | Where-Object { $_.id -eq $d.Json.id }).items -eq 2)
 
 Write-Host "`n4) Dashboard in the browser"
-$chrome = "$env:ProgramFiles\Google\Chrome\Application\chrome.exe"
-$port = 9445; $profileDir = Join-Path $env:TEMP "rd-insights-$tag"
+$chrome = if ($env:OS -eq 'Windows_NT') { "$env:ProgramFiles\Google\Chrome\Application\chrome.exe" } else { "/usr/bin/google-chrome" }
+$temp = if ($env:TEMP) { $env:TEMP } else { [IO.Path]::GetTempPath() }
+$port = 9445; $profileDir = Join-Path $temp "rd-insights-$tag"
 Start-Process $chrome -ArgumentList @("--headless=new", "--disable-gpu", "--no-first-run", "--remote-debugging-port=$port", "--user-data-dir=$profileDir", "--window-size=1400,900", "about:blank")
 $deadline = (Get-Date).AddSeconds(15)
 do { Start-Sleep -Milliseconds 300; try { $null = Invoke-RestMethod "http://127.0.0.1:$port/json/version"; $up = $true } catch { $up = $false } } until ($up -or (Get-Date) -gt $deadline)
