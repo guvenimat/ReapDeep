@@ -4,7 +4,7 @@ export type PropertyMetric = 'sum' | 'avg' | 'min' | 'max' | 'median' | 'p90'
 export type Metric = 'total' | 'unique_users' | PropertyMetric
 export type Interval = 'hour' | 'day' | 'week' | 'month'
 
-export interface Filter { scope: Scope; property: string; op: Op; value?: string }
+export interface Filter { scope: Scope; property: string; op: Op; value?: string; as_of?: string }
 export interface Breakdown { scope: Scope; property: string; limit?: number; cohort_ids?: number[] }
 export interface Series { event: string; metric: Metric; property?: string }
 export interface ActionDef { id: number; name: string; description: string; events: string[]; created_by: string | null; updated_at: string }
@@ -172,7 +172,7 @@ export interface HitRate {
 export type AlertCondition = 'above' | 'below' | 'increase' | 'decrease'
 export type AlertWindow = 'hour' | 'day' | 'week'
 export interface Alert {
-  id: number; name: string; insight_id: number; insight_name: string; condition: AlertCondition; threshold: number; window: AlertWindow
+  id: number; name: string; insight_id: number; insight_name: string; metric: string | null; condition: AlertCondition; threshold: number; window: AlertWindow
   channel: AlertChannel; webhook_url: string | null; email_to: string[] | null; secret: string | null; enabled: boolean; state: 'pending' | 'ok' | 'firing' | 'error'
   last_value: number | null; previous_value: number | null; last_error: string | null; last_checked_at: string | null
   next_check_at: string; created_by: string | null; created_at: string
@@ -228,6 +228,9 @@ export interface ExperimentResults {
   experiment_id: number; metric_kind: MetricKind; test: 'two_proportion_z' | 'welch_t'; control_variant: string; date_from: string; date_to: string
   variants: ExperimentVariantResult[]; excluded_persons: number; srm: ExperimentSrm | null; took_ms: number
 }
+export interface SampleSize {
+  per_variant: number; total: number; baseline_rate: number; relative_lift: number; alpha: number; power: number; variants: number
+}
 
 export type ProjectDetail = {
   id: number; name: string; organization_id: number; organization_name: string; timezone: string; public_key: string; created_at: string
@@ -257,6 +260,12 @@ export interface StickinessResponse {
 }
 export interface FunnelCorrelation { event: string; converted_with: number; dropped_with: number; converted_share: number; dropped_share: number; odds_ratio: number }
 export interface FunnelCorrelationResponse { converted: number; dropped: number; positive: FunnelCorrelation[]; negative: FunnelCorrelation[]; min_persons: number; took_ms: number }
+export interface FunnelPropertyValue {
+  value: string; converted_with: number; dropped_with: number; converted_share: number; dropped_share: number; odds_ratio: number; p_value: number | null
+}
+export interface FunnelPropertyResponse {
+  converted: number; dropped: number; event: string; property: string; values: FunnelPropertyValue[]; min_persons: number; took_ms: number
+}
 export interface NotificationItem { id: number; kind: string; title: string; body: string; link: string; created_at: string; unread: boolean }
 export interface AiNote { id: number; trigger: 'manual' | 'schedule'; period_from: string; period_to: string; emailed_to: string[]; created_at: string; answer: AiAnswer }
 export type DigestFrequency = 'off' | 'daily' | 'weekly' | 'monthly'

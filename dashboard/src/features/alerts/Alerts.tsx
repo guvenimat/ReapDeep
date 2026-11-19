@@ -1,9 +1,10 @@
 import { useState, type FormEvent } from 'react'
 import { api, errorMessage } from '../../api/client'
-import type { Alert, AlertChannel, AlertCondition, AlertEvent, AlertWindow } from '../../api/types'
+import type { Alert, AlertChannel, AlertCondition, AlertEvent, AlertWindow, RfmSegmentKey } from '../../api/types'
 import { Badge, Card, FormMessage, IconButton, Status } from '../../components/ui'
 import { ago, dateTime, num } from '../../lib/format'
 import { useAction, useQuery } from '../../lib/hooks'
+import { RFM_SEGMENT_KEYS, RFM_SEGMENT_NAMES } from '../rfm/segments'
 
 const CONDITIONS: { id: AlertCondition; label: string; unit: string }[] = [
   { id: 'above', label: 'is above', unit: '' },
@@ -15,8 +16,16 @@ const WINDOWS: { id: AlertWindow; label: string }[] = [
   { id: 'hour', label: 'last hour' }, { id: 'day', label: 'last day' }, { id: 'week', label: 'last week' },
 ]
 
-export function describeAlert(a: Pick<Alert, 'condition' | 'threshold' | 'window'>) {
+const metricLabel = (metric: string | null) => {
+  if (!metric || metric === 'trend') return ''
+  if (metric === 'funnel_conversion') return 'conversion'
+  const [kind, key] = metric.split(':')
+  return `${RFM_SEGMENT_NAMES[key as RfmSegmentKey] ?? key} ${kind === 'rfm_revenue' ? 'revenue' : 'customers'}`
+}
+
+export function describeAlert(a: Pick<Alert, 'condition' | 'threshold' | 'window' | 'metric'>) {
   const c = CONDITIONS.find((x) => x.id === a.condition)!
+  if (a.metric?.startsWith('rfm_')) return `${c.label.replace('is ', '')} ${num(a.threshold)}`
   const span = WINDOWS.find((w) => w.id === a.window)!.label
   return c.unit ? `${span} ${c.label} ${num(a.threshold)}% vs the window before` : `${span} ${c.label} ${num(a.threshold)}`
 }
@@ -71,7 +80,7 @@ export function Alerts({ canManage }: { canManage: boolean }) {
         actions={canManage && !editing ? <button type="button" className="primary" onClick={() => setEditing('new')} data-testid="new-alert">New alert</button> : undefined}>
         <FormMessage error={message?.error ? message.text : undefined} success={message?.error ? undefined : message?.text} />
         <Status state={list} empty={alerts.length === 0} emptyTitle="No alerts yet"
-          emptyText="Save a trend insight, then create an alert to be notified when it crosses a threshold or changes sharply.">
+          emptyText="Save a trend, funnel or RFM insight, then create an alert to be notified when it crosses a threshold or changes sharply.">
           <div className="table-wrap">
             <table data-testid="alerts-table">
               <thead>
@@ -82,7 +91,7 @@ export function Alerts({ canManage }: { canManage: boolean }) {
                   <tr key={a.id} className={`clickable${selected === a.id ? ' active' : ''}`} onClick={() => setSelected(selected === a.id ? undefined : a.id)}>
                     <td>
                       <span className="strong">{a.name}</span>{!a.enabled && <span className="muted small"> · paused</span>}
-                      <span className="cell-sub">{a.insight_name}: {describeAlert(a)} · {CHANNELS.find((c) => c.id === a.channel)?.label ?? a.channel}</span>
+                      <span className="cell-sub">{a.insight_name}{a.metric && a.metric !== 'trend' ? ` · ${metricLabel(a.metric)}` : ''}: {describeAlert(a)} · {CHANNELS.find((c) => c.id === a.channel)?.label ?? a.channel}</span>
                     </td>
                     <td><Badge tone={STATE[a.state].tone}>{STATE[a.state].label}</Badge></td>
                     <td className="num">{a.last_value === null ? '—' : num(a.last_value)}</td>
@@ -169,9 +178,10 @@ function AlertHistory({ alert, canManage }: { alert: Alert; canManage: boolean }
 
 function AlertEditor({ alert, onSaved, onCancel }: { alert?: Alert; onSaved: (a: Alert, created: boolean) => void; onCancel: () => void }) {
   const insights = useQuery((signal) => api.insights(signal), [])
-  const trends = (insights.data?.insights ?? []).filter((i) => i.kind === 'trends')
+  const candidates = (insights.data?.insights ?? []).filter((i) => i.kind === 'trends' || i.kind === 'funnels' || i.kind === 'rfm')
   const [name, setName] = useState(alert?.name ?? '')
   const [insightId, setInsightId] = useState<number | ''>(alert?.insight_id ?? '')
+  const [metric, setMetric] = useState(alert?.metric ?? '')
   const [condition, setCondition] = useState<AlertCondition>(alert?.condition ?? 'above')
   const [threshold, setThreshold] = useState(String(alert?.threshold ?? ''))
   const [span, setSpan] = useState<AlertWindow>(alert?.window ?? 'day')
@@ -184,7 +194,21 @@ function AlertEditor({ alert, onSaved, onCancel }: { alert?: Alert; onSaved: (a:
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string>()
   const [testResult, setTestResult] = useState<string>()
-  const unit = CONDITIONS.find((c) => c.id === condition)!.unit
+  const selected = candidates.find((i) => i.id === insightId)
+  const rfm = selected?.kind === 'rfm'
+  const funnel = selected?.kind === 'funnels'
+  const effectiveMetric = metric || (rfm ? 'rfm_persons:champions' : funnel ? 'funnel_conversion' : 'trend')
+  const conditions = rfm ? CONDITIONS.filter((c) => c.id === 'above' || c.id === 'below') : CONDITIONS
+  const unit = funnel ? '%' : CONDITIONS.find((c) => c.id === condition)!.unit
+  const chooseInsight = (id: number) => {
+    const chosen = candidates.find((i) => i.id === id)
+    setInsightId(id)
+    setMetric(chosen?.kind === 'rfm' ? 'rfm_persons:champions' : chosen?.kind === 'funnels' ? 'funnel_conversion' : 'trend')
+    if (chosen?.kind === 'rfm') {
+      setSpan('day')
+      if (condition === 'increase' || condition === 'decrease') setCondition('above')
+    }
+  }
 
   const sendTest = async () => {
     setBusy(true)
@@ -210,7 +234,7 @@ function AlertEditor({ alert, onSaved, onCancel }: { alert?: Alert; onSaved: (a:
     setError(undefined)
     try {
       const body = {
-        name: name.trim(), insight_id: Number(insightId), condition, threshold: Number(threshold), window: span, enabled, channel,
+        name: name.trim(), insight_id: Number(insightId), metric: effectiveMetric, condition, threshold: Number(threshold), window: span, enabled, channel,
         ...(channel === 'email' ? { email_to: recipients } : { webhook_url: url.trim() }),
       }
       onSaved(alert ? await api.updateAlert(alert.id, body) : await api.createAlert(body), !alert)
@@ -234,23 +258,39 @@ function AlertEditor({ alert, onSaved, onCancel }: { alert?: Alert; onSaved: (a:
           <label className="field"><span>Name</span>
             <input value={name} onChange={(e) => setName(e.target.value)} maxLength={200} placeholder="e.g. Revenue dropped" aria-label="Alert name" />
           </label>
-          <label className="field"><span>Saved trend</span>
-            <select value={insightId} onChange={(e) => setInsightId(e.target.value ? Number(e.target.value) : '')} aria-label="Saved trend">
-              <option value="">{trends.length ? 'Choose a saved trend…' : 'Save a trend insight first'}</option>
-              {trends.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+          <label className="field"><span>Saved analysis</span>
+            <select value={insightId} onChange={(e) => e.target.value ? chooseInsight(Number(e.target.value)) : setInsightId('')} aria-label="Saved analysis">
+              <option value="">{candidates.length ? 'Choose a saved analysis' : 'Save a trend, funnel or RFM insight first'}</option>
+              {candidates.map((i) => <option key={i.id} value={i.id}>{i.name} ({i.kind})</option>)}
             </select>
           </label>
         </div>
+        {rfm && (
+          <div className="field-pair">
+            <label className="field"><span>Measure</span>
+              <select value={effectiveMetric} onChange={(e) => setMetric(e.target.value)} aria-label="RFM metric">
+                {RFM_SEGMENT_KEYS.flatMap((k) => [
+                  <option key={`p-${k}`} value={`rfm_persons:${k}`}>{RFM_SEGMENT_NAMES[k]} customers</option>,
+                  <option key={`r-${k}`} value={`rfm_revenue:${k}`}>{RFM_SEGMENT_NAMES[k]} revenue</option>,
+                ])}
+              </select>
+            </label>
+            <span className="editor-hint">RFM alerts are checked daily and support above and below conditions.</span>
+          </div>
+        )}
+        {funnel && <p className="editor-hint">A funnel alert watches the funnel's overall conversion: the last step divided by the first.</p>}
         <div className="row sentence alert-rule">
           <span>Notify when the</span>
-          <select value={span} onChange={(e) => setSpan(e.target.value as AlertWindow)} aria-label="Window" className="op">
-            {WINDOWS.map((w) => <option key={w.id} value={w.id}>{w.label}</option>)}
-          </select>
+          {rfm ? <span>metric</span> : (
+            <select value={span} onChange={(e) => setSpan(e.target.value as AlertWindow)} aria-label="Window" className="op">
+              {WINDOWS.map((w) => <option key={w.id} value={w.id}>{w.label}</option>)}
+            </select>
+          )}
           <select value={condition} onChange={(e) => setCondition(e.target.value as AlertCondition)} aria-label="Condition">
-            {CONDITIONS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+            {conditions.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
           </select>
           <input type="number" step="any" className="narrow" value={threshold} onChange={(e) => setThreshold(e.target.value)} aria-label="Threshold" />
-          {unit && <span>% compared with the window before</span>}
+          {unit && <span>{unit === '%' ? 'percent' : '% compared with the window before'}</span>}
         </div>
         <div className="field-pair">
           <label className="field"><span>Send to</span>
@@ -274,7 +314,7 @@ function AlertEditor({ alert, onSaved, onCancel }: { alert?: Alert; onSaved: (a:
           <span className="switch-track" aria-hidden />
           Check automatically
         </label>
-        <p className="footnote">The alert follows the trend's first series, or its formula when it has one; breakdowns are ignored. It is checked every 10 minutes for an hourly window, hourly for a day and every 6 hours for a week.</p>
+        <p className="footnote">The alert follows a trend's first series or formula, a funnel's overall conversion, or one RFM segment. Breakdowns are ignored. It is checked every 10 minutes for an hourly window, hourly for a day and every 6 hours for a week; RFM alerts are checked daily.</p>
         <div data-testid="alert-editor-message"><FormMessage error={error} success={error ? undefined : testResult} /></div>
       </Card>
     </form>

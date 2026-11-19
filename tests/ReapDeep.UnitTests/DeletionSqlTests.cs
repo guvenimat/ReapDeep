@@ -32,6 +32,7 @@ public class DeletionSqlTests
         Assert.Matches(@"^DELETE FROM analytics\.events WHERE project_id = @p\d+$", q.Sql);
         Assert.Contains(q.Parameters, p => p.Value is long v && v == 42);
         Assert.Contains("analytics.cohort_members", DeletionSql.ProjectTables);
+        Assert.Contains("analytics.cohort_members_history", DeletionSql.ProjectTables);
         Assert.Throws<ArgumentException>(() => DeletionSql.DeleteProject("analytics.events; DROP TABLE x", 42));
     }
 }

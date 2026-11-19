@@ -6,6 +6,7 @@ public sealed record Comparison(
     double? Statistic, double? PValue, double? DegreesOfFreedom, bool Significant);
 
 public sealed record SrmCheck(double ChiSquare, double PValue, bool Mismatch);
+public sealed record SampleSize(long PerVariant, long Total, double BaselineRate, double RelativeLift, double Alpha, double Power, int Variants);
 
 public static class ExperimentStats
 {
@@ -66,6 +67,24 @@ public static class ExperimentStats
             }
         }
         return new Comparison(diff, low, high, lift, liftLow, liftHigh, statistic, p, df, p is { } pv && pv < Alpha);
+    }
+
+    public static SampleSize ForTwoProportions(double baselineRate, double relativeLift, double alpha = Alpha, double power = 0.8, int variants = 2)
+    {
+        Ensure.That(baselineRate is > 0 and < 1, "baseline_rate must be between 0 and 1");
+        Ensure.That(relativeLift is > -1 and < 10 && relativeLift != 0, "relative_lift must be between -100% and 1000% and cannot be zero");
+        Ensure.That(alpha is > 0 and < 1, "alpha must be between 0 and 1");
+        Ensure.That(power is > 0.5 and < 1, "power must be between 0.5 and 1");
+        Ensure.That(variants is >= 2 and <= 10, "variants must be between 2 and 10");
+
+        var p1 = baselineRate;
+        var p2 = Math.Clamp(baselineRate * (1 + relativeLift), 0.0001, 0.9999);
+        var pBar = (p1 + p2) / 2;
+        var zAlpha = Distributions.NormalQuantile(1 - alpha / 2);
+        var zPower = Distributions.NormalQuantile(power);
+        var numerator = zAlpha * Math.Sqrt(2 * pBar * (1 - pBar)) + zPower * Math.Sqrt(p1 * (1 - p1) + p2 * (1 - p2));
+        var perVariant = (long)Math.Ceiling(numerator * numerator / Math.Pow(p2 - p1, 2));
+        return new SampleSize(perVariant, perVariant * variants, baselineRate, relativeLift, alpha, power, variants);
     }
 
     public static SrmCheck? SampleRatioMismatch(IReadOnlyList<(long Observed, int Percentage)> groups)

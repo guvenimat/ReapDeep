@@ -93,6 +93,24 @@ public static class CohortSql
         return b.Build($"DELETE FROM {Members} WHERE project_id = {b.P(projectId)} AND cohort_id = {b.P(cohortId)}");
     }
 
+    public static SqlQuery DeleteHistory(long projectId, long cohortId)
+    {
+        var b = Builder(projectId, DateTime.UtcNow);
+        return b.Build($"DELETE FROM analytics.cohort_members_history WHERE project_id = {b.P(projectId)} AND cohort_id = {b.P(cohortId)}");
+    }
+
+    public static SqlQuery Snapshot(long projectId, long cohortId, long version, DateTime dayUtc)
+    {
+        var b = new SqlBuilder(projectId, dayUtc.Date, dayUtc.Date.AddDays(1));
+        var project = b.P(projectId);
+        var cohort = b.P(cohortId);
+        var ver = b.P(version);
+        var day = b.P(dayUtc.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
+        return b.Build($"INSERT INTO analytics.cohort_members_history (project_id, cohort_id, snapshot_day, distinct_id) " +
+                       $"SELECT project_id, cohort_id, CAST({day} AS DATE), distinct_id FROM {Members} " +
+                       $"WHERE project_id = {project} AND cohort_id = {cohort} AND version = {ver}");
+    }
+
     public static SqlQuery DeleteDistinctIds(long projectId, IReadOnlyList<string> distinctIds)
     {
         var b = Builder(projectId, DateTime.UtcNow);

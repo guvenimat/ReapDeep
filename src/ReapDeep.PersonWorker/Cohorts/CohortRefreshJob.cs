@@ -57,7 +57,17 @@ public sealed class CohortRefreshJob(CohortRepository cohorts, StarRocksStore? s
 
             var members = await store.ScalarAsync(CohortSql.PersonCount(cohort.ProjectId, cohort.Id, version), ct);
             if (await cohorts.CompleteAsync(cohort, version, members, (int)sw.ElapsedMilliseconds, ct))
+            {
+                try
+                {
+                    await store.ExecuteAsync(CohortSql.Snapshot(cohort.ProjectId, cohort.Id, version, DateTime.UtcNow), ct);
+                }
+                catch (Exception ex) when (!ct.IsCancellationRequested)
+                {
+                    log.LogWarning(ex, "Cohort {Cohort} (project {Project}) was calculated but its history snapshot failed", cohort.Id, cohort.ProjectId);
+                }
                 log.LogInformation("Cohort {Cohort} (project {Project}): {Members} persons in {Ms} ms", cohort.Id, cohort.ProjectId, members, sw.ElapsedMilliseconds);
+            }
             else
                 await store.ExecuteAsync(CohortSql.DeleteVersion(cohort.ProjectId, cohort.Id, version), ct);
         }
@@ -96,6 +106,7 @@ public sealed class CohortRefreshJob(CohortRepository cohorts, StarRocksStore? s
         foreach (var c in await cohorts.DeletedAsync(ct))
         {
             await store.ExecuteAsync(CohortSql.DeleteCohort(c.ProjectId, c.Id), ct);
+            await store.ExecuteAsync(CohortSql.DeleteHistory(c.ProjectId, c.Id), ct);
             await cohorts.RemoveAsync(c.Id, ct);
             log.LogInformation("Cohort {Cohort} (project {Project}) removed", c.Id, c.ProjectId);
         }

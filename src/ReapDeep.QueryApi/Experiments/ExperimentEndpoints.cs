@@ -15,12 +15,17 @@ public static class ExperimentEndpoints
         api.MapGet("/experiments", List);
         api.MapGet("/experiments/{id:long}", Get);
         api.MapGet("/experiments/{id:long}/results", GetResults);
+        api.MapPost("/experiments/sample-size", SampleSize).RequireUser();
         api.MapPost("/experiments", Create).RequireManager();
         api.MapPut("/experiments/{id:long}", Update).RequireManager();
         api.MapPost("/experiments/{id:long}/start", Start).RequireManager();
         api.MapPost("/experiments/{id:long}/stop", Stop).RequireManager();
         api.MapDelete("/experiments/{id:long}", Delete).RequireManager();
     }
+
+    static IResult SampleSize(SampleSizeRequest req) =>
+        ApiResults.Ok(ExperimentStats.ForTwoProportions(req.BaselineRate ?? 0.1, req.RelativeLift ?? 0.2, req.Alpha ?? ExperimentStats.Alpha,
+            req.Power ?? 0.8, req.Variants ?? 2), AppJsonContext.Default.SampleSize);
 
     static async Task<IResult> List(ProjectContext project, ExperimentRepository experiments, CancellationToken ct) =>
         ApiResults.Ok(new ExperimentsResponse(await experiments.ListAsync(project.ProjectId, ct)), AppJsonContext.Default.ExperimentsResponse);

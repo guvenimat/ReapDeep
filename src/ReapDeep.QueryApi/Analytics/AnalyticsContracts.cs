@@ -79,3 +79,11 @@ public sealed record WebAnalyticsResponse(
 public sealed record FunnelCorrelation(string Event, long ConvertedWith, long DroppedWith, double ConvertedShare, double DroppedShare, double OddsRatio);
 public sealed record FunnelCorrelationResponse(long Converted, long Dropped, List<FunnelCorrelation> Positive, List<FunnelCorrelation> Negative, int MinPersons,
     double TookMs);
+
+public sealed record FunnelPropertyRequest(
+    List<FunnelStep>? Steps, string? DateFrom, string? DateTo, long? WindowSeconds, List<Filter>? Filters,
+    string? Event, string? Property, int? Limit);
+public sealed record FunnelPropertyValue(string Value, long ConvertedWith, long DroppedWith, double ConvertedShare, double DroppedShare,
+    double OddsRatio, double? PValue);
+public sealed record FunnelPropertyResponse(long Converted, long Dropped, string Event, string Property, List<FunnelPropertyValue> Values,
+    int MinPersons, double? TookMs);

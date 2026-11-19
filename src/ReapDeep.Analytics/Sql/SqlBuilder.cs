@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using ReapDeep.Analytics;
@@ -16,7 +17,7 @@ public sealed class SqlBuilder
     readonly List<(string Name, object Value)> _params = [];
     readonly List<string> _where = [];
     readonly List<string> _personWhere = [];
-    readonly List<(string Id, string Version, bool Exclude)> _cohorts = [];
+    readonly List<(string Id, string Version, bool Exclude, string? AsOf)> _cohorts = [];
     int _filterCount;
     bool _joinPdi;
     bool _joinPersons;
@@ -57,16 +58,23 @@ public sealed class SqlBuilder
         Ensure.That(_filterCount <= MaxFilters, $"At most {MaxFilters} filters per query");
         foreach (var f in list)
         {
-            if (f.Scope == "cohort") InCohort(Cohort(f, cohorts), exclude: f.Op == "not_in");
+            if (f.Scope == "cohort") InCohort(Cohort(f, cohorts), exclude: f.Op == "not_in", asOf: f.AsOf);
             else (f.Scope == "person" ? _personWhere : _where).Add(Condition(f));
         }
     }
 
-    public void InCohort(CohortRef cohort, bool exclude = false) => _cohorts.Add((P(cohort.Id), P(cohort.Version), exclude));
+    public void InCohort(CohortRef cohort, bool exclude = false, string? asOf = null)
+    {
+        if (asOf is not null)
+            Ensure.That(DateOnly.TryParseExact(asOf, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out _),
+                "as_of must be a date in yyyy-MM-dd format");
+        _cohorts.Add((P(cohort.Id), P(cohort.Version), exclude, asOf is null ? null : P(asOf)));
+    }
 
     string CohortJoins(string alias) => string.Concat(_cohorts.Select((c, i) =>
-        $" LEFT {(c.Exclude ? "ANTI" : "SEMI")} JOIN analytics.cohort_members cm{i} ON cm{i}.project_id = {alias}.project_id " +
-        $"AND cm{i}.distinct_id = {alias}.distinct_id AND cm{i}.cohort_id = {c.Id} AND cm{i}.version = {c.Version}"));
+        $" LEFT {(c.Exclude ? "ANTI" : "SEMI")} JOIN {(c.AsOf is null ? "analytics.cohort_members" : "analytics.cohort_members_history")} cm{i} " +
+        $"ON cm{i}.project_id = {alias}.project_id AND cm{i}.distinct_id = {alias}.distinct_id AND cm{i}.cohort_id = {c.Id}" +
+        (c.AsOf is null ? $" AND cm{i}.version = {c.Version}" : $" AND cm{i}.snapshot_day = CAST({c.AsOf} AS DATE)")));
 
     public static long CohortId(Filter f) => long.TryParse(f.Property, out var id) && id > 0
         ? id

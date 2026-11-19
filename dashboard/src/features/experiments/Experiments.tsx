@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { api, errorMessage } from '../../api/client'
-import type { Experiment, ExperimentComparison, ExperimentInput, ExperimentMetric, ExperimentResults, ExperimentStatus, ExperimentVariantResult, MetricKind } from '../../api/types'
+import type { Experiment, ExperimentComparison, ExperimentInput, ExperimentMetric, ExperimentResults, ExperimentStatus, ExperimentVariantResult, MetricKind, SampleSize } from '../../api/types'
 import { SuggestInput } from '../../components/editors'
 import { Icon } from '../../components/icons'
 import { Badge, Card, FormMessage, IconButton, Segmented, StatTile, Status } from '../../components/ui'
@@ -59,6 +59,7 @@ function ExperimentList({ canManage, navigate }: { canManage: boolean; navigate:
   }
 
   return (
+    <>
     <Card testId="experiments-card" title="Experiments" meta="Compare the variants of a multivariate flag on a goal; exposures come from the SDK's $feature_flag_called events"
       actions={canManage ? <button type="button" className="primary" onClick={() => navigate('new')} data-testid="new-experiment"><Icon name="plus" />New experiment</button> : undefined}>
       <FormMessage error={message?.error ? message.text : undefined} success={message?.error ? undefined : message?.text} />
@@ -94,6 +95,68 @@ function ExperimentList({ canManage, navigate }: { canManage: boolean; navigate:
           </table>
         </div>
       </Status>
+    </Card>
+    <SampleSizeCard />
+    </>
+  )
+}
+
+function SampleSizeCard() {
+  const [baseline, setBaseline] = useState(10)
+  const [lift, setLift] = useState(20)
+  const [variants, setVariants] = useState(2)
+  const [alpha, setAlpha] = useState(5)
+  const [power, setPower] = useState(80)
+  const [result, setResult] = useState<SampleSize>()
+  const [error, setError] = useState<string>()
+  const [busy, setBusy] = useState(false)
+
+  const calculate = async () => {
+    setBusy(true)
+    setError(undefined)
+    try {
+      setResult(await api.sampleSize({
+        baseline_rate: baseline / 100, relative_lift: lift / 100, alpha: alpha / 100, power: power / 100, variants,
+      }))
+    } catch (err) {
+      setResult(undefined)
+      setError(errorMessage(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Card testId="sample-size" title="Sample size" meta="Persons each variant needs so a two-proportion test can detect the lift"
+      actions={<button type="button" className="primary" onClick={calculate} disabled={busy} data-testid="calculate-sample-size">{busy ? 'Calculating…' : 'Calculate'}</button>}>
+      <div className="row sample-size-inputs">
+        <label className="field" htmlFor="sample-baseline"><span>Baseline conversion</span>
+          <span className="inline"><input id="sample-baseline" type="number" min={0.1} max={99.9} step={0.1} value={baseline}
+            onChange={(e) => setBaseline(Number(e.target.value) || 0.1)} />%</span>
+        </label>
+        <label className="field" htmlFor="sample-lift"><span>Relative lift to detect</span>
+          <span className="inline"><input id="sample-lift" type="number" min={1} max={1000} step={1} value={lift}
+            onChange={(e) => setLift(Number(e.target.value) || 1)} />%</span>
+        </label>
+        <label className="field" htmlFor="sample-variants"><span>Variants (including control)</span>
+          <input id="sample-variants" type="number" min={2} max={10} value={variants} onChange={(e) => setVariants(Math.max(2, Math.min(10, Number(e.target.value) || 2)))} />
+        </label>
+        <label className="field" htmlFor="sample-alpha"><span>Alpha</span>
+          <span className="inline"><input id="sample-alpha" type="number" min={0.1} max={50} step={0.1} value={alpha}
+            onChange={(e) => setAlpha(Number(e.target.value) || 0.1)} />%</span>
+        </label>
+        <label className="field" htmlFor="sample-power"><span>Power</span>
+          <span className="inline"><input id="sample-power" type="number" min={51} max={99} value={power}
+            onChange={(e) => setPower(Number(e.target.value) || 51)} />%</span>
+        </label>
+      </div>
+      <FormMessage error={error} />
+      {result && (
+        <p className="sample-size-result" data-testid="sample-size-result">
+          <strong>{num(result.per_variant)}</strong> persons per variant · <strong>{num(result.total)}</strong> total for {result.variants} variants
+          <span className="muted small"> (alpha {rate(result.alpha)}, power {rate(result.power)})</span>
+        </p>
+      )}
     </Card>
   )
 }

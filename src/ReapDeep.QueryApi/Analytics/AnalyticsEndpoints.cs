@@ -19,6 +19,7 @@ public static class AnalyticsEndpoints
         api.MapPost("/query/lifecycle", Lifecycle);
         api.MapPost("/query/stickiness", Stickiness);
         api.MapPost("/query/funnels/correlation", FunnelCorrelation);
+        api.MapPost("/query/funnels/correlation/property", FunnelPropertyCorrelation);
         api.MapPost("/query/web", Web);
         api.MapGet("/events", Events);
     }
@@ -73,6 +74,12 @@ public static class AnalyticsEndpoints
         ApiResults.Ok(await cache.GetOrRunAsync(http, project, "funnel-correlation", req, AppJsonContext.Default.FunnelRequest, req.Filters, null,
             AppJsonContext.Default.FunnelCorrelationResponse, () => funnels.CorrelationAsync(project, req, ct), (r, ms) => r with { TookMs = ms }, ct),
             AppJsonContext.Default.FunnelCorrelationResponse);
+
+    static async Task<IResult> FunnelPropertyCorrelation(FunnelPropertyRequest req, ProjectContext project, FunnelService funnels, AnalyticsCache cache,
+        HttpContext http, CancellationToken ct) =>
+        ApiResults.Ok(await cache.GetOrRunAsync(http, project, "funnel-property-correlation", req, AppJsonContext.Default.FunnelPropertyRequest, req.Filters, null,
+            AppJsonContext.Default.FunnelPropertyResponse, () => funnels.PropertyCorrelationAsync(project, req, ct), (r, ms) => r with { TookMs = ms }, ct),
+            AppJsonContext.Default.FunnelPropertyResponse);
 
     static async Task<IResult> Stickiness(StickinessRequest req, ProjectContext project, StickinessService stickiness, AnalyticsCache cache, HttpContext http,
         CancellationToken ct) => req.Explain

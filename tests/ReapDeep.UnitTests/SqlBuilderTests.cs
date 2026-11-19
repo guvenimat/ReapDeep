@@ -37,6 +37,24 @@ public class SqlBuilderTests
         AssertTenantAndTimeFilters(query);
     }
 
+    [Fact]
+    public void A_cohort_filter_with_as_of_uses_the_daily_history_snapshot()
+    {
+        var cohorts = new Dictionary<long, CohortRef> { [7] = new(7, "Window shoppers", 123) };
+        var b = Builder();
+        b.AddFilters([new Filter("cohort", "7", "in", null, "2026-10-05")], cohorts);
+        var sql = b.Select("COUNT(*)");
+
+        Assert.Contains("analytics.cohort_members_history cm0", sql);
+        Assert.Contains("snapshot_day = CAST(@p", sql);
+        Assert.DoesNotContain("cm0.version", sql);
+        Assert.Throws<ValidationException>(() =>
+        {
+            var bad = Builder();
+            bad.AddFilters([new Filter("cohort", "7", "in", null, "05.10.2026")], cohorts);
+        });
+    }
+
     [Theory]
     [InlineData("total")]
     [InlineData("unique_users")]

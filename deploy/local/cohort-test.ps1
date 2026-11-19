@@ -134,6 +134,14 @@ Check "static cohort calculated: 2 persons" ($stat.member_count -eq 2)
 $members = (S GET "/cohorts/$($dyn.id)/persons").Json.persons
 Check "members list: person A with both distinct_ids" (@($members).Count -eq 1 -and $members[0].id -eq $personId -and @($members[0].distinct_ids).Count -eq 2)
 Check "StarRocks: membership stored per distinct_id (2 rows for A)" ((StarRocks "SELECT count(*) FROM analytics.cohort_members WHERE cohort_id = $($dyn.id) AND version = (SELECT max(version) FROM analytics.cohort_members WHERE cohort_id = $($dyn.id))") -eq "2")
+$snapshot = WaitFor { [int](StarRocks "SELECT count(*) FROM analytics.cohort_members_history WHERE cohort_id = $($dyn.id)") -gt 0 } 30
+Check "the worker writes a daily cohort history snapshot" $snapshot
+$yesterday = (Get-Date).ToUniversalTime().AddDays(-1).ToString("yyyy-MM-dd")
+$null = StarRocks "INSERT INTO analytics.cohort_members_history (project_id, cohort_id, snapshot_day, distinct_id) VALUES (1, $($dyn.id), '$yesterday', '$anonA'), (1, $($dyn.id), '$yesterday', '$userA')"
+$histIn = (Trend @(@{ scope = "cohort"; property = "$($dyn.id)"; op = "in"; as_of = $yesterday })).Json.results[0].total
+$histNone = (Trend @(@{ scope = "cohort"; property = "$($dyn.id)"; op = "in"; as_of = "2000-01-01" })).Json.results[0].total
+Check "as-of cohort filter uses the history snapshot (3 views)" ($histIn -eq 3)
+Check "as-of date without a snapshot matches nobody" ($histNone -eq 0)
 Check "read API key can list cohorts" (@((K GET "/cohorts").Json.cohorts | Where-Object { $_.id -eq $dyn.id }).Count -eq 1)
 $ours = @($dyn.id, $prop.id, $stat.id)
 function MemberOf([string]$key) { @((K GET "/persons/$([uri]::EscapeDataString($key))/cohorts").Json.cohorts | Where-Object { $ours -contains $_.id } | ForEach-Object { $_.id } | Sort-Object) }

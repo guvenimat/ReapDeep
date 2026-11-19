@@ -1,4 +1,4 @@
-import type { FunnelCorrelationResponse, StickinessResponse, NotificationItem, MemberLink, PlatformAuditEntry, AiNote, DigestSchedule, DigestFrequency, AiAccess, AiFeature, PlatformOrganization, AiAnswer, AiQueryAnswer, ActionDef, Annotation,
+import type { FunnelCorrelationResponse, FunnelPropertyResponse, SampleSize, StickinessResponse, NotificationItem, MemberLink, PlatformAuditEntry, AiNote, DigestSchedule, DigestFrequency, AiAccess, AiFeature, PlatformOrganization, AiAnswer, AiQueryAnswer, ActionDef, Annotation,
   Alert, AlertEvent, AlertInput, AlertTestInput, AlertTestResult, AuthTokenInfo, Experiment, ExperimentInput, ExperimentResults, FeatureFlag, FlagInput,
   ApiKey, CatalogItem, CatalogItemDetail, CatalogItemInput, Cohort, CohortDefinition, CohortKind, CohortPerson, Dashboard, DashboardSummary, DateRange, DeletionRequest, EventRow, FunnelPersonsResponse, FunnelRequest, FunnelResponse, Insight, InsightKind,
   HitRate, KeyScope, Me, Member, Metadata, ModelRun, LifecycleResponse, PathsResponse, WebAnalyticsResponse, Person, PersonCohortsResponse, RecommendationPerformanceResponse, RetentionResponse, RfmMigrationResponse, RfmPerson, RfmResponse, Role, TrendRequest, TrendResponse, ProjectDetail,
@@ -120,6 +120,8 @@ export const api = {
   aiQuery: (question: string) => request<AiQueryAnswer>('POST', '/api/v1/ai/query', { question }),
   aiDigest: () => request<AiAnswer>('POST', '/api/v1/ai/digest'),
   funnelCorrelation: (body: object, signal?: AbortSignal) => request<FunnelCorrelationResponse>('POST', '/api/v1/query/funnels/correlation', body, signal),
+  funnelPropertyCorrelation: (body: object, signal?: AbortSignal) =>
+    request<FunnelPropertyResponse>('POST', '/api/v1/query/funnels/correlation/property', body, signal),
   stickiness: (body: object, signal?: AbortSignal) => request<StickinessResponse>('POST', '/api/v1/query/stickiness', body, signal),
   notifications: () => request<{ notifications: NotificationItem[]; unread: number }>('GET', '/api/v1/notifications?limit=30'),
   markNotificationsRead: () => request<void>('POST', '/api/v1/notifications/read'),
@@ -193,6 +195,7 @@ export const api = {
   experiments: (signal?: AbortSignal) => request<{ experiments: Experiment[] }>('GET', '/api/v1/experiments', undefined, signal),
   experiment: (id: number, signal?: AbortSignal) => request<Experiment>('GET', `/api/v1/experiments/${id}`, undefined, signal),
   experimentResults: (id: number, signal?: AbortSignal) => request<ExperimentResults>('GET', `/api/v1/experiments/${id}/results`, undefined, signal),
+  sampleSize: (body: object) => request<SampleSize>('POST', '/api/v1/experiments/sample-size', body),
   createExperiment: (body: ExperimentInput) => request<Experiment>('POST', '/api/v1/experiments', body),
   updateExperiment: (id: number, body: Partial<ExperimentInput>) => request<Experiment>('PUT', `/api/v1/experiments/${id}`, body),
   startExperiment: (id: number) => request<Experiment>('POST', `/api/v1/experiments/${id}/start`),

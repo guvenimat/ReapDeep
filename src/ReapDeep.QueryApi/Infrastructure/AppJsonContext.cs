@@ -1,4 +1,6 @@
 using System.Text.Json.Serialization;
+using ReapDeep.Analytics;
+using ReapDeep.Analytics.Experiments;
 using ReapDeep.QueryApi.Actions;
 using ReapDeep.QueryApi.Ai;
 using ReapDeep.QueryApi.Alerts;
@@ -51,6 +53,9 @@ namespace ReapDeep.QueryApi.Infrastructure;
 [JsonSerializable(typeof(StickinessRequest))]
 [JsonSerializable(typeof(StickinessResponse))]
 [JsonSerializable(typeof(FunnelCorrelationResponse))]
+[JsonSerializable(typeof(FunnelPropertyRequest))]
+[JsonSerializable(typeof(FunnelPropertyResponse))]
+[JsonSerializable(typeof(List<Filter>))]
 [JsonSerializable(typeof(WebAnalyticsRequest))]
 [JsonSerializable(typeof(WebAnalyticsResponse))]
 [JsonSerializable(typeof(EventsResponse))]
@@ -131,4 +136,6 @@ namespace ReapDeep.QueryApi.Infrastructure;
 [JsonSerializable(typeof(ExperimentsResponse))]
 [JsonSerializable(typeof(ExperimentResultsKey))]
 [JsonSerializable(typeof(ExperimentResults))]
+[JsonSerializable(typeof(SampleSizeRequest))]
+[JsonSerializable(typeof(SampleSize))]
 internal partial class AppJsonContext : JsonSerializerContext;

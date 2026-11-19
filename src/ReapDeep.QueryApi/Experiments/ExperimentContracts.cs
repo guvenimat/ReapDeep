@@ -26,3 +26,5 @@ public sealed record ExperimentSrm(double ChiSquare, double PValue, bool Warning
 public sealed record ExperimentResults(
     long ExperimentId, string MetricKind, string Test, string ControlVariant, DateTime DateFrom, DateTime DateTo,
     List<ExperimentVariantResult> Variants, long ExcludedPersons, ExperimentSrm? Srm, double TookMs);
+
+public sealed record SampleSizeRequest(double? BaselineRate, double? RelativeLift, double? Alpha, double? Power, int? Variants);

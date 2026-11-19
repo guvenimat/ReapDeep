@@ -74,6 +74,17 @@ public class ActionSqlTests
     }
 
     [Fact]
+    public void Property_correlation_reads_the_first_value_of_the_chosen_event()
+    {
+        var q = FunnelSql.PropertyCorrelation(Builder(), [new FunnelStep("view", null), new FunnelStep("buy", null)], 3600, "view", "plan", 10);
+
+        Assert.Contains("window_funnel(3600, e.timestamp, 0, [(e.event = @p", q.Sql);
+        Assert.Contains("min_by(get_json_string(e.properties, @p", q.Sql);
+        Assert.Contains("HAVING COUNT(*) >= 3", q.Sql);
+        Assert.Contains(q.Parameters, p => Equals(p.Value, "$.\"plan\""));
+    }
+
+    [Fact]
     public void Stickiness_counts_active_periods_per_person_with_tenant_filters_and_actions()
     {
         var q = StickinessSql.Build(Builder(), "Engaged", ["product_viewed", "purchase"], "day", Range(), "UTC");

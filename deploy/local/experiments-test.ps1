@@ -70,6 +70,9 @@ function Flush([string]$key = "pk_dev_local") {
 }
 
 if ((Login $owner $envValues.ADMIN_EMAIL $envValues.ADMIN_PASSWORD) -ne 200) { throw "login failed (rate limited? wait a minute)" }
+$sample = S POST "/experiments/sample-size" @{ baseline_rate = 0.1; relative_lift = 0.2 }
+Check "sample size: 3841 per variant, 7682 total" ($sample.Status -eq 200 -and $sample.Json.per_variant -eq 3841 -and $sample.Json.total -eq 7682)
+Check "sample size rejects a zero lift" ((S POST "/experiments/sample-size" @{ baseline_rate = 0.1; relative_lift = 0 }).Status -eq 400)
 $flagA = "exp-a-$tag"; $flagB = "exp-b-$tag"
 $flags = @(); $experiments = @(); $otherFlags = @(); $otherExperiments = @()
 $start = (Ts ([DateTime]::UtcNow.AddHours(-3)))
