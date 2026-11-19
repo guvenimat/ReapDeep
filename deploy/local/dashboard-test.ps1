@@ -152,6 +152,7 @@ Check "table: step 3 conversion 50%" ($table -match '>50%<')
 $html = Dom "#/funnels?range=7d&q=$q" "(function(){const b=document.querySelector('button.dropoff[data-step=`"1`"]');if(b&&!window.__d){window.__d=1;b.click()}return false})() || document.querySelector('[data-testid=funnel-dropped] tbody tr')"
 $panel = Section $html "funnel-dropped"
 Check "clicking the step 2 drop-off lists the 1 person who left (anonymous B)" ($panel -match '1 persons reached step 1' -and $html -match 'cell-sub">anonymous' -and $html -match 'data-testid="save-dropped-cohort"')
+Check "the funnel has a property correlation picker" ($html -match 'data-testid="property-correlation-picker"')
 
 Write-Host "`n4b) RFM and Lifecycle tabs"
 $q = Q '{"window_days":365,"purchase_event":"step3___TAG__","amount_property":"amount","filters":[]}'
