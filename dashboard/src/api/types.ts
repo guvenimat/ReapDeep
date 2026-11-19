@@ -208,11 +208,12 @@ export type MetricKind = 'conversion' | 'funnel' | 'revenue'
 export interface ExperimentMetric { kind: MetricKind; event?: string | null; steps?: string[] | null; window_seconds?: number | null; property?: string | null }
 export interface Experiment {
   id: number; name: string; description: string; flag_id: number; flag_key: string; flag_enabled: boolean; variants: FlagVariant[]; control_variant: string
-  status: ExperimentStatus; metric: ExperimentMetric; start_date: string | null; end_date: string | null
+  status: ExperimentStatus; metric: ExperimentMetric; secondary_metrics: ExperimentMetric[]; start_date: string | null; end_date: string | null
   created_by: string | null; updated_by: string | null; created_at: string; updated_at: string
 }
 export interface ExperimentInput {
-  name: string; description: string; flag_id: number; control_variant: string; metric: ExperimentMetric; start_date?: string; end_date?: string
+  name: string; description: string; flag_id: number; control_variant: string; metric: ExperimentMetric; secondary_metrics?: ExperimentMetric[]
+  start_date?: string; end_date?: string
 }
 export interface ExperimentComparison {
   difference: number; difference_low: number | null; difference_high: number | null
@@ -224,9 +225,13 @@ export interface ExperimentVariantResult {
   comparison: ExperimentComparison | null
 }
 export interface ExperimentSrm { chi_square: number; p_value: number; warning: boolean; threshold: number }
+export interface ExperimentMetricResults {
+  metric_kind: MetricKind; metric: ExperimentMetric; test: 'two_proportion_z' | 'welch_t'; variants: ExperimentVariantResult[]
+  excluded_persons: number; srm: ExperimentSrm | null
+}
 export interface ExperimentResults {
   experiment_id: number; metric_kind: MetricKind; test: 'two_proportion_z' | 'welch_t'; control_variant: string; date_from: string; date_to: string
-  variants: ExperimentVariantResult[]; excluded_persons: number; srm: ExperimentSrm | null; took_ms: number
+  variants: ExperimentVariantResult[]; excluded_persons: number; srm: ExperimentSrm | null; secondary: ExperimentMetricResults[]; took_ms: number
 }
 export interface SampleSize {
   per_variant: number; total: number; baseline_rate: number; relative_lift: number; alpha: number; power: number; variants: number

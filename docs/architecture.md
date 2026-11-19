@@ -300,8 +300,9 @@ last D days, did not perform an event, person property) or a static list of IDs.
 | Calculate in the person worker | in the Query API | the Query API's StarRocks user can only `SELECT`. The rule compiler lives in the shared `ReapDeep.Analytics` library so both services use the same SQL. |
 | Versioned writes with a 60 s grace period | overwrite in place | a refresh writes a new version and switches `active_version` in PostgreSQL in one transaction; queries already running finish on the old version, which is dropped once it has been retired for 60 s. |
 | Shared/exclusive per-project advisory lock between refreshes and deletion batches | none | without it a refresh that read the static list before a deletion committed could write the deleted IDs back afterwards (found by `deletion-test.ps1`). |
+| A daily snapshot in `cohort_members_history`; a filter can set `as_of` | keep every version, or evaluate the rules at query time | old versions are purged after 60 s. A daily snapshot is small (one row per member and day) and lets an analysis use membership on a fixed past day. This is not per-bucket membership: a missing snapshot day matches nobody. |
 
-Semantics: analyses use current membership. Refreshes run hourly by default (every 30 s in the local
+Semantics: analyses use current membership unless a cohort filter sets `as_of`. Refreshes run hourly by default (every 30 s in the local
 compose file), at most two at a time, and the jobs' StarRocks user is in its own resource group with a
 CPU weight of 2 so calculations do not starve interactive queries. Behavioral windows are capped at
 90 days, because each refresh scans that much data; longer windows would need a daily per-person
@@ -356,6 +357,8 @@ Personalized recommendations (`for_you`) are the exception, and they are built a
 | Pooled two-proportion z-test, Welch's t-test, delta-method interval for the relative lift | Bayesian or sequential tests | simple, well known and checkable against reference values; the limits (peeking, several variants) are documented |
 | Distribution functions written in C# (Lanczos log-gamma, incomplete gamma and beta by continued fractions) | a statistics package | no dependency for four functions; unit tests compare them with scipy to 1e-9 relative |
 | Variants and percentages are locked while an experiment runs; rollout, targeting and on/off are not | lock the whole flag | rollout and variant use separate hashes, so changing who is in the rollout never moves anyone between variants; turning a broken feature off must stay possible |
+| Up to three secondary metrics, each its own StarRocks query and comparison | one combined query | each metric needs its own event scan and test; three keep a request within the gate of four parallel queries |
+| Sample size from the two-proportion formula in C# (binary search on the normal CDF for the quantiles) | a package or an online calculator | the same distributions as the result pages and no extra dependency; unit tests check the reference values |
 
 ### Web analytics
 
@@ -400,7 +403,7 @@ person key, which keeps the profile, the cohorts and the movement view consisten
 
 | Decision | Alternative | Why |
 |---|---|---|
-| Alerts watch a saved trend | a separate metric definition | one query language; whatever a trend can express (filters, cohorts, property sums, formulas) can be alerted on |
+| Alerts watch a saved trend, a funnel's overall conversion, or one RFM segment | a separate metric definition | one query language and one alert editor; the insight already stores filters, cohorts, formulas and the funnel steps. A stored metric string selects the funnel/RFM value. |
 | Evaluated by a hosted job in the Query API | the person worker | evaluation reuses `TrendService` and the read-only StarRocks user; claims use `FOR UPDATE SKIP LOCKED` with a 5-minute lease, so several API instances do not evaluate the same alert |
 | Notify on transitions only (fired, resolved, error) | notify on every check | a threshold that stays crossed would otherwise send a webhook every 10 minutes |
 | Webhooks signed with a per-alert HMAC-SHA256 secret | no signature | receivers can reject forged calls |
@@ -408,7 +411,9 @@ person key, which keeps the profile, the cohorts and the movement view consisten
 
 Only owners and admins can create alerts, because a webhook sends project numbers to a URL outside
 ReapDeep. Rule changes keep the current state and schedule an immediate check, so raising a threshold
-above the current value produces a "resolved" notification instead of silently resetting.
+above the current value produces a "resolved" notification instead of silently resetting. A funnel
+alert reports the last step divided by the first as a percentage over the alert window; an RFM alert
+reports the selected segment's customers or revenue, is checked daily and only supports above/below.
 
 ## 7. Authentication and tenancy
 
@@ -514,13 +519,13 @@ The system is verified end to end against the real stack rather than with mocks:
 | `identity-test.ps1` | all identity rules, replays, outbox ordering, the colocated `LEFT JOIN` |
 | `query-test.ps1` | every query type against data with known answers, EXPLAIN plans, latency |
 | `deletion-test.ps1` | person and distinct ID deletion, returning users, tombstone purge, removal from cohorts |
-| `cohort-test.ps1` | cohort rules against known answers (identity merge, negation, OR, static lists), filters and breakdowns, 404/409, recalculation, purge |
-| `alerts-test.ps1` | alert validation, firing and resolving against known values, signed webhooks received by a local listener, change and formula conditions, error states, cascade on insight deletion |
+| `cohort-test.ps1` | cohort rules against known answers (identity merge, negation, OR, static lists, actions), history snapshots and `as_of` filters, filters and breakdowns, 404/409, recalculation, purge |
+| `alerts-test.ps1` | alert validation, firing and resolving against known values, signed webhooks received by a local listener, trend/funnel/RFM metrics, change and formula conditions, error states, cascade on insight deletion |
 | `rfm-lifecycle-test.ps1` | one customer per RFM segment with known scores (ties, merged identities, orders without `order_id`, invalid amounts), `rfm_segment` cohorts, every lifecycle state per day and the look-back |
 | `auth-test.ps1`, `settings-test.ps1` | sessions, roles, API keys, CORS, forwarded headers, StarRocks grants |
 | `web-test.ps1` | visitors, pageviews, sessions, bounces and durations against hand-built sessions (including a merged identity, a session without a pageview, a pageview without a session and an earlier custom event), local-time buckets, the previous period, entry pages, referrers, UTM values, devices, filters, cache, access and project isolation |
-| `experiments-test.ps1` | conversion, funnel, window and revenue results against hand-built data with z, t, p and intervals from scipy, excluded persons, conversions before exposure, SRM on skewed data, the variant lock, access and project isolation |
-| `dashboard-test.ps1`, `insights-test.ps1` | headless Chrome over the DevTools Protocol, every tab and dashboards |
+| `experiments-test.ps1` | conversion, funnel, window and revenue results against hand-built data with z, t, p and intervals from scipy, secondary metrics, sample size, excluded persons, conversions before exposure, SRM on skewed data, the variant lock, access and project isolation |
+| `dashboard-test.ps1`, `insights-test.ps1` | headless Chrome over the DevTools Protocol, every tab and dashboards; funnel and property correlation |
 | `load-test.ps1` | throughput, latency, loss and freshness; the 100M-event query benchmark |
 
 Unit tests cover the pure logic: the SQL builder's mandatory filters and parameterization, the cohort rule

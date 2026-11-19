@@ -35,6 +35,7 @@ tags:
   - name: Query
   - name: Persons and cohorts
   - name: Catalog
+  - name: Experiments
   - name: Recommendations and flags
 
 paths:
@@ -180,6 +181,50 @@ paths:
               schema:
                 type: object
                 additionalProperties: true
+  /api/v1/query/funnels/correlation/property:
+    post:
+      tags: [Query]
+      summary: Property values that set converters apart
+      description: Compares the values of one event property between the persons who converted and the persons who dropped off. Values seen by at least 3 persons are returned with a two-proportion p-value.
+      security:
+        - readKey: []
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FunnelPropertyRequest'
+      responses:
+        '200':
+          description: The property values, shares, odds and p-values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FunnelPropertyResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/v1/experiments/sample-size:
+    post:
+      tags: [Experiments]
+      summary: Sample size for a two-proportion test
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SampleSizeRequest'
+      responses:
+        '200':
+          description: The persons each variant and all variants need.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SampleSize'
+        '400':
+          $ref: '#/components/responses/BadRequest'
   /api/v1/query/retention:
     post:
       tags: [Query]
@@ -698,6 +743,7 @@ components:
         property: { type: string }
         op: { type: string, enum: [eq, neq, contains, not_contains, gt, gte, lt, lte, in, not_in, is_set, is_not_set, in_cohort, not_in_cohort] }
         value: { type: string }
+        as_of: { type: string, format: date, description: For cohort filters, use the daily membership snapshot from this day. }
 
     Breakdown:
       type: object
@@ -783,6 +829,71 @@ components:
             $ref: '#/components/schemas/Filter'
         breakdown:
           $ref: '#/components/schemas/Breakdown'
+
+    FunnelPropertyRequest:
+      type: object
+      required: [steps, event, property]
+      properties:
+        steps:
+          type: array
+          minItems: 2
+          maxItems: 8
+          items:
+            $ref: '#/components/schemas/FunnelStep'
+        event: { type: string }
+        property: { type: string }
+        window_seconds: { type: integer }
+        date_from: { type: string, format: date }
+        date_to: { type: string, format: date }
+        filters:
+          type: array
+          items:
+            $ref: '#/components/schemas/Filter'
+
+    FunnelPropertyValue:
+      type: object
+      properties:
+        value: { type: string }
+        converted_with: { type: integer }
+        dropped_with: { type: integer }
+        converted_share: { type: number }
+        dropped_share: { type: number }
+        odds_ratio: { type: number }
+        p_value: { type: number, nullable: true }
+
+    FunnelPropertyResponse:
+      type: object
+      properties:
+        converted: { type: integer }
+        dropped: { type: integer }
+        event: { type: string }
+        property: { type: string }
+        min_persons: { type: integer }
+        took_ms: { type: number }
+        values:
+          type: array
+          items:
+            $ref: '#/components/schemas/FunnelPropertyValue'
+
+    SampleSizeRequest:
+      type: object
+      properties:
+        baseline_rate: { type: number, description: Between 0 and 1. }
+        relative_lift: { type: number, description: For example 0.2 for a 20% lift. }
+        alpha: { type: number, default: 0.05 }
+        power: { type: number, default: 0.8 }
+        variants: { type: integer, minimum: 2, maximum: 10, default: 2 }
+
+    SampleSize:
+      type: object
+      properties:
+        per_variant: { type: integer }
+        total: { type: integer }
+        baseline_rate: { type: number }
+        relative_lift: { type: number }
+        alpha: { type: number }
+        power: { type: number }
+        variants: { type: integer }
 
     FunnelPersonsRequest:
       allOf:

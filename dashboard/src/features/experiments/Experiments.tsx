@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from 'react'
 import { api, errorMessage } from '../../api/client'
-import type { Experiment, ExperimentComparison, ExperimentInput, ExperimentMetric, ExperimentResults, ExperimentStatus, ExperimentVariantResult, MetricKind, SampleSize } from '../../api/types'
+import type { Experiment, ExperimentComparison, ExperimentInput, ExperimentMetric, ExperimentStatus, ExperimentVariantResult, MetricKind, SampleSize } from '../../api/types'
 import { SuggestInput } from '../../components/editors'
 import { Icon } from '../../components/icons'
 import { Badge, Card, FormMessage, IconButton, Segmented, StatTile, Status } from '../../components/ui'
@@ -251,7 +251,13 @@ function ExperimentResultsCard({ experiment, version }: { experiment: Experiment
               <StatTile label="Sample ratio" value={r.srm ? (r.srm.warning ? 'Mismatch' : 'OK') : '—'} hint={r.srm ? `p = ${pValue(r.srm.p_value)}` : 'Needs exposures'} />
               <StatTile label="Goal" value={revenue ? 'Revenue' : experiment.metric.kind === 'funnel' ? 'Funnel' : 'Conversion'} hint={describeMetric(experiment.metric)} />
             </div>
-            <ResultsTable results={r} revenue={revenue} />
+            <ResultsTable variants={r.variants} revenue={revenue} />
+            {r.secondary.map((s, i) => (
+              <div className="editor-block" key={i} data-testid="secondary-result">
+                <div className="editor-title">Secondary: {describeMetric(s.metric)}</div>
+                <ResultsTable variants={s.variants} revenue={s.metric.kind === 'revenue'} />
+              </div>
+            ))}
             <ExplainCard title="AI interpretation" feature="experiment_explain" load={() => api.explainExperiment(experiment.id)}
               hint="A plain-language reading of these results with a rule-based decision (ship, keep running, stop) and follow-up ideas." />
           </div>
@@ -261,8 +267,8 @@ function ExperimentResultsCard({ experiment, version }: { experiment: Experiment
   )
 }
 
-function ResultsTable({ results, revenue }: { results: ExperimentResults; revenue: boolean }) {
-  const values = results.variants.flatMap((v) => (v.comparison ? [v.comparison.relative_low, v.comparison.relative_high, v.comparison.relative_lift] : []))
+function ResultsTable({ variants, revenue }: { variants: ExperimentVariantResult[]; revenue: boolean }) {
+  const values = variants.flatMap((v) => (v.comparison ? [v.comparison.relative_low, v.comparison.relative_high, v.comparison.relative_lift] : []))
     .filter((n): n is number => n !== null)
   const extent = Math.max(0.05, ...values.map(Math.abs))
   const value = (v: ExperimentVariantResult) => (revenue ? money.format(v.mean) : rate(v.mean))
@@ -279,7 +285,7 @@ function ResultsTable({ results, revenue }: { results: ExperimentResults; revenu
           </tr>
         </thead>
         <tbody>
-          {results.variants.map((v) => (
+          {variants.map((v) => (
             <tr key={v.key} className="experiment-variant" data-variant={v.key}>
               <td><code className="chip">{v.key}</code>{v.is_control && <span className="cell-sub">control · {v.percentage}%</span>}{!v.is_control && <span className="cell-sub">{v.percentage}%</span>}</td>
               <td className="num">{num(v.persons)}</td>
@@ -330,6 +336,46 @@ function Verdict({ c }: { c: ExperimentComparison }) {
 const hours = (seconds?: number | null) => (seconds ? String(Math.round((seconds / 3600) * 100) / 100) : '')
 const toDay = (iso: string | null) => (iso ? iso.slice(0, 10) : '')
 
+function normalizeMetric(metric: ExperimentMetric): ExperimentMetric {
+  if (metric.kind === 'funnel')
+    return { kind: 'funnel', steps: (metric.steps ?? []).map((s) => s.trim()).filter(Boolean), window_seconds: metric.window_seconds ?? null }
+  return {
+    kind: metric.kind, event: (metric.event ?? '').trim(), window_seconds: metric.window_seconds ?? null,
+    property: metric.kind === 'revenue' ? (metric.property ?? '').trim() : null,
+  }
+}
+
+function SecondaryMetricRow({ metric, index, onChange, onRemove }: {
+  metric: ExperimentMetric; index: number; onChange: (m: ExperimentMetric) => void; onRemove: () => void
+}) {
+  return (
+    <div className="row" data-testid="secondary-metric">
+      <select value={metric.kind} onChange={(e) => onChange({ ...metric, kind: e.target.value as MetricKind })}
+        aria-label={`Secondary ${index + 1} kind`}>
+        {KINDS.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}
+      </select>
+      {metric.kind === 'funnel' ? (
+        <input value={(metric.steps ?? []).join(', ')} placeholder="step, step, ..."
+          onChange={(e) => onChange({ ...metric, kind: 'funnel', steps: e.target.value.split(',') })} aria-label={`Secondary ${index + 1} steps`} />
+      ) : (
+        <>
+          <SuggestInput list="events" placeholder="event" value={metric.event ?? ''} onChange={(event) => onChange({ ...metric, event })}
+            aria-label={`Secondary ${index + 1} event`} />
+          {metric.kind === 'revenue' && (
+            <SuggestInput list="event-props" placeholder="amount property" value={metric.property ?? ''}
+              onChange={(property) => onChange({ ...metric, property })} aria-label={`Secondary ${index + 1} property`} />
+          )}
+        </>
+      )}
+      <input type="number" min={0} step="any" className="narrow" value={hours(metric.window_seconds)} placeholder="window"
+        onChange={(e) => onChange({ ...metric, window_seconds: e.target.value.trim() === '' ? null : Math.round(Number(e.target.value) * 3600) })}
+        aria-label={`Secondary ${index + 1} window`} />
+      <span className="muted small">hours</span>
+      <IconButton icon="close" label={`Remove secondary metric ${index + 1}`} onClick={onRemove} />
+    </div>
+  )
+}
+
 function ExperimentEditor({ experiment, onSaved, onCancel }: { experiment?: Experiment; onSaved: (x: Experiment) => void; onCancel: () => void }) {
   const flags = useQuery((signal) => api.flags(signal), [])
   const multivariate = (flags.data?.flags ?? []).filter((f) => f.variants.length >= 2)
@@ -342,6 +388,7 @@ function ExperimentEditor({ experiment, onSaved, onCancel }: { experiment?: Expe
   const [steps, setSteps] = useState<string[]>(experiment?.metric.steps ?? ['', ''])
   const [property, setProperty] = useState(experiment?.metric.property ?? '')
   const [windowHours, setWindowHours] = useState(hours(experiment?.metric.window_seconds))
+  const [secondary, setSecondary] = useState<ExperimentMetric[]>(experiment?.secondary_metrics ?? [])
   const [startDate, setStartDate] = useState(toDay(experiment?.start_date ?? null))
   const [endDate, setEndDate] = useState(toDay(experiment?.end_date ?? null))
   const [busy, setBusy] = useState(false)
@@ -351,7 +398,10 @@ function ExperimentEditor({ experiment, onSaved, onCancel }: { experiment?: Expe
   const selectedFlag = flagId ?? flag?.id
   const variants = flag?.variants ?? experiment?.variants ?? []
   const valid = name.trim() !== '' && selectedFlag !== undefined &&
-    (kind === 'funnel' ? steps.filter((s) => s.trim()).length >= 2 : event.trim() !== '' && (kind !== 'revenue' || property.trim() !== ''))
+    (kind === 'funnel' ? steps.filter((s) => s.trim()).length >= 2 : event.trim() !== '' && (kind !== 'revenue' || property.trim() !== '')) &&
+    secondary.every((m) => m.kind === 'funnel'
+      ? (m.steps ?? []).filter((s) => s.trim()).length >= 2
+      : !!m.event?.trim() && (m.kind !== 'revenue' || !!m.property?.trim()))
 
   const submit = async (e: FormEvent) => {
     e.preventDefault()
@@ -365,6 +415,7 @@ function ExperimentEditor({ experiment, onSaved, onCancel }: { experiment?: Expe
       const body: ExperimentInput = {
         name: name.trim(), description: description.trim(), flag_id: selectedFlag!, control_variant: variants.some((v) => v.key === control) ? control : '',
         metric,
+        secondary_metrics: secondary.map(normalizeMetric),
         start_date: startDate === toDay(experiment?.start_date ?? null) && experiment ? undefined : startDate,
         end_date: endDate === toDay(experiment?.end_date ?? null) && experiment ? undefined : endDate,
       }
@@ -434,6 +485,19 @@ function ExperimentEditor({ experiment, onSaved, onCancel }: { experiment?: Expe
                 placeholder={kind === 'funnel' ? '168' : 'any'} />
               <span>hours {kind === 'funnel' ? '(default 7 days)' : 'of the first exposure (empty: until the end)'}</span>
             </div>
+          </div>
+
+          <div className="editor-block">
+            <span className="editor-title">Secondary metrics</span>
+            <span className="editor-hint">Up to three more goals. Each is compared with the same control, after the same exposure.</span>
+            {secondary.map((m, i) => (
+              <SecondaryMetricRow key={i} metric={m} index={i} onChange={(next) => setSecondary(secondary.map((x, j) => (j === i ? next : x)))}
+                onRemove={() => setSecondary(secondary.filter((_, j) => j !== i))} />
+            ))}
+            {secondary.length < 3 && (
+              <button type="button" className="add-button" data-testid="add-secondary-metric"
+                onClick={() => setSecondary([...secondary, { kind: 'conversion', event: '' }])}>+ Add secondary metric</button>
+            )}
           </div>
 
           <div className="field-pair">

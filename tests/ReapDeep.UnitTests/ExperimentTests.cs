@@ -323,7 +323,7 @@ public class ExperimentResultTests
 {
     static Experiment Experiment(string kind, string control = "control") => new(1, "Checkout", "", 7, "new-checkout", true,
         [new("control", 50), new("test", 50)], control, ExperimentStatus.Running, new ExperimentMetric(kind, "purchase", Property: kind == "revenue" ? "amount" : null),
-        DateTime.UtcNow.AddDays(-1), null, null, null, DateTime.UtcNow, DateTime.UtcNow);
+        [], DateTime.UtcNow.AddDays(-1), null, null, null, DateTime.UtcNow, DateTime.UtcNow);
 
     [Fact]
     public void Conversion_results_compare_every_variant_with_the_control_and_report_exclusions()

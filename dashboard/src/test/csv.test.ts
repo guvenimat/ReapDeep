@@ -34,7 +34,7 @@ describe('csv', () => {
     })
     const experiment = experimentCsv({
       experiment_id: 1, metric_kind: 'conversion', test: 'two_proportion_z', control_variant: 'control',
-      date_from: '2026-11-01', date_to: '2026-11-02', excluded_persons: 0, srm: null, took_ms: 1,
+      date_from: '2026-11-01', date_to: '2026-11-02', excluded_persons: 0, srm: null, secondary: [], took_ms: 1,
       variants: [{
         key: 'control', percentage: 50, is_control: true, persons: 10, conversions: 2, mean: 0.2, standard_deviation: null, comparison: null,
       }],
@@ -42,7 +42,7 @@ describe('csv', () => {
 
     expect(sticky.rows).toEqual([[1, 4, 0.8], [2, 1, 0.2]])
     expect(web.rows).toEqual([['period total', 3, 5], ['2026-11-01', 2, 3]])
-    expect(experiment.rows[0]).toEqual(['control', 50, true, 10, 2, 0.2, null, null, null, null, null, null, null, null, null, null])
+    expect(experiment.rows[0]).toEqual(['primary', 'control', 50, true, 10, 2, 0.2, null, null, null, null, null, null, null, null, null, null])
   })
 
   it('writes one funnel row per breakdown and step, and the retention average last', () => {

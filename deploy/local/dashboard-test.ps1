@@ -215,6 +215,7 @@ $html = Dom "#/experiments" "document.querySelector('[data-testid=experiments-ca
 Check "Experiments tab renders for the owner with a 'New experiment' action" ($html -match 'data-testid="experiments-card"' -and $html -match 'data-testid="new-experiment"')
 $html = Dom "#/experiments/new" "document.querySelector('[data-testid=experiment-editor] .suggest input') && !document.querySelector('.skeleton')"
 Check "the experiment editor opens with a goal event field that suggests names and a flag picker" ((Section $html "experiment-editor") -match 'role="combobox"' -and (Section $html "experiment-editor") -match 'id="experiment-flag"' -and (Section $html "experiment-editor") -match 'Create experiment')
+Check "the experiment editor has a secondary metrics section" ($html -match 'Secondary metrics' -and $html -match 'data-testid="add-secondary-metric"')
 $html = Dom "#/experiments" "document.querySelector('[data-testid=sample-size]') && document.querySelector('[data-testid=calculate-sample-size]')"
 Check "the experiments page has a sample size calculator" ($html -match 'data-testid="sample-size"' -and $html -match 'data-testid="calculate-sample-size"')
 $html = Dom "#/experiments" "(function(){const b=document.querySelector('[data-testid=calculate-sample-size]');if(b&&!window.__ss){window.__ss=1;b.click()}return false})() || (document.querySelector('[data-testid=sample-size-result]')?.textContent.includes('3,841') ?? false)"

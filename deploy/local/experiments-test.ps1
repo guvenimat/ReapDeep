@@ -109,8 +109,9 @@ try {
     $x3 = (S POST "/experiments" @{ name = "Checkout within 1h $tag"; flag_id = $idA; metric = @{ kind = "conversion"; event = "exp_buy"; window_seconds = 3600 }; start_date = $start }).Json; $experiments += $x3
     $x4 = (S POST "/experiments" @{ name = "Revenue $tag"; flag_id = $idB; metric = @{ kind = "revenue"; event = "exp_buy"; property = "amount" }; start_date = $start }).Json; $experiments += $x4
     Check "funnel, windowed conversion and revenue experiments created" ($x2.metric.window_seconds -eq 3600 -and $x3.metric.window_seconds -eq 3600 -and $x4.metric.property -eq "amount")
-    $u = S PUT "/experiments/$($x1.id)" @{ description = "Does the new checkout sell more?" }
+    $u = S PUT "/experiments/$($x1.id)" @{ description = "Does the new checkout sell more?"; secondary_metrics = @(@{ kind = "conversion"; event = "exp_cart" }) }
     Check "update keeps the other fields" ($u.Status -eq 200 -and $u.Json.description -match "new checkout" -and $u.Json.metric.event -eq "exp_buy" -and $u.Json.start_date)
+    Check "a secondary metric is saved" ($u.Json.secondary_metrics.Count -eq 1 -and $u.Json.secondary_metrics[0].event -eq "exp_cart")
     Check "list returns the 4 experiments" (@((S GET "/experiments").Json.experiments | Where-Object { $_.flag_key -like "*$tag" }).Count -eq 4)
 
     Write-Host "`n3) Known-answer events through the ingestion API"
@@ -150,6 +151,7 @@ try {
     Check "control: 200 persons, 40 conversions (20 converted only before exposure, 20 repeated exposures counted once)" ($c.persons -eq 200 -and $c.conversions -eq 40 -and (Near 0.2 $c.mean) -and $c.is_control -and $null -eq $c.comparison)
     Check "test: 200 persons, 60 conversions (5 identified after exposure count once)" ($t1.persons -eq 200 -and $t1.conversions -eq 60 -and (Near 0.3 $t1.mean))
     Check "10 persons who saw both variants excluded; 15 'false' responses ignored" ($r1.excluded_persons -eq 10)
+    Check "secondary metric results are compared too" (@($r1.secondary).Count -eq 1 -and $r1.secondary[0].metric.event -eq "exp_cart")
     Check "z = 2.3094010767585025 and p = 0.020921335337794035 (pooled two-proportion z-test)" ((Near 2.3094010767585025 $t1.comparison.statistic) -and (Near 0.020921335337794035 $t1.comparison.p_value 1e-9) -and $r1.test -eq "two_proportion_z")
     Check "95% CI of the difference [0.015699, 0.184301], lift +50% [-2.32%, +102.32%], significant" ((Near 0.01569876146648773 $t1.comparison.difference_low) -and (Near 0.1843012385335122 $t1.comparison.difference_high) -and (Near 0.5 $t1.comparison.relative_lift) -and (Near -0.02316722085243128 $t1.comparison.relative_low) -and (Near 1.023167220852431 $t1.comparison.relative_high) -and $t1.comparison.significant)
     Check "balanced exposure 200/200 -> no SRM warning (chi2 0, p 1)" ($r1.srm -and -not $r1.srm.warning -and (Near 0 $r1.srm.chi_square) -and (Near 1 $r1.srm.p_value))

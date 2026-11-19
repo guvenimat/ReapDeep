@@ -9,22 +9,24 @@ public sealed class ExperimentRepository(NpgsqlDataSource db)
 {
     internal sealed record ExperimentRecord(
         long Id, string Name, string Description, long FlagId, string FlagKey, bool FlagEnabled, string Variants, string? ControlVariant, string Status,
-        string Metric, DateTime? StartDate, DateTime? EndDate, string? CreatedBy, string? UpdatedBy, DateTime CreatedAt, DateTime UpdatedAt)
+        string Metric, string SecondaryMetrics, DateTime? StartDate, DateTime? EndDate, string? CreatedBy, string? UpdatedBy, DateTime CreatedAt, DateTime UpdatedAt)
     {
         public Experiment ToContract()
         {
             var variants = FlagRules.ParseVariants(Variants);
             var control = ControlVariant is { } c && variants.Any(v => v.Key == c) ? c : variants.FirstOrDefault()?.Key ?? "";
             return new(Id, Name, Description, FlagId, FlagKey, FlagEnabled, variants, control, Status, ExperimentRules.ParseMetric(Metric),
-                StartDate, EndDate, CreatedBy, UpdatedBy, CreatedAt, UpdatedAt);
+                ExperimentRules.ParseMetrics(SecondaryMetrics), StartDate, EndDate, CreatedBy, UpdatedBy, CreatedAt, UpdatedAt);
         }
     }
 
-    public sealed record ExperimentValues(string Name, string Description, long FlagId, string ControlVariant, string Metric, DateTime? StartDate, DateTime? EndDate);
+    public sealed record ExperimentValues(string Name, string Description, long FlagId, string ControlVariant, string Metric, string SecondaryMetrics,
+        DateTime? StartDate, DateTime? EndDate);
 
     const string Select = """
         SELECT x.id, x.name, x.description, x.flag_id, f.key AS flag_key, f.enabled AS flag_enabled, f.variants::text AS variants, x.control_variant,
-               x.status, x.metric::text AS metric, x.start_date, x.end_date, c.email AS created_by, u.email AS updated_by, x.created_at, x.updated_at
+               x.status, x.metric::text AS metric, x.secondary_metrics::text AS secondary_metrics, x.start_date, x.end_date, c.email AS created_by,
+               u.email AS updated_by, x.created_at, x.updated_at
         FROM experiments x
         JOIN feature_flags f ON f.id = x.flag_id AND f.project_id = x.project_id
         LEFT JOIN users c ON c.id = x.created_by
@@ -64,10 +66,11 @@ public sealed class ExperimentRepository(NpgsqlDataSource db)
     {
         await using var conn = await db.OpenConnectionAsync(ct);
         var id = await conn.ExecuteScalarAsync<long>("""
-            INSERT INTO experiments (project_id, flag_id, name, description, metric, control_variant, start_date, end_date, created_by, updated_by)
-            VALUES (@ProjectId, @FlagId, @Name, @Description, @Metric::jsonb, @ControlVariant, @StartDate, @EndDate, @CreatedBy, @CreatedBy)
+            INSERT INTO experiments (project_id, flag_id, name, description, metric, secondary_metrics, control_variant, start_date, end_date, created_by, updated_by)
+            VALUES (@ProjectId, @FlagId, @Name, @Description, @Metric::jsonb, @SecondaryMetrics::jsonb, @ControlVariant, @StartDate, @EndDate, @CreatedBy, @CreatedBy)
             RETURNING id
-            """, new { ProjectId = projectId, v.FlagId, v.Name, v.Description, v.Metric, v.ControlVariant, v.StartDate, v.EndDate, CreatedBy = createdBy });
+            """, new { ProjectId = projectId, v.FlagId, v.Name, v.Description, v.Metric, v.SecondaryMetrics, v.ControlVariant, v.StartDate, v.EndDate,
+            CreatedBy = createdBy });
         return await GetAsync(conn, projectId, id);
     }
 
@@ -75,10 +78,12 @@ public sealed class ExperimentRepository(NpgsqlDataSource db)
     {
         await using var conn = await db.OpenConnectionAsync(ct);
         var updated = await conn.ExecuteAsync("""
-            UPDATE experiments SET name = @Name, description = @Description, flag_id = @FlagId, metric = @Metric::jsonb, control_variant = @ControlVariant,
+            UPDATE experiments SET name = @Name, description = @Description, flag_id = @FlagId, metric = @Metric::jsonb,
+                   secondary_metrics = @SecondaryMetrics::jsonb, control_variant = @ControlVariant,
                    start_date = @StartDate, end_date = @EndDate, updated_by = @UpdatedBy, updated_at = now()
             WHERE id = @Id AND project_id = @ProjectId AND (flag_id = @FlagId OR status = 'draft')
-            """, new { v.Name, v.Description, v.FlagId, v.Metric, v.ControlVariant, v.StartDate, v.EndDate, UpdatedBy = updatedBy, Id = id, ProjectId = projectId });
+            """, new { v.Name, v.Description, v.FlagId, v.Metric, v.SecondaryMetrics, v.ControlVariant, v.StartDate, v.EndDate, UpdatedBy = updatedBy,
+            Id = id, ProjectId = projectId });
         return updated == 0 ? null : await GetAsync(conn, projectId, id);
     }
 

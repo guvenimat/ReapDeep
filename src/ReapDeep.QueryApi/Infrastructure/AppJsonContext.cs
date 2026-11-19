@@ -136,6 +136,8 @@ namespace ReapDeep.QueryApi.Infrastructure;
 [JsonSerializable(typeof(ExperimentsResponse))]
 [JsonSerializable(typeof(ExperimentResultsKey))]
 [JsonSerializable(typeof(ExperimentResults))]
+[JsonSerializable(typeof(ExperimentMetricResults))]
+[JsonSerializable(typeof(ExperimentMetric))]
 [JsonSerializable(typeof(SampleSizeRequest))]
 [JsonSerializable(typeof(SampleSize))]
 internal partial class AppJsonContext : JsonSerializerContext;

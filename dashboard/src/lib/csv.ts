@@ -108,18 +108,24 @@ export function webCsv(data: WebAnalyticsResponse): CsvTable {
 }
 
 export function experimentCsv(data: ExperimentResults): CsvTable {
+  const metricName = (metric: ExperimentResults['secondary'][number]['metric']) =>
+    metric.kind === 'funnel' ? `funnel:${(metric.steps ?? []).join('>')}` : `${metric.kind}:${metric.event ?? ''}${metric.property ? `:${metric.property}` : ''}`
+  const variantRow = (metric: string, v: ExperimentResults['variants'][number]) => [
+    metric, v.key, v.percentage, v.is_control, v.persons, v.conversions, v.mean, v.standard_deviation,
+    v.comparison?.difference ?? null, v.comparison?.difference_low ?? null, v.comparison?.difference_high ?? null,
+    v.comparison?.relative_lift ?? null, v.comparison?.relative_low ?? null, v.comparison?.relative_high ?? null,
+    v.comparison?.statistic ?? null, v.comparison?.p_value ?? null, v.comparison?.significant ?? null,
+  ]
   return {
     name: 'experiment-results',
     headers: [
-      'variant', 'percentage', 'control', 'persons', 'conversions', 'mean', 'standard_deviation',
+      'metric', 'variant', 'percentage', 'control', 'persons', 'conversions', 'mean', 'standard_deviation',
       'difference', 'difference_low', 'difference_high', 'relative_lift', 'relative_low', 'relative_high',
       'statistic', 'p_value', 'significant',
     ],
-    rows: data.variants.map((v) => [
-      v.key, v.percentage, v.is_control, v.persons, v.conversions, v.mean, v.standard_deviation,
-      v.comparison?.difference ?? null, v.comparison?.difference_low ?? null, v.comparison?.difference_high ?? null,
-      v.comparison?.relative_lift ?? null, v.comparison?.relative_low ?? null, v.comparison?.relative_high ?? null,
-      v.comparison?.statistic ?? null, v.comparison?.p_value ?? null, v.comparison?.significant ?? null,
-    ]),
+    rows: [
+      ...data.variants.map((v) => variantRow('primary', v)),
+      ...data.secondary.flatMap((s) => s.variants.map((v) => variantRow(metricName(s.metric), v))),
+    ],
   }
 }
