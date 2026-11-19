@@ -4,6 +4,13 @@ namespace ReapDeep.UnitTests;
 
 public class AuthTokenTests
 {
+    [Theory]
+    [InlineData(" Ada@Example.com ", "ada@example.com")]
+    [InlineData("İSTANBUL@Example.com", "istanbul@example.com")]
+    [InlineData("ırmak@Example.com", "irmak@example.com")]
+    public void Email_normalization_folds_turkish_letters(string input, string expected) =>
+        Assert.Equal(expected, SessionService.NormalizeEmail(input));
+
     [Fact]
     public void New_tokens_are_random_url_safe_and_well_formed()
     {

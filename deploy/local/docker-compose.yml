@@ -240,6 +240,7 @@ services:
     environment:
       ConnectionStrings__Postgres: *postgres-connection
       Recommender__RefreshSeconds: "5"
+      Recommender__RequestsPerMinutePerIp: ${RECOMMENDER_REQUESTS_PER_MINUTE_PER_IP:-6000}
       OTEL_EXPORTER_OTLP_ENDPOINT: *otel-endpoint
       OTEL_METRIC_EXPORT_INTERVAL: "10000"
     healthcheck:

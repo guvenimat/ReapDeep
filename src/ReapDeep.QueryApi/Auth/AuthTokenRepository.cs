@@ -17,6 +17,10 @@ public sealed class AuthTokenRepository(NpgsqlDataSource db)
     public async Task<bool> CreateAsync(long userId, string purpose, string tokenHash, TimeSpan lifetime, int maxPerHour, CancellationToken ct)
     {
         await using var conn = await db.OpenConnectionAsync(ct);
+        await using (var cleanup = new NpgsqlCommand(
+            "DELETE FROM auth_tokens WHERE expires_at < now() - interval '1 day' OR used_at < now() - interval '1 day'", conn))
+            await cleanup.ExecuteNonQueryAsync(ct);
+
         var created = await conn.ExecuteAsync("""
             INSERT INTO auth_tokens (token_hash, user_id, purpose, expires_at)
             SELECT @TokenHash, @UserId, @Purpose, now() + make_interval(secs => @Seconds)

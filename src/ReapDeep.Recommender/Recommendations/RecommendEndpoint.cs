@@ -19,7 +19,7 @@ public static class RecommendEndpoint
 
     public static void MapRecommend(this WebApplication app)
     {
-        app.MapGet("/recommend", Recommend);
+        app.MapGet("/recommend", Recommend).RequireRateLimiting(HostingExtensions.PublicPolicy);
         app.MapGet("/healthz", (ProjectCache projects, RecommendationCache cache, FlagCache flags) => projects.IsLoaded && cache.IsLoaded && flags.IsLoaded
             ? Results.Json(new HealthResponse("ok"), AppJsonContext.Default.HealthResponse)
             : Results.Json(new HealthResponse("loading"), AppJsonContext.Default.HealthResponse, statusCode: StatusCodes.Status503ServiceUnavailable));

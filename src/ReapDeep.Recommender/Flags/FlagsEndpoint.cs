@@ -21,7 +21,7 @@ public static class FlagsEndpoint
 
     public static void MapFlags(this WebApplication app)
     {
-        app.MapGet("/flags", Flags);
+        app.MapGet("/flags", Flags).RequireRateLimiting(HostingExtensions.PublicPolicy);
         app.MapGet("/flags/definitions", Definitions);
     }
 
