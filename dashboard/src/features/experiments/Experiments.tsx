@@ -255,7 +255,7 @@ function ExperimentResultsCard({ experiment, version }: { experiment: Experiment
             {r.secondary.map((s, i) => (
               <div className="editor-block" key={i} data-testid="secondary-result">
                 <div className="editor-title">Secondary: {describeMetric(s.metric)}</div>
-                <ResultsTable variants={s.variants} revenue={s.metric.kind === 'revenue'} />
+                {s.error ? <p className="form-message error">{s.error}</p> : <ResultsTable variants={s.variants} revenue={s.metric.kind === 'revenue'} />}
               </div>
             ))}
             <ExplainCard title="AI interpretation" feature="experiment_explain" load={() => api.explainExperiment(experiment.id)}

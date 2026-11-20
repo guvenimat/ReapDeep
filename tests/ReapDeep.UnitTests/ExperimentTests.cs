@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Logging.Abstractions;
 using ReapDeep.Analytics;
 using ReapDeep.Analytics.Experiments;
 using ReapDeep.Analytics.Flags;
@@ -357,6 +358,24 @@ public class ExperimentResultTests
         Assert.All(none.Variants, v => Assert.Equal(0, v.Persons));
         Assert.Null(none.Variants.Single(v => v.Key == "test").Comparison);
         Assert.Null(none.Srm);
+    }
+
+    [Fact]
+    public async Task Secondary_metric_failure_is_reported_on_that_metric_only()
+    {
+        var metric = new ExperimentMetric("conversion", "purchase");
+        var r = await ExperimentService.SecondaryAsync(metric, () => throw new InvalidOperationException("boom"), NullLogger.Instance, CancellationToken.None);
+        Assert.NotNull(r.Error);
+        Assert.Empty(r.Variants);
+        Assert.Same(metric, r.Metric);
+    }
+
+    [Fact]
+    public async Task Secondary_metric_failure_after_cancellation_is_rethrown()
+    {
+        var metric = new ExperimentMetric("conversion", "purchase");
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => ExperimentService.SecondaryAsync(metric,
+            () => throw new OperationCanceledException(), NullLogger.Instance, new CancellationToken(true)));
     }
 }
 

@@ -125,7 +125,7 @@ export function experimentCsv(data: ExperimentResults): CsvTable {
     ],
     rows: [
       ...data.variants.map((v) => variantRow('primary', v)),
-      ...data.secondary.flatMap((s) => s.variants.map((v) => variantRow(metricName(s.metric), v))),
+      ...data.secondary.filter((s) => !s.error).flatMap((s) => s.variants.map((v) => variantRow(metricName(s.metric), v))),
     ],
   }
 }

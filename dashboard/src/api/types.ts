@@ -227,7 +227,7 @@ export interface ExperimentVariantResult {
 export interface ExperimentSrm { chi_square: number; p_value: number; warning: boolean; threshold: number }
 export interface ExperimentMetricResults {
   metric_kind: MetricKind; metric: ExperimentMetric; test: 'two_proportion_z' | 'welch_t'; variants: ExperimentVariantResult[]
-  excluded_persons: number; srm: ExperimentSrm | null
+  excluded_persons: number; srm: ExperimentSrm | null; error?: string | null
 }
 export interface ExperimentResults {
   experiment_id: number; metric_kind: MetricKind; test: 'two_proportion_z' | 'welch_t'; control_variant: string; date_from: string; date_to: string

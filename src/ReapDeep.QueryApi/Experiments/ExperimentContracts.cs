@@ -27,7 +27,7 @@ public sealed record ExperimentVariantResult(
 public sealed record ExperimentSrm(double ChiSquare, double PValue, bool Warning, double Threshold);
 
 public sealed record ExperimentMetricResults(string MetricKind, ExperimentMetric Metric, string Test, List<ExperimentVariantResult> Variants,
-    long ExcludedPersons, ExperimentSrm? Srm);
+    long ExcludedPersons, ExperimentSrm? Srm, string? Error = null);
 
 public sealed record ExperimentResults(
     long ExperimentId, string MetricKind, string Test, string ControlVariant, DateTime DateFrom, DateTime DateTo,

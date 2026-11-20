@@ -6,7 +6,7 @@ using ReapDeep.QueryApi.Infrastructure;
 
 namespace ReapDeep.QueryApi.Experiments;
 
-public sealed class ExperimentService(StarRocksClient starRocks)
+public sealed class ExperimentService(StarRocksClient starRocks, ILogger<ExperimentService> log)
 {
     public sealed record VariantRow(string? Variant, long Persons, long Converted, double Mean, double? Variance);
 
@@ -23,15 +23,30 @@ public sealed class ExperimentService(StarRocksClient starRocks)
         var (from, to) = ExperimentRules.Range(x.StartDate, x.EndDate, DateTime.UtcNow);
         using var gate = StarRocksClient.RequestGate();
         var primary = MeasureAsync(project, x, x.Metric, from, to, gate, ct);
-        var secondary = x.SecondaryMetrics.Select(m => MeasureAsync(project, x, m, from, to, gate, ct)).ToList();
+        var secondary = x.SecondaryMetrics.Select(m => SecondaryAsync(m, () => MeasureAsync(project, x, m, from, to, gate, ct), log, ct)).ToList();
         var primaryResult = await primary;
         var secondaryResults = await Task.WhenAll(secondary);
         return primaryResult with
         {
-            Secondary = secondaryResults.Select((r, i) => new ExperimentMetricResults(r.MetricKind, x.SecondaryMetrics[i], r.Test, r.Variants,
-                r.ExcludedPersons, r.Srm)).ToList(),
+            Secondary = secondaryResults.ToList(),
             TookMs = sw.Elapsed.TotalMilliseconds,
         };
+    }
+
+    public static async Task<ExperimentMetricResults> SecondaryAsync(ExperimentMetric metric, Func<Task<ExperimentResults>> measure, ILogger log,
+        CancellationToken ct)
+    {
+        try
+        {
+            var r = await measure();
+            return new ExperimentMetricResults(r.MetricKind, metric, r.Test, r.Variants, r.ExcludedPersons, r.Srm);
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested)
+        {
+            log.LogWarning(ex, "Secondary experiment metric {Kind} failed", metric.Kind);
+            return new ExperimentMetricResults(metric.Kind ?? MetricKinds.Conversion, metric, "", [], 0, null,
+                "This metric could not be calculated. Try again later.");
+        }
     }
 
     async Task<ExperimentResults> MeasureAsync(ProjectContext project, Experiment x, ExperimentMetric metric, DateTime from, DateTime to,
