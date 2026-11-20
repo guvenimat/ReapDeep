@@ -201,6 +201,8 @@ $null = S DELETE "/insights/$($insight.id)"
 Check "deleted cohort -> 404" ((S GET "/cohorts/$($dyn.id)").Status -eq 404)
 $purged = WaitFor { (StarRocks "SELECT count(*) FROM analytics.cohort_members WHERE cohort_id IN ($($dyn.id), $($prop.id), $($stat.id))") -eq "0" } 60
 Check "worker removes the deleted cohorts' rows from StarRocks" $purged
+$historyPurged = WaitFor { (StarRocks "SELECT count(*) FROM analytics.cohort_members_history WHERE cohort_id IN ($($dyn.id), $($prop.id), $($stat.id))") -eq "0" } 60
+Check "worker removes the deleted cohorts' history rows" $historyPurged
 
 if ($script:failed -eq 0) { Write-Host "`nPASSED: all cohort checks" -ForegroundColor Green }
 else { Write-Host "`nFAILED: $script:failed checks failed" -ForegroundColor Red; exit 1 }

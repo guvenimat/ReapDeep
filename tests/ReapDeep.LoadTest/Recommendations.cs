@@ -96,6 +96,8 @@ static class Recommendations
             $"{Stats.F(Stats.Percentile(all, 0.5), "0.00")} ms", $"{Stats.F(Stats.Percentile(all, 0.95), "0.00")} ms",
             $"{Stats.F(Stats.Percentile(all, 0.99), "0.00")} ms", $"{Stats.F(all[^1], "0.00")} ms", errors.ToString(),
         ]]);
+        if (errors > 0)
+            throw new InvalidOperationException($"{errors} recommender requests failed. If they are 429s, set Recommender__RequestsPerMinutePerIp=0 for the load test.");
     }
 
     static async Task<(double P50, string[] FirstRow)> Time(MySqlConnection conn, string sql, IEnumerable<(string Name, object Value)> parameters)

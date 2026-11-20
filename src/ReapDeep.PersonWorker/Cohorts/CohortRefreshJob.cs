@@ -17,13 +17,19 @@ public sealed class CohortRefreshJob(CohortRepository cohorts, StarRocksStore? s
             log.LogWarning("ConnectionStrings:StarRocks is not set; cohorts will not be calculated");
             return;
         }
-        log.LogInformation("Cohort job: polling every {Poll}, refresh at most every {Max}, {Concurrency} at a time",
-            options.PollInterval, options.MaxRefreshInterval, options.Concurrency);
+        log.LogInformation("Cohort job: polling every {Poll}, refresh at most every {Max}, {Concurrency} at a time; history kept {HistoryDays} days",
+            options.PollInterval, options.MaxRefreshInterval, options.Concurrency, options.HistoryRetentionDays);
 
+        var lastHistoryCleanup = DateTime.MinValue;
         while (!ct.IsCancellationRequested)
         {
             try
             {
+                if (DateTime.UtcNow - lastHistoryCleanup >= TimeSpan.FromDays(1))
+                {
+                    await CleanupHistoryAsync(store, ct);
+                    lastHistoryCleanup = DateTime.UtcNow;
+                }
                 await RemoveDeletedAsync(store, ct);
                 await DropExpiredVersionsAsync(store, ct);
                 var due = await cohorts.DueAsync(options.MaxRefreshInterval, options.Concurrency, ct);
@@ -99,6 +105,16 @@ public sealed class CohortRefreshJob(CohortRepository cohorts, StarRocksStore? s
             await store.ExecuteAsync(CohortSql.DeleteVersion(v.ProjectId, v.CohortId, v.Version), ct);
             await cohorts.ForgetVersionAsync(v, ct);
         }
+    }
+
+    async Task CleanupHistoryAsync(StarRocksStore store, CancellationToken ct)
+    {
+        if (options.HistoryRetentionDays <= 0) return;
+        var cutoff = DateTime.UtcNow.AddDays(-options.HistoryRetentionDays);
+        var projects = await cohorts.ProjectIdsAsync(ct);
+        foreach (var projectId in projects)
+            await store.ExecuteAsync(CohortSql.DeleteHistoryBefore(projectId, cutoff), ct);
+        log.LogInformation("Cohort history before {Cutoff} removed from {Projects} projects", cutoff.Date, projects.Count);
     }
 
     async Task RemoveDeletedAsync(StarRocksStore store, CancellationToken ct)

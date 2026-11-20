@@ -23,6 +23,16 @@ public sealed class CohortRepository(NpgsqlDataSource db)
             """, new { MaxSeconds = (int)maxInterval.TotalSeconds, Limit = limit })).AsList();
     }
 
+    public async Task<List<long>> ProjectIdsAsync(CancellationToken ct)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand("SELECT id FROM projects ORDER BY id", conn);
+        var ids = new List<long>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) ids.Add(reader.GetInt64(0));
+        return ids;
+    }
+
     public async Task<Dictionary<string, string[]>> ActionEventsAsync(long projectId, string[] names, CancellationToken ct)
     {
         await using var conn = await db.OpenConnectionAsync(ct);

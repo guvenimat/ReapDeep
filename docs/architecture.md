@@ -439,7 +439,8 @@ reports the selected segment's customers or revenue, is checked daily and only s
 - **CORS** on the Query API is off unless configured; the dashboard is served from the same origin.
 - **Public rate limit.** The Recommender limits `/recommend` and `/flags` per client IP (6,000 requests
   per minute by default, `Recommender__RequestsPerMinutePerIp`, `0` disables it) and answers `429` with
-  `Retry-After: 60`. `X-Forwarded-For` is honored only from `ForwardedHeaders__TrustedNetworks`.
+  `Retry-After: 60`. The local compose sets `0` so the load test can run; use 6,000 in production.
+  `X-Forwarded-For` is honored only from `ForwardedHeaders__TrustedNetworks`.
 
 ## 8. Deletion requests
 

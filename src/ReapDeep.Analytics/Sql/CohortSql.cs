@@ -99,6 +99,13 @@ public static class CohortSql
         return b.Build($"DELETE FROM analytics.cohort_members_history WHERE project_id = {b.P(projectId)} AND cohort_id = {b.P(cohortId)}");
     }
 
+    public static SqlQuery DeleteHistoryBefore(long projectId, DateTime cutoffUtc)
+    {
+        var b = new SqlBuilder(projectId, cutoffUtc, DateTime.UtcNow);
+        var cutoff = b.P(cutoffUtc.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
+        return b.Build($"DELETE FROM analytics.cohort_members_history WHERE project_id = {b.P(projectId)} AND snapshot_day < CAST({cutoff} AS DATE)");
+    }
+
     public static SqlQuery Snapshot(long projectId, long cohortId, long version, DateTime dayUtc)
     {
         var b = new SqlBuilder(projectId, dayUtc.Date, dayUtc.Date.AddDays(1));

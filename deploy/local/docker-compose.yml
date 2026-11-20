@@ -207,6 +207,7 @@ services:
       ProjectDeletion__PollSeconds: "10"
       Cohorts__PollSeconds: "5"
       Cohorts__MaxRefreshSeconds: "30"
+      Cohorts__HistoryRetentionDays: "365"
       Recommendations__PollSeconds: "10"
       Recommendations__RefreshSeconds: "60"
       ConnectionStrings__StarRocksOps: Server=starrocks;Port=9030;User ID=reapdeep_ops;Password=${STARROCKS_OPS_PASSWORD:?Missing STARROCKS_OPS_PASSWORD in .env};Database=analytics
@@ -240,7 +241,7 @@ services:
     environment:
       ConnectionStrings__Postgres: *postgres-connection
       Recommender__RefreshSeconds: "5"
-      Recommender__RequestsPerMinutePerIp: ${RECOMMENDER_REQUESTS_PER_MINUTE_PER_IP:-6000}
+      Recommender__RequestsPerMinutePerIp: ${RECOMMENDER_REQUESTS_PER_MINUTE_PER_IP:-0}
       OTEL_EXPORTER_OTLP_ENDPOINT: *otel-endpoint
       OTEL_METRIC_EXPORT_INTERVAL: "10000"
     healthcheck:

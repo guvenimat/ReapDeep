@@ -51,6 +51,18 @@ public class CohortSqlTests
     }
 
     [Fact]
+    public void History_cleanup_uses_a_project_filter_and_a_parameterized_day()
+    {
+        var q = CohortSql.DeleteHistoryBefore(Project, new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc));
+
+        Assert.Contains("DELETE FROM analytics.cohort_members_history", q.Sql);
+        Assert.Contains("project_id = @p", q.Sql);
+        Assert.Contains("snapshot_day < CAST(@p", q.Sql);
+        Assert.DoesNotContain("2026-01-01", q.Sql);
+        Assert.Contains(q.Parameters, p => Equals(p.Value, "2026-01-01"));
+    }
+
+    [Fact]
     public void Values_are_parameters_not_sql_text()
     {
         var def = Def([Performed("bought'; DROP TABLE x", filters: [new Filter("event", "$browser", "eq", Json("\"Chrome\""))]), Property("plan", "premium-tier")]);
