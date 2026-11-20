@@ -170,3 +170,5 @@ main { padding: 24px 32px 48px; width: 100%; max-width: 1680px; margin: 0 auto; 
 .bell-list a:hover { background: var(--hover, rgba(127, 127, 127, 0.08)); }
 .bell-list li.unread a { box-shadow: inset 3px 0 0 var(--accent); }
 .bell-body { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.bell-prefs { display: grid; gap: 8px; margin-top: 8px; padding: 8px 6px 2px; border-top: 1px solid var(--border); }
+.bell-prefs .check-list { display: grid; gap: 4px; }

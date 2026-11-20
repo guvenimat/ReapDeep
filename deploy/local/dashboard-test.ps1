@@ -123,6 +123,10 @@ Write-Host "`n2) Connection status and nginx proxy"
 Check "/healthz through nginx" ((Invoke-WebRequest "$dash/healthz" -UseBasicParsing).Content -match '"postgres":"ok".*"starrocks":"ok"')
 $html = Dom "#/events" "document.querySelector('.status.ok')"
 Check "top bar shows 'Connected'" ((Section $html "connection-status") -match "Connected")
+$html = Dom "#/dashboards" "(function(){const b=document.querySelector('.bell-button');if(b&&!window.__bell){window.__bell=1;b.click();return false}return false})() || (document.querySelector('[data-testid=notification-preferences]') ?? false)"
+Check "the notification bell opens the preferences control" ($html -match 'data-testid="notification-preferences"')
+$html = Dom "#/dashboards" "(function(){const bell=document.querySelector('.bell-button');if(bell&&!window.__bell){window.__bell=1;bell.click();return false}const b=document.querySelector('[data-testid=notification-preferences]');if(b&&!window.__np){window.__np=1;b.click();return false}return false})() || (document.querySelector('[data-testid=notification-preferences-list]') ?? false)"
+Check "notification preferences list the kinds" ($html -match 'Stopped experiment results' -and $html -match 'data-kind="alert_fired"')
 
 Write-Host "`n3) Trends tab"
 $q = Q '{"series":[{"event":"page___TAG__","metric":"total"},{"event":"page___TAG__","metric":"unique_users"}],"filters":[],"deduplicate":false,"chart":"line"}'

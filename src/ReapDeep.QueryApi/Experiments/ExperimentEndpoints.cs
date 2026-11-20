@@ -5,6 +5,7 @@ using ReapDeep.QueryApi.Analytics;
 using ReapDeep.QueryApi.Auth;
 using ReapDeep.QueryApi.Flags;
 using ReapDeep.QueryApi.Infrastructure;
+using ReapDeep.QueryApi.Notifications;
 
 namespace ReapDeep.QueryApi.Experiments;
 
@@ -79,13 +80,16 @@ public static class ExperimentEndpoints
             : ApiResults.Conflict("The experiment could not be started: its end date has passed or it is no longer a draft");
     }
 
-    static async Task<IResult> Stop(long id, ProjectContext project, ExperimentRepository experiments, CancellationToken ct)
+    static async Task<IResult> Stop(long id, ProjectContext project, ExperimentRepository experiments, NotificationRepository notifications,
+        CancellationToken ct)
     {
         if (await experiments.GetAsync(project.ProjectId, id, ct) is not { } current) return ApiResults.NotFound("Experiment not found");
         if (current.Status != ExperimentStatus.Running) return ApiResults.Conflict($"Only a running experiment can be stopped (this one is {current.Status})");
-        return await experiments.StopAsync(project.ProjectId, id, project.UserId!.Value, ct) is { } stopped
-            ? ApiResults.Ok(stopped, AppJsonContext.Default.Experiment)
-            : ApiResults.Conflict("The experiment is no longer running");
+        if (await experiments.StopAsync(project.ProjectId, id, project.UserId!.Value, ct) is not { } stopped)
+            return ApiResults.Conflict("The experiment is no longer running");
+        await notifications.AddAsync(project.ProjectId, NotificationKinds.ExperimentResult, $"Experiment \"{stopped.Name}\" stopped",
+            "The results are ready: open the experiment to compare the variants.", $"#/experiments/{id}", ct);
+        return ApiResults.Ok(stopped, AppJsonContext.Default.Experiment);
     }
 
     static async Task<IResult> Delete(long id, ProjectContext project, ExperimentRepository experiments, CancellationToken ct)

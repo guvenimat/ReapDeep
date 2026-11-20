@@ -208,6 +208,8 @@ try {
     $null = S PUT "/flags/$idA" @{ variants = @(@{ key = "control"; percentage = 50 }, @{ key = "test"; percentage = 50 }) }
     $rs = (Fresh "/experiments/$($x1.id)/results").Json
     Check "a stopped experiment keeps its results" ((Variant $rs "test").conversions -eq 60 -and (Variant $rs "control").persons -eq 200)
+    $note = @((S GET "/notifications").Json.notifications | Where-Object { $_.kind -eq "experiment_result" -and $_.link -eq "#/experiments/$($x1.id)" })[0]
+    Check "stopping an experiment creates a result notification" ($note -and $note.title -match "Checkout conversion")
 
     Write-Host "`n9) Access"
     Check "no credentials -> 401" ((Send $plain GET "$api/experiments").Status -eq 401)

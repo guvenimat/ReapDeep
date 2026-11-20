@@ -414,6 +414,9 @@ ReapDeep. Rule changes keep the current state and schedule an immediate check, s
 above the current value produces a "resolved" notification instead of silently resetting. A funnel
 alert reports the last step divided by the first as a percentage over the alert window; an RFM alert
 reports the selected segment's customers or revenue, is checked daily and only supports above/below.
+The in-app bell also receives a "results are ready" entry when an experiment stops. Its notification
+preferences are stored per user, project and kind; muted kinds are filtered out of the list and the
+unread count, while the underlying events stay in the table.
 
 ## 7. Authentication and tenancy
 

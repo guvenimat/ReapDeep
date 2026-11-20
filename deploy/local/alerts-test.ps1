@@ -148,6 +148,11 @@ try {
     Check "firing and resolving left two notifications that link to the alerts tab" ($mine.Count -eq 2 -and $mine[0].kind -eq "alert_resolved" -and $mine[1].kind -eq "alert_fired" -and $mine[0].link -eq "#/alerts")
     Check "they start unread" ($notes.unread -ge 2 -and $mine[0].unread -eq $true)
     Check "marking them read clears the unread count" ((S POST "/notifications/read").Status -eq 204 -and (S GET "/notifications").Json.unread -eq 0)
+    $prefs = @((S GET "/notifications/preferences").Json.preferences)
+    Check "notification preferences list the five kinds" (@($prefs).Count -eq 5 -and @($prefs | Where-Object { $_.kind -eq "alert_fired" -and $_.enabled }).Count -eq 1)
+    Check "muting a kind removes it from the list" ((S PUT "/notifications/preferences" @{ kind = "alert_fired"; enabled = $false }).Status -eq 204 -and @((S GET "/notifications").Json.notifications | Where-Object { $_.kind -eq "alert_fired" }).Count -eq 0)
+    Check "unmuting a kind brings it back" ((S PUT "/notifications/preferences" @{ kind = "alert_fired"; enabled = $true }).Status -eq 204 -and @((S GET "/notifications").Json.notifications | Where-Object { $_.kind -eq "alert_fired" }).Count -ge 1)
+    Check "a read key cannot read notification preferences -> 403" ((Send $plain GET "/notifications/preferences" $null @{ Authorization = "Bearer $readKey"; "X-Project-Id" = "1" }).Status -eq 403)
     Check "a read key cannot read notifications -> 403" ((Send $plain GET "/notifications" $null @{ Authorization = "Bearer $readKey"; "X-Project-Id" = "1" }).Status -eq 403)
 
     Write-Host "`n4b) Failed deliveries are retried"

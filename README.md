@@ -229,7 +229,7 @@ An alert notifies one channel: a webhook, a Slack incoming webhook (a short text
 
 ### Notifications
 
-The bell in the top bar collects what happened in the project: an alert that fires, resolves or cannot be checked, and a scheduled strategy note that is ready. Each entry links to its page, unread entries are marked per user and opening the bell marks them read (`GET /api/v1/notifications`, `POST /api/v1/notifications/read`). The last 200 per project are kept. This works without any e-mail setup; webhooks, Slack and e-mail stay available on top.
+The bell in the top bar collects what happened in the project: an alert that fires, resolves or cannot be checked, a stopped experiment whose results are ready, and a scheduled strategy note that is ready. Each entry links to its page, unread entries are marked per user and opening the bell marks them read (`GET /api/v1/notifications`, `POST /api/v1/notifications/read`). Each user can switch kinds off in the bell's Notification preferences (`GET`/`PUT /api/v1/notifications/preferences`); muted kinds are hidden from the list and the unread count. The last 200 per project are kept. This works without any e-mail setup; webhooks, Slack and e-mail stay available on top.
 
 ### Feature flags
 
@@ -524,10 +524,10 @@ cd deploy/local
 .\insights-test.ps1     # saved insights and dashboards, chart notes, actions, funnel and property correlation, API and browser
 .\cohort-test.ps1       # cohorts: rules, actions, identity merge, static lists, history snapshots and as-of filters, filters and breakdowns, recalculation, deletion
 .\rfm-lifecycle-test.ps1  # RFM scores and segments with known answers, rfm_segment cohorts, lifecycle states and look-back, stickiness, saved insights
-.\alerts-test.ps1       # alerts: validation, firing and resolving, signed webhooks to a local receiver, manual retry, test notifications, change and formula conditions, errors
+.\alerts-test.ps1       # alerts: validation, firing and resolving, signed webhooks to a local receiver, notification preferences, manual retry, test notifications, change and formula conditions, errors
 .\recommender-test.ps1  # catalog, key scopes, models from real events, the public Recommender, stock changes, signed for_you requests
 .\flags-test.ps1       # feature flags: validation, access, variant and rollout shares over 6,000 identities, stable assignment, disabled flags, targeting, project isolation, exposure events
-.\experiments-test.ps1  # experiments: known-answer conversion, funnel, window and revenue results (z, t, p, CI), secondary metrics, sample size, excluded persons, conversions before exposure, SRM warning, variant lock, access, project isolation
+.\experiments-test.ps1  # experiments: known-answer conversion, funnel, window and revenue results (z, t, p, CI), secondary metrics, sample size, result notifications, excluded persons, conversions before exposure, SRM warning, variant lock, access, project isolation
 .\web-test.ps1          # web analytics: known-answer sessions, bounces, durations, entry pages, referrers, UTM values and devices, time zone buckets, previous period, filters, cache, access, project isolation
 .\query-test.ps1        # Query API: trends, funnels, retention, paths, events, persons, EXPLAIN, latency
 .\durability-test.ps1   # duplicate retries, Redis and Kafka outages without loss, dead letters, de-duplicated event list, ingestion quota, health check

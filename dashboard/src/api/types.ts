@@ -272,6 +272,7 @@ export interface FunnelPropertyResponse {
   converted: number; dropped: number; event: string; property: string; values: FunnelPropertyValue[]; min_persons: number; took_ms: number
 }
 export interface NotificationItem { id: number; kind: string; title: string; body: string; link: string; created_at: string; unread: boolean }
+export interface NotificationPreference { kind: string; enabled: boolean }
 export interface AiNote { id: number; trigger: 'manual' | 'schedule'; period_from: string; period_to: string; emailed_to: string[]; created_at: string; answer: AiAnswer }
 export type DigestFrequency = 'off' | 'daily' | 'weekly' | 'monthly'
 export interface DigestSchedule {
