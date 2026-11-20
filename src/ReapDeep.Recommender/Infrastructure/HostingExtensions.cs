@@ -34,6 +34,7 @@ public static class HostingExtensions
         });
 
         var perMinute = int.TryParse(cfg["Recommender:RequestsPerMinutePerIp"], out var n) ? n : 6_000;
+        var exempt = RateLimitRules.Networks(cfg["Recommender:RateLimitExemptNetworks"]);
         services.AddRateLimiter(o =>
         {
             o.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
@@ -42,7 +43,7 @@ public static class HostingExtensions
                 ctx.HttpContext.Response.Headers.RetryAfter = "60";
                 return ValueTask.CompletedTask;
             };
-            o.AddPolicy(PublicPolicy, context => perMinute <= 0
+            o.AddPolicy(PublicPolicy, context => perMinute <= 0 || RateLimitRules.IsExempt(context.Connection.RemoteIpAddress, exempt)
                 ? RateLimitPartition.GetNoLimiter("off")
                 : RateLimitPartition.GetFixedWindowLimiter(
                     context.Connection.RemoteIpAddress?.ToString() ?? "unknown",
