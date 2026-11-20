@@ -17,13 +17,19 @@ public sealed class CohortRefreshJob(CohortRepository cohorts, StarRocksStore? s
             log.LogWarning("ConnectionStrings:StarRocks is not set; cohorts will not be calculated");
             return;
         }
-        log.LogInformation("Cohort job: polling every {Poll}, refresh at most every {Max}, {Concurrency} at a time",
-            options.PollInterval, options.MaxRefreshInterval, options.Concurrency);
+        log.LogInformation("Cohort job: polling every {Poll}, refresh at most every {Max}, {Concurrency} at a time; history kept {HistoryDays} days",
+            options.PollInterval, options.MaxRefreshInterval, options.Concurrency, options.HistoryRetentionDays);
 
+        var lastHistoryCleanup = DateTime.MinValue;
         while (!ct.IsCancellationRequested)
         {
             try
             {
+                if (DateTime.UtcNow - lastHistoryCleanup >= TimeSpan.FromDays(1))
+                {
+                    await CleanupHistoryAsync(store, ct);
+                    lastHistoryCleanup = DateTime.UtcNow;
+                }
                 await RemoveDeletedAsync(store, ct);
                 await DropExpiredVersionsAsync(store, ct);
                 var due = await cohorts.DueAsync(options.MaxRefreshInterval, options.Concurrency, ct);
@@ -53,11 +59,23 @@ public sealed class CohortRefreshJob(CohortRepository cohorts, StarRocksStore? s
         {
             await cohorts.MarkCalculatingAsync(cohort.Id, ct);
             if (cohort.Kind == "static") await WriteStaticAsync(store, cohort, version, ct);
-            else await store.ExecuteAsync(CohortSql.Materialize(cohort.ProjectId, cohort.Id, version, Definition(cohort), DateTime.UtcNow), ct);
+            else await store.ExecuteAsync(CohortSql.Materialize(cohort.ProjectId, cohort.Id, version, await DefinitionAsync(cohort, ct), DateTime.UtcNow), ct);
 
             var members = await store.ScalarAsync(CohortSql.PersonCount(cohort.ProjectId, cohort.Id, version), ct);
             if (await cohorts.CompleteAsync(cohort, version, members, (int)sw.ElapsedMilliseconds, ct))
+            {
+                try
+                {
+                    var snapshotDay = DateTime.UtcNow;
+                    await store.ExecuteAsync(CohortSql.DeleteSnapshot(cohort.ProjectId, cohort.Id, snapshotDay), ct);
+                    await store.ExecuteAsync(CohortSql.Snapshot(cohort.ProjectId, cohort.Id, version, snapshotDay), ct);
+                }
+                catch (Exception ex) when (!ct.IsCancellationRequested)
+                {
+                    log.LogWarning(ex, "Cohort {Cohort} (project {Project}) was calculated but its history snapshot failed", cohort.Id, cohort.ProjectId);
+                }
                 log.LogInformation("Cohort {Cohort} (project {Project}): {Members} persons in {Ms} ms", cohort.Id, cohort.ProjectId, members, sw.ElapsedMilliseconds);
+            }
             else
                 await store.ExecuteAsync(CohortSql.DeleteVersion(cohort.ProjectId, cohort.Id, version), ct);
         }
@@ -91,17 +109,45 @@ public sealed class CohortRefreshJob(CohortRepository cohorts, StarRocksStore? s
         }
     }
 
+    async Task CleanupHistoryAsync(StarRocksStore store, CancellationToken ct)
+    {
+        if (options.HistoryRetentionDays <= 0) return;
+        var cutoff = DateTime.UtcNow.AddDays(-options.HistoryRetentionDays);
+        var projects = await cohorts.ProjectIdsAsync(ct);
+        foreach (var projectId in projects)
+            await store.ExecuteAsync(CohortSql.DeleteHistoryBefore(projectId, cutoff), ct);
+        log.LogInformation("Cohort history before {Cutoff} removed from {Projects} projects", cutoff.Date, projects.Count);
+    }
+
     async Task RemoveDeletedAsync(StarRocksStore store, CancellationToken ct)
     {
         foreach (var c in await cohorts.DeletedAsync(ct))
         {
             await store.ExecuteAsync(CohortSql.DeleteCohort(c.ProjectId, c.Id), ct);
+            await store.ExecuteAsync(CohortSql.DeleteHistory(c.ProjectId, c.Id), ct);
             await cohorts.RemoveAsync(c.Id, ct);
             log.LogInformation("Cohort {Cohort} (project {Project}) removed", c.Id, c.ProjectId);
         }
     }
 
-    static CohortDefinition Definition(CohortRepository.DueCohortRecord cohort) =>
-        JsonSerializer.Deserialize(cohort.Definition, CohortJsonContext.Default.CohortDefinition)
-        ?? throw new InvalidOperationException($"Cohort {cohort.Id} has no definition");
+    async Task<CohortDefinition> DefinitionAsync(CohortRepository.DueCohortRecord cohort, CancellationToken ct)
+    {
+        var definition = JsonSerializer.Deserialize(cohort.Definition, CohortJsonContext.Default.CohortDefinition)
+            ?? throw new InvalidOperationException($"Cohort {cohort.Id} has no definition");
+        var names = definition.Groups?.SelectMany(g => g.Conditions ?? [])
+            .Where(c => c.Action is { Length: > 0 }).Select(c => c.Action!)
+            .Distinct(StringComparer.Ordinal).ToArray() ?? [];
+        if (names.Length == 0) return definition;
+
+        var found = await cohorts.ActionEventsAsync(cohort.ProjectId, names, ct);
+        return definition with
+        {
+            Groups = definition.Groups!.Select(g => g with
+            {
+                Conditions = g.Conditions!.Select(c => c.Action is { Length: > 0 } action
+                    ? c with { Events = found.TryGetValue(action, out var events) ? events.ToList() : throw new InvalidOperationException($"Unknown action: '{action}'") }
+                    : c).ToList(),
+            }).ToList(),
+        };
+    }
 }

@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using ReapDeep.Analytics;
+using ReapDeep.Analytics.Experiments;
 using ReapDeep.Analytics.Sql;
 using ReapDeep.QueryApi.Actions;
 using ReapDeep.QueryApi.Auth;
@@ -92,6 +93,36 @@ public sealed class FunnelService(StarRocksClient starRocks, CohortService cohor
             [.. scored.Where(c => c.OddsRatio >= FunnelSql.MinOddsRatio).OrderByDescending(c => c.OddsRatio).ThenBy(c => c.Event, StringComparer.Ordinal).Take(Top)],
             [.. scored.Where(c => c.OddsRatio <= 1 / FunnelSql.MinOddsRatio).OrderBy(c => c.OddsRatio).ThenBy(c => c.Event, StringComparer.Ordinal).Take(Top)],
             FunnelSql.MinCorrelationPersons, sw.Elapsed.TotalMilliseconds);
+    }
+
+    public async Task<FunnelPropertyResponse> PropertyCorrelationAsync(ProjectContext project, FunnelPropertyRequest req, CancellationToken ct)
+    {
+        var sw = Stopwatch.StartNew();
+        var steps = Steps(await actions.ApplyAsync(project.ProjectId, req.Steps ?? [], ct));
+        var window = Window(req.WindowSeconds);
+        var eventName = Ensure.NotBlank(req.Event, "event");
+        var property = ColumnMapper.Validate(Ensure.NotBlank(req.Property, "property"));
+        var limit = Ensure.InRange(req.Limit ?? 25, 1, 100, "limit");
+        var range = TimeRange.Parse(req.DateFrom, req.DateTo, project.TimeZone, TimeSpan.FromDays(30));
+        var b = new SqlBuilder(project.ProjectId, range.FromUtc, range.ToUtc);
+        b.AddFilters(req.Filters, await cohorts.ResolveAsync(project, req.Filters, null, ct));
+        var rows = await starRocks.QueryAsync(FunnelSql.PropertyCorrelation(b, steps, window, eventName, property, limit), r => (
+            Value: r.GetString(0), ConvertedWith: Convert.ToInt64(r.GetValue(1)), DroppedWith: Convert.ToInt64(r.GetValue(2)),
+            Converted: Convert.ToInt64(r.GetValue(3)), Dropped: Convert.ToInt64(r.GetValue(4))), ct);
+        var converted = rows.Count == 0 ? 0 : rows[0].Converted;
+        var dropped = rows.Count == 0 ? 0 : rows[0].Dropped;
+        var values = rows.Select(r =>
+        {
+            double? p = converted > 0 && dropped > 0
+                ? ExperimentStats.TwoProportion(converted, r.ConvertedWith, dropped, r.DroppedWith).PValue
+                : null;
+            return new FunnelPropertyValue(r.Value, r.ConvertedWith, r.DroppedWith,
+                converted == 0 ? 0 : Math.Round(r.ConvertedWith / (double)converted, 4),
+                dropped == 0 ? 0 : Math.Round(r.DroppedWith / (double)dropped, 4),
+                Math.Round(FunnelSql.OddsRatio(r.ConvertedWith, converted, r.DroppedWith, dropped), 3), p);
+        }).OrderByDescending(v => v.OddsRatio).ThenBy(v => v.Value, StringComparer.Ordinal).ToList();
+        return new FunnelPropertyResponse(converted, dropped, eventName, property, values, FunnelSql.MinCorrelationPersons,
+            sw.Elapsed.TotalMilliseconds);
     }
 
     async Task<Plan> BuildPlanAsync(ProjectContext project, FunnelRequest req, CancellationToken ct)

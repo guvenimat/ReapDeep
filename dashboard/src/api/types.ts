@@ -4,7 +4,7 @@ export type PropertyMetric = 'sum' | 'avg' | 'min' | 'max' | 'median' | 'p90'
 export type Metric = 'total' | 'unique_users' | PropertyMetric
 export type Interval = 'hour' | 'day' | 'week' | 'month'
 
-export interface Filter { scope: Scope; property: string; op: Op; value?: string }
+export interface Filter { scope: Scope; property: string; op: Op; value?: string; as_of?: string }
 export interface Breakdown { scope: Scope; property: string; limit?: number; cohort_ids?: number[] }
 export interface Series { event: string; metric: Metric; property?: string }
 export interface ActionDef { id: number; name: string; description: string; events: string[]; created_by: string | null; updated_at: string }
@@ -111,7 +111,7 @@ export interface AuthTokenInfo { email: string; purpose: AuthTokenPurpose }
 export type KeyScope = 'read' | 'catalog_write' | 'server'
 export interface ApiKey { id: number; name: string; prefix: string; scope: KeyScope; created_by: string | null; created_at: string; revoked_at: string | null }
 
-export type InsightKind = 'trends' | 'funnels' | 'retention' | 'paths' | 'rfm' | 'lifecycle'
+export type InsightKind = 'trends' | 'funnels' | 'retention' | 'paths' | 'rfm' | 'lifecycle' | 'stickiness' | 'web'
 export interface Annotation { id: number; day: string; content: string; created_by: string | null; created_at: string }
 export interface Insight {
   id: number; name: string; kind: InsightKind; query: Record<string, unknown>
@@ -130,8 +130,8 @@ export type CohortStatus = 'pending' | 'calculating' | 'ready' | 'error'
 export type CountOp = 'gte' | 'lte' | 'eq'
 export type FunnelOutcome = 'dropped' | 'converted'
 export type CohortCondition =
-  | { type: 'performed_event'; event: string; count_op: CountOp; count: number; within_days: number; filters?: Filter[] }
-  | { type: 'not_performed_event'; event: string; within_days: number }
+  | { type: 'performed_event'; event: string; action?: string; count_op: CountOp; count: number; within_days: number; filters?: Filter[] }
+  | { type: 'not_performed_event'; event: string; action?: string; within_days: number }
   | { type: 'person_property'; property: string; op: Op; value?: string }
   | { type: 'rfm_segment'; segments: RfmSegmentKey[]; within_days: number; event?: string }
   | { type: 'funnel'; steps: string[]; outcome: FunnelOutcome; step: number; window_seconds: number; within_days: number }
@@ -172,7 +172,7 @@ export interface HitRate {
 export type AlertCondition = 'above' | 'below' | 'increase' | 'decrease'
 export type AlertWindow = 'hour' | 'day' | 'week'
 export interface Alert {
-  id: number; name: string; insight_id: number; insight_name: string; condition: AlertCondition; threshold: number; window: AlertWindow
+  id: number; name: string; insight_id: number; insight_name: string; metric: string | null; condition: AlertCondition; threshold: number; window: AlertWindow
   channel: AlertChannel; webhook_url: string | null; email_to: string[] | null; secret: string | null; enabled: boolean; state: 'pending' | 'ok' | 'firing' | 'error'
   last_value: number | null; previous_value: number | null; last_error: string | null; last_checked_at: string | null
   next_check_at: string; created_by: string | null; created_at: string
@@ -208,11 +208,12 @@ export type MetricKind = 'conversion' | 'funnel' | 'revenue'
 export interface ExperimentMetric { kind: MetricKind; event?: string | null; steps?: string[] | null; window_seconds?: number | null; property?: string | null }
 export interface Experiment {
   id: number; name: string; description: string; flag_id: number; flag_key: string; flag_enabled: boolean; variants: FlagVariant[]; control_variant: string
-  status: ExperimentStatus; metric: ExperimentMetric; start_date: string | null; end_date: string | null
+  status: ExperimentStatus; metric: ExperimentMetric; secondary_metrics: ExperimentMetric[]; start_date: string | null; end_date: string | null
   created_by: string | null; updated_by: string | null; created_at: string; updated_at: string
 }
 export interface ExperimentInput {
-  name: string; description: string; flag_id: number; control_variant: string; metric: ExperimentMetric; start_date?: string; end_date?: string
+  name: string; description: string; flag_id: number; control_variant: string; metric: ExperimentMetric; secondary_metrics?: ExperimentMetric[]
+  start_date?: string; end_date?: string
 }
 export interface ExperimentComparison {
   difference: number; difference_low: number | null; difference_high: number | null
@@ -224,9 +225,16 @@ export interface ExperimentVariantResult {
   comparison: ExperimentComparison | null
 }
 export interface ExperimentSrm { chi_square: number; p_value: number; warning: boolean; threshold: number }
+export interface ExperimentMetricResults {
+  metric_kind: MetricKind; metric: ExperimentMetric; test: 'two_proportion_z' | 'welch_t'; variants: ExperimentVariantResult[]
+  excluded_persons: number; srm: ExperimentSrm | null
+}
 export interface ExperimentResults {
   experiment_id: number; metric_kind: MetricKind; test: 'two_proportion_z' | 'welch_t'; control_variant: string; date_from: string; date_to: string
-  variants: ExperimentVariantResult[]; excluded_persons: number; srm: ExperimentSrm | null; took_ms: number
+  variants: ExperimentVariantResult[]; excluded_persons: number; srm: ExperimentSrm | null; secondary: ExperimentMetricResults[]; took_ms: number
+}
+export interface SampleSize {
+  per_variant: number; total: number; baseline_rate: number; relative_lift: number; alpha: number; power: number; variants: number
 }
 
 export type ProjectDetail = {
@@ -257,7 +265,14 @@ export interface StickinessResponse {
 }
 export interface FunnelCorrelation { event: string; converted_with: number; dropped_with: number; converted_share: number; dropped_share: number; odds_ratio: number }
 export interface FunnelCorrelationResponse { converted: number; dropped: number; positive: FunnelCorrelation[]; negative: FunnelCorrelation[]; min_persons: number; took_ms: number }
+export interface FunnelPropertyValue {
+  value: string; converted_with: number; dropped_with: number; converted_share: number; dropped_share: number; odds_ratio: number; p_value: number | null
+}
+export interface FunnelPropertyResponse {
+  converted: number; dropped: number; event: string; property: string; values: FunnelPropertyValue[]; min_persons: number; took_ms: number
+}
 export interface NotificationItem { id: number; kind: string; title: string; body: string; link: string; created_at: string; unread: boolean }
+export interface NotificationPreference { kind: string; enabled: boolean }
 export interface AiNote { id: number; trigger: 'manual' | 'schedule'; period_from: string; period_to: string; emailed_to: string[]; created_at: string; answer: AiAnswer }
 export type DigestFrequency = 'off' | 'daily' | 'weekly' | 'monthly'
 export interface DigestSchedule {

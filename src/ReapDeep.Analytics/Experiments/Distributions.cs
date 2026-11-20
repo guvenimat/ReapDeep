@@ -112,6 +112,20 @@ public static class Distributions
 
     public static double NormalCdf(double z) => 0.5 * Erfc(-z / Sqrt2);
 
+    public static double NormalQuantile(double p)
+    {
+        Ensure.That(p is > 0 and < 1, "p must be between 0 and 1");
+        var low = -10.0;
+        var high = 10.0;
+        for (var i = 0; i < 100; i++)
+        {
+            var mid = (low + high) / 2;
+            if (NormalCdf(mid) < p) low = mid;
+            else high = mid;
+        }
+        return (low + high) / 2;
+    }
+
     public static double NormalTwoSidedP(double z) => Erfc(Math.Abs(z) / Sqrt2);
 
     public static double StudentTCdf(double t, double df)

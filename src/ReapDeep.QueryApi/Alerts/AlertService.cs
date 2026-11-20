@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text.Json;
 using ReapDeep.Analytics;
+using ReapDeep.Analytics.Rfm;
 using ReapDeep.QueryApi.Analytics;
 using ReapDeep.QueryApi.Auth;
 using ReapDeep.QueryApi.Infrastructure;
@@ -8,8 +9,9 @@ using ReapDeep.QueryApi.Insights;
 
 namespace ReapDeep.QueryApi.Alerts;
 
-public sealed class AlertService(AlertRepository alerts, InsightRepository insights, TrendService trends, WebhookSender webhooks, EmailSender email,
-    IConfiguration cfg, ILogger<AlertService> log, ReapDeep.QueryApi.Notifications.NotificationRepository notifications)
+public sealed class AlertService(AlertRepository alerts, InsightRepository insights, TrendService trends, FunnelService funnels, RfmService rfm,
+    WebhookSender webhooks, EmailSender email, IConfiguration cfg, ILogger<AlertService> log,
+    ReapDeep.QueryApi.Notifications.NotificationRepository notifications)
 {
     readonly IReadOnlyList<TimeSpan> _retryDelays = AlertRules.ParseDelays(cfg["Alerts:RetryDelaysSeconds"]);
 
@@ -17,10 +19,10 @@ public sealed class AlertService(AlertRepository alerts, InsightRepository insig
 
     public async Task<AlertRow> CreateAsync(ProjectContext project, AlertBody req, CancellationToken ct)
     {
-        var (name, insight, condition, threshold, window, target) = await ValidateAsync(project, req, ct);
+        var (name, insight, metric, condition, threshold, window, target) = await ValidateAsync(project, req, ct);
         Ensure.That((await alerts.ListAsync(project.ProjectId, ct)).Count < MaxAlertsPerProject, $"A project can have at most {MaxAlertsPerProject} alerts");
         var secret = "whsec_" + Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(24));
-        var id = await alerts.CreateAsync(project.ProjectId, name, insight.Id, condition, threshold, window, target, secret, req.Enabled ?? true,
+        var id = await alerts.CreateAsync(project.ProjectId, name, insight.Id, metric, condition, threshold, window, target, secret, req.Enabled ?? true,
             project.UserId!.Value, ct);
         return (await alerts.GetAsync(project.ProjectId, id, ct))!.ToContract(withSecret: true);
     }
@@ -32,10 +34,12 @@ public sealed class AlertService(AlertRepository alerts, InsightRepository insig
         var sameChannel = channel == current.Channel;
         var merged = new AlertBody(req.Name ?? current.Name, req.InsightId ?? current.InsightId, req.Condition ?? current.Condition,
             req.Threshold ?? current.Threshold, req.Window ?? current.WindowUnit, req.WebhookUrl ?? (sameChannel ? current.WebhookUrl : null),
-            req.Enabled ?? current.Enabled, channel, req.EmailTo ?? (sameChannel ? current.EmailTo?.ToList() : null));
-        var (name, insight, condition, threshold, window, target) = await ValidateAsync(project, merged, ct);
-        var rulesChanged = insight.Id != current.InsightId || condition != current.Condition || threshold != current.Threshold || window != current.WindowUnit;
-        await alerts.UpdateAsync(project.ProjectId, id, name, insight.Id, condition, threshold, window, target, merged.Enabled!.Value, rulesChanged, ct);
+            req.Enabled ?? current.Enabled, channel, req.EmailTo ?? (sameChannel ? current.EmailTo?.ToList() : null),
+            req.Metric ?? current.Metric);
+        var (name, insight, metric, condition, threshold, window, target) = await ValidateAsync(project, merged, ct);
+        var rulesChanged = insight.Id != current.InsightId || metric != current.Metric || condition != current.Condition || threshold != current.Threshold ||
+                           window != current.WindowUnit;
+        await alerts.UpdateAsync(project.ProjectId, id, name, insight.Id, metric, condition, threshold, window, target, merged.Enabled!.Value, rulesChanged, ct);
         return (await alerts.GetAsync(project.ProjectId, id, ct))!.ToContract(withSecret: true);
     }
 
@@ -44,7 +48,7 @@ public sealed class AlertService(AlertRepository alerts, InsightRepository insig
 
     internal async Task<AlertCheckResponse> EvaluateAsync(AlertRepository.AlertRecord alert, CancellationToken ct)
     {
-        var next = DateTime.UtcNow + AlertRules.CheckEvery(alert.WindowUnit);
+        var next = DateTime.UtcNow + AlertRules.CheckEvery(alert.WindowUnit, alert.Metric);
         double value;
         double? previous;
         try
@@ -137,8 +141,20 @@ public sealed class AlertService(AlertRepository alerts, InsightRepository insig
     async Task<(double Value, double? Previous)> MeasureAsync(AlertRepository.AlertRecord alert, CancellationToken ct)
     {
         var insight = await insights.GetAsync(alert.ProjectId, alert.InsightId, ct);
-        if (insight is null || insight.Kind != "trends") throw new InsightGoneException("The insight is missing or is not a trend");
+        if (insight is null) throw new InsightGoneException("The insight is missing");
+        var project = ProjectContext.Create(alert.ProjectId, alert.TimeZone, null, null, log);
+        return insight.Kind switch
+        {
+            "trends" => await MeasureTrendAsync(alert, insight, project, ct),
+            "funnels" => await MeasureFunnelAsync(alert, insight, project, ct),
+            "rfm" => (await MeasureRfmAsync(alert, insight, project, ct), null),
+            _ => throw new InsightGoneException("The insight is not a trend, funnel or RFM analysis"),
+        };
+    }
 
+    async Task<(double Value, double? Previous)> MeasureTrendAsync(AlertRepository.AlertRecord alert, InsightRow insight, ProjectContext project,
+        CancellationToken ct)
+    {
         var saved = insight.Query.Deserialize(AppJsonContext.Default.TrendRequest) ?? throw new InsightGoneException("The insight has no query");
         var now = DateTime.UtcNow;
         var req = saved with
@@ -150,7 +166,6 @@ public sealed class AlertService(AlertRepository alerts, InsightRepository insig
             Compare = AlertRules.ComparesPeriods(alert.Condition),
             Explain = false,
         };
-        var project = ProjectContext.Create(alert.ProjectId, alert.TimeZone, null, null, log);
         var results = (await trends.RunAsync(project, req, ct)).Results;
         var visible = results.Any(r => r.Metric == TrendService.FormulaMetric) ? results.Where(r => r.Metric == TrendService.FormulaMetric).ToList() : results;
         var current = visible.FirstOrDefault(r => r.Compare is null) ?? throw new InsightGoneException("The insight returned no series");
@@ -158,27 +173,122 @@ public sealed class AlertService(AlertRepository alerts, InsightRepository insig
         return (current.Total, prev?.Total);
     }
 
-    async Task<(string Name, InsightRow Insight, string Condition, double Threshold, string Window, AlertTarget Target)> ValidateAsync(
+    async Task<(double Value, double? Previous)> MeasureFunnelAsync(AlertRepository.AlertRecord alert, InsightRow insight, ProjectContext project,
+        CancellationToken ct)
+    {
+        var saved = ParseFunnel(insight.Query);
+        var now = DateTime.UtcNow;
+        var span = AlertRules.Span(alert.WindowUnit);
+        var current = await FunnelValueAsync(saved, now - span, now);
+        var previous = AlertRules.ComparesPeriods(alert.Condition) ? await FunnelValueAsync(saved, now - span - span, now - span) : (double?)null;
+        return (current, previous);
+
+        async Task<double> FunnelValueAsync(FunnelRequest req, DateTime from, DateTime to)
+        {
+            var result = await funnels.RunAsync(project, req with
+            {
+                DateFrom = from.ToString("o"),
+                DateTo = to.ToString("o"),
+                Breakdown = null,
+                Sampling = 1,
+                Explain = false,
+            }, ct);
+            var firstResult = result.Results.FirstOrDefault();
+            if (firstResult is null || firstResult.Steps.Count == 0 || firstResult.Steps[0].Count == 0) return 0;
+            return Math.Round(100.0 * firstResult.Steps[^1].Count / firstResult.Steps[0].Count, 4);
+        }
+    }
+
+    static FunnelRequest ParseFunnel(JsonElement query)
+    {
+        if (!query.TryGetProperty("steps", out var stepsElement) || stepsElement.ValueKind != JsonValueKind.Array)
+            throw new InsightGoneException("The funnel insight has no steps");
+        var steps = new List<FunnelStep>();
+        foreach (var step in stepsElement.EnumerateArray())
+        {
+            if (step.ValueKind == JsonValueKind.String)
+            {
+                var raw = step.GetString()?.Trim();
+                if (string.IsNullOrEmpty(raw)) continue;
+                var action = raw.StartsWith("action:", StringComparison.Ordinal) ? raw[7..] : null;
+                steps.Add(new FunnelStep(action ?? raw, null, action));
+            }
+            else if (step.ValueKind == JsonValueKind.Object)
+            {
+                var eventName = step.TryGetProperty("event", out var e) && e.ValueKind == JsonValueKind.String ? e.GetString()! : "";
+                var action = step.TryGetProperty("action", out var a) && a.ValueKind == JsonValueKind.String ? a.GetString() : null;
+                var filters = step.TryGetProperty("filters", out var f) && f.ValueKind == JsonValueKind.Array
+                    ? JsonSerializer.Deserialize(f.GetRawText(), AppJsonContext.Default.ListFilter)
+                    : null;
+                steps.Add(new FunnelStep(eventName, filters, action));
+            }
+        }
+        if (steps.Count < 2) throw new InsightGoneException("The funnel insight needs at least two steps");
+        var window = query.TryGetProperty("window_seconds", out var w) && w.TryGetInt64(out var seconds) ? seconds : (long?)null;
+        var queryFilters = query.TryGetProperty("filters", out var qf) && qf.ValueKind == JsonValueKind.Array
+            ? JsonSerializer.Deserialize(qf.GetRawText(), AppJsonContext.Default.ListFilter)
+            : null;
+        var from = query.TryGetProperty("date_from", out var df) && df.ValueKind == JsonValueKind.String ? df.GetString() : null;
+        var to = query.TryGetProperty("date_to", out var dt) && dt.ValueKind == JsonValueKind.String ? dt.GetString() : null;
+        return new FunnelRequest(steps, from, to, window, queryFilters, null, 1, false);
+    }
+
+    async Task<double> MeasureRfmAsync(AlertRepository.AlertRecord alert, InsightRow insight, ProjectContext project, CancellationToken ct)
+    {
+        var saved = insight.Query.Deserialize(AppJsonContext.Default.RfmRequest) ?? throw new InsightGoneException("The insight has no query");
+        var result = await rfm.RunAsync(project, saved with { Explain = false }, ct);
+        var parts = (alert.Metric ?? "rfm_persons:champions").Split(':', 2);
+        var segment = result.Segments.FirstOrDefault(s => s.Key == parts[1])
+            ?? throw new InsightGoneException($"The RFM report has no segment '{parts[1]}'");
+        return parts[0] == "rfm_revenue" ? segment.Revenue : segment.Persons;
+    }
+
+    async Task<(string Name, InsightRow Insight, string Metric, string Condition, double Threshold, string Window, AlertTarget Target)> ValidateAsync(
         ProjectContext project, AlertBody req, CancellationToken ct)
     {
         var name = Ensure.NotBlank(req.Name, "name");
         Ensure.That(req.InsightId is > 0, "insight_id is required");
         var insight = await insights.GetAsync(project.ProjectId, req.InsightId!.Value, ct);
         Ensure.That(insight is not null, $"Unknown insight: {req.InsightId}");
-        Ensure.That(insight!.Kind == "trends", "Alerts watch a saved trend insight");
         var condition = req.Condition ?? AlertRules.Above;
         var threshold = req.Threshold ?? 0;
         AlertRules.Validate(condition, threshold);
         var window = Ensure.OneOf(req.Window ?? "day", "window", AlertRules.Windows);
+
+        string metric;
+        switch (insight!.Kind)
+        {
+            case "trends":
+                Ensure.That(string.IsNullOrWhiteSpace(req.Metric) || req.Metric == "trend", "A trend alert watches the trend value");
+                metric = "trend";
+                break;
+            case "funnels":
+                Ensure.That(string.IsNullOrWhiteSpace(req.Metric) || req.Metric == "funnel_conversion",
+                    "A funnel alert measures overall conversion");
+                metric = "funnel_conversion";
+                break;
+            case "rfm":
+                metric = Ensure.NotBlank(req.Metric, "metric");
+                var parts = metric.Split(':', 2);
+                Ensure.That(parts.Length == 2 && parts[0] is "rfm_persons" or "rfm_revenue",
+                    "metric must be rfm_persons:<segment> or rfm_revenue:<segment>");
+                Ensure.That(RfmSegments.Keys.Contains(parts[1]), $"Unknown RFM segment: {parts[1]}");
+                Ensure.That(condition is AlertRules.Above or AlertRules.Below, "RFM alerts support above and below conditions");
+                window = "day";
+                break;
+            default:
+                throw new ValidationException("Alerts watch a saved trend, funnel or RFM insight");
+        }
+
         var channel = Ensure.OneOf(req.Channel ?? AlertChannels.Webhook, "channel", AlertChannels.All);
         if (channel == AlertChannels.Email)
         {
             Ensure.That(email.Configured, "Email alerts need an SMTP server (Alerts__Smtp__Host)");
-            return (name, insight, condition, threshold, window, new AlertTarget(channel, null, EmailSender.ParseRecipients(req.EmailTo)));
+            return (name, insight, metric, condition, threshold, window, new AlertTarget(channel, null, EmailSender.ParseRecipients(req.EmailTo)));
         }
         var url = WebhookSender.ParseUrl(req.WebhookUrl);
         await webhooks.CheckDestinationAsync(url, ct);
-        return (name, insight, condition, threshold, window, new AlertTarget(channel, url.ToString(), null));
+        return (name, insight, metric, condition, threshold, window, new AlertTarget(channel, url.ToString(), null));
     }
 }
 

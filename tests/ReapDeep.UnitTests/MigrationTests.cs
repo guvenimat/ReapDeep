@@ -9,8 +9,8 @@ public class MigrationTests
     [Fact]
     public void Migrations_are_embedded_and_ordered_per_target()
     {
-        Assert.Equal(["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013", "0014", "0015", "0016", "0017", "0018", "0019", "0020", "0021", "0022"], All.Where(m => m.Target == MigrationCatalog.Postgres).Select(m => m.Version));
-        Assert.Equal(["0001", "0002"], All.Where(m => m.Target == MigrationCatalog.StarRocks).Select(m => m.Version));
+        Assert.Equal(["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011", "0012", "0013", "0014", "0015", "0016", "0017", "0018", "0019", "0020", "0021", "0022", "0023", "0024", "0025", "0026"], All.Where(m => m.Target == MigrationCatalog.Postgres).Select(m => m.Version));
+        Assert.Equal(["0001", "0002", "0003"], All.Where(m => m.Target == MigrationCatalog.StarRocks).Select(m => m.Version));
         Assert.All(All, m => Assert.False(string.IsNullOrWhiteSpace(m.Sql)));
     }
 
@@ -70,7 +70,7 @@ public class MigrationTests
 
     [Fact]
     public void Only_unapplied_migrations_of_the_target_are_pending() =>
-        Assert.Equal(["0002"], MigrationCatalog.Pending(All, new HashSet<string> { "0001" }, MigrationCatalog.StarRocks).Select(m => m.Version));
+        Assert.Equal(["0002", "0003"], MigrationCatalog.Pending(All, new HashSet<string> { "0001" }, MigrationCatalog.StarRocks).Select(m => m.Version));
 
     [Fact]
     public void Queries_over_a_resource_group_limit_queue_for_less_than_the_query_api_waits()

@@ -181,7 +181,7 @@ public class RfmLifecycleTests
     public void Lifecycle_classifies_with_window_functions_over_distinct_person_periods()
     {
         var range = TimeRange.Between(Now.AddDays(-120), Now, TimeZoneInfo.Utc);
-        var q = LifecycleSql.Build(new SqlBuilder(Project, range.FromUtc, range.ToUtc), null, "week", range, "UTC", 2900, 2904);
+        var q = LifecycleSql.Build(new SqlBuilder(Project, range.FromUtc, range.ToUtc), null, null, "week", range, "UTC", 2900, 2904);
 
         Assert.Contains("SELECT DISTINCT COALESCE(pdi.person_id, d.distinct_id) AS person, d.p", q.Sql);
         Assert.Contains("LAG(a.p) OVER (PARTITION BY a.person ORDER BY a.p) AS prev_p", q.Sql);
@@ -194,7 +194,7 @@ public class RfmLifecycleTests
     public void Lifecycle_month_index_is_year_times_twelve_plus_month()
     {
         var range = TimeRange.Between(Now.AddDays(-60), Now, TimeZoneInfo.Utc);
-        var q = LifecycleSql.Build(new SqlBuilder(Project, range.FromUtc, range.ToUtc), "purchase", "month", range, "UTC", 1, 2);
+        var q = LifecycleSql.Build(new SqlBuilder(Project, range.FromUtc, range.ToUtc), "purchase", null, "month", range, "UTC", 1, 2);
 
         Assert.Contains("CAST(year(seconds_add(e.timestamp, 0)) * 12 + month(seconds_add(e.timestamp, 0)) - 1 AS BIGINT) AS p", q.Sql);
         Assert.Matches(@"e\.event = @p\d+", q.Sql);

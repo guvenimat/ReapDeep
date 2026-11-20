@@ -4,15 +4,18 @@ using ReapDeep.Analytics.Flags;
 namespace ReapDeep.QueryApi.Experiments;
 
 public sealed record ExperimentBody(
-    string? Name, string? Description, long? FlagId, string? ControlVariant, ExperimentMetric? Metric, string? StartDate, string? EndDate);
+    string? Name, string? Description, long? FlagId, string? ControlVariant, ExperimentMetric? Metric, string? StartDate, string? EndDate,
+    List<ExperimentMetric>? SecondaryMetrics = null);
 
 public sealed record Experiment(
     long Id, string Name, string Description, long FlagId, string FlagKey, bool FlagEnabled, List<FlagVariant> Variants, string ControlVariant,
-    string Status, ExperimentMetric Metric, DateTime? StartDate, DateTime? EndDate, string? CreatedBy, string? UpdatedBy, DateTime CreatedAt, DateTime UpdatedAt);
+    string Status, ExperimentMetric Metric, List<ExperimentMetric> SecondaryMetrics, DateTime? StartDate, DateTime? EndDate, string? CreatedBy,
+    string? UpdatedBy, DateTime CreatedAt, DateTime UpdatedAt);
 
 public sealed record ExperimentsResponse(List<Experiment> Experiments);
 
-public sealed record ExperimentResultsKey(long Id, string FlagKey, List<FlagVariant> Variants, string ControlVariant, ExperimentMetric Metric, DateTime From, DateTime? To);
+public sealed record ExperimentResultsKey(long Id, string FlagKey, List<FlagVariant> Variants, string ControlVariant, ExperimentMetric Metric,
+    List<ExperimentMetric> SecondaryMetrics, DateTime From, DateTime? To);
 
 public sealed record ExperimentComparison(
     double Difference, double? DifferenceLow, double? DifferenceHigh, double? RelativeLift, double? RelativeLow, double? RelativeHigh,
@@ -23,6 +26,11 @@ public sealed record ExperimentVariantResult(
 
 public sealed record ExperimentSrm(double ChiSquare, double PValue, bool Warning, double Threshold);
 
+public sealed record ExperimentMetricResults(string MetricKind, ExperimentMetric Metric, string Test, List<ExperimentVariantResult> Variants,
+    long ExcludedPersons, ExperimentSrm? Srm);
+
 public sealed record ExperimentResults(
     long ExperimentId, string MetricKind, string Test, string ControlVariant, DateTime DateFrom, DateTime DateTo,
-    List<ExperimentVariantResult> Variants, long ExcludedPersons, ExperimentSrm? Srm, double TookMs);
+    List<ExperimentVariantResult> Variants, long ExcludedPersons, ExperimentSrm? Srm, List<ExperimentMetricResults> Secondary, double TookMs);
+
+public sealed record SampleSizeRequest(double? BaselineRate, double? RelativeLift, double? Alpha, double? Power, int? Variants);

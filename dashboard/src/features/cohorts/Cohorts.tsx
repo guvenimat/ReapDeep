@@ -109,6 +109,10 @@ function CohortDetail({ id, navigate, openPerson, onChanged, onSaved }: {
     setError(undefined)
     try {
       const usage = await api.cohortUsage(id)
+      if (usage.flags.length) {
+        setError(`This cohort is used by the feature flag${usage.flags.length > 1 ? 's' : ''} ${usage.flags.map((f) => `'${f}'`).join(', ')}; remove the cohort condition first.`)
+        return
+      }
       const used = usage.insights.length
         ? `\n\nThese saved insights use it and will stop working:\n${usage.insights.map((i) => `• ${i.name}`).join('\n')}`
         : ''

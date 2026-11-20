@@ -99,7 +99,7 @@ export function Workspace({ me, onLogout, onAccessChanged }: { me: Me; onLogout:
             </header>
             <main key={projectId}>
               {route.tab === 'dashboards' && <Dashboards id={route.id} params={route.params} range={range} openDashboard={(id) => navigate('dashboards', id)} />}
-              {route.tab === 'web' && <Web params={route.params} range={range} onChange={onQuery} />}
+              {route.tab === 'web' && <Web params={route.params} range={range} onChange={onQuery} onInsight={onInsight} />}
               {route.tab === 'trends' && <Trends params={route.params} range={range} onChange={onQuery} onInsight={onInsight} />}
               {route.tab === 'funnels' && <Funnels params={route.params} range={range} onChange={onQuery} onInsight={onInsight} />}
               {route.tab === 'retention' && <Retention params={route.params} range={range} onChange={onQuery} onInsight={onInsight} />}
@@ -108,7 +108,7 @@ export function Workspace({ me, onLogout, onAccessChanged }: { me: Me; onLogout:
               {route.tab === 'rfm' && <Rfm params={route.params} onChange={onQuery} onInsight={onInsight} onCohortCreated={() => setCohortsVersion((v) => v + 1)} />}
               {route.tab === 'alerts' && <Alerts canManage={canManage} />}
               {route.tab === 'flags' && <Flags canManage={canManage} />}
-              {route.tab === 'stickiness' && <Stickiness params={route.params} range={range} onChange={onQuery} />}
+              {route.tab === 'stickiness' && <Stickiness params={route.params} range={range} onChange={onQuery} onInsight={onInsight} />}
               {route.tab === 'ai' && <AiPage canManage={canManage} />}
               {route.tab === 'platform' && (me.platform_role ? <PlatformPage canEdit={me.platform_role === 'admin'} /> : <p className="editor-hint">Only the platform team can open this page.</p>)}
               {route.tab === 'experiments' && <Experiments id={route.id} canManage={canManage} navigate={(id) => navigate('experiments', id)} />}

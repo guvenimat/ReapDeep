@@ -4,6 +4,11 @@ namespace ReapDeep.UnitTests;
 
 public class AuthTokenTests
 {
+    [Theory]
+    [InlineData(" Ada@Example.com ", "ada@example.com")]
+    public void Email_normalization_trims_and_lowercases(string input, string expected) =>
+        Assert.Equal(expected, SessionService.NormalizeEmail(input));
+
     [Fact]
     public void New_tokens_are_random_url_safe_and_well_formed()
     {

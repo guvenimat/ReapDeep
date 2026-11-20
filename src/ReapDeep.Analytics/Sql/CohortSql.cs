@@ -93,6 +93,38 @@ public static class CohortSql
         return b.Build($"DELETE FROM {Members} WHERE project_id = {b.P(projectId)} AND cohort_id = {b.P(cohortId)}");
     }
 
+    public static SqlQuery DeleteHistory(long projectId, long cohortId)
+    {
+        var b = Builder(projectId, DateTime.UtcNow);
+        return b.Build($"DELETE FROM analytics.cohort_members_history WHERE project_id = {b.P(projectId)} AND cohort_id = {b.P(cohortId)}");
+    }
+
+    public static SqlQuery DeleteHistoryBefore(long projectId, DateTime cutoffUtc)
+    {
+        var b = new SqlBuilder(projectId, cutoffUtc, DateTime.UtcNow);
+        var cutoff = b.P(cutoffUtc.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
+        return b.Build($"DELETE FROM analytics.cohort_members_history WHERE project_id = {b.P(projectId)} AND snapshot_day < CAST({cutoff} AS DATE)");
+    }
+
+    public static SqlQuery DeleteSnapshot(long projectId, long cohortId, DateTime dayUtc)
+    {
+        var b = new SqlBuilder(projectId, dayUtc.Date, dayUtc.Date.AddDays(1));
+        var day = b.P(dayUtc.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
+        return b.Build($"DELETE FROM analytics.cohort_members_history WHERE project_id = {b.P(projectId)} AND cohort_id = {b.P(cohortId)} AND snapshot_day = CAST({day} AS DATE)");
+    }
+
+    public static SqlQuery Snapshot(long projectId, long cohortId, long version, DateTime dayUtc)
+    {
+        var b = new SqlBuilder(projectId, dayUtc.Date, dayUtc.Date.AddDays(1));
+        var project = b.P(projectId);
+        var cohort = b.P(cohortId);
+        var ver = b.P(version);
+        var day = b.P(dayUtc.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture));
+        return b.Build($"INSERT INTO analytics.cohort_members_history (project_id, cohort_id, snapshot_day, distinct_id) " +
+                       $"SELECT project_id, cohort_id, CAST({day} AS DATE), distinct_id FROM {Members} " +
+                       $"WHERE project_id = {project} AND cohort_id = {cohort} AND version = {ver}");
+    }
+
     public static SqlQuery DeleteDistinctIds(long projectId, IReadOnlyList<string> distinctIds)
     {
         var b = Builder(projectId, DateTime.UtcNow);
@@ -175,18 +207,20 @@ public static class CohortSql
     {
         var counts = behavioral.Select((c, k) =>
         {
-            var parts = new List<string> { $"e.event = {b.P(c.Event!)}", $"e.timestamp >= {b.P(nowUtc.AddDays(-c.WithinDays!.Value))}" };
+            var parts = new List<string> { SqlFragments.EventIs(b, c.Event!, c.Events), $"e.timestamp >= {b.P(nowUtc.AddDays(-c.WithinDays!.Value))}" };
             parts.AddRange((c.Filters ?? []).Select(b.Condition));
             return $"SUM(IF({string.Join(" AND ", parts)}, 1, 0)) AS c{k}";
         });
         var since = b.P(nowUtc.AddDays(-behavioral.Max(c => c.WithinDays!.Value)));
-        var events = string.Join(", ", behavioral.Select(c => c.Event!).Distinct().Select(e => b.P(e)));
+        var events = string.Join(", ", behavioral.SelectMany(Events).Distinct().Select(e => b.P(e)));
         var agg = $"SELECT e.project_id, e.distinct_id, {string.Join(", ", counts)} FROM analytics.events e " +
                   $"WHERE e.project_id = {project} AND e.timestamp >= {since} AND e.timestamp < {now} AND e.event IN ({events}) GROUP BY 1, 2";
         var sums = string.Join(", ", behavioral.Select((_, k) => $"SUM(a.c{k}) AS c{k}"));
         return $"SELECT COALESCE(pdi.person_id, a.distinct_id) AS person, {sums} FROM ({agg}) a " +
                $"LEFT JOIN {Pdi} pdi ON a.project_id = pdi.project_id AND a.distinct_id = pdi.distinct_id AND pdi.is_deleted = 0 GROUP BY 1";
     }
+
+    static IReadOnlyList<string> Events(CohortCondition c) => c.Events is { Count: > 0 } ? c.Events : [c.Event!];
 
     static string CountCondition(SqlBuilder b, CohortCondition c, string column) => c.Type == ConditionTypes.NotPerformed
         ? $"{column} = 0"

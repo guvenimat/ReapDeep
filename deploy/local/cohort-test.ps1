@@ -96,6 +96,29 @@ Check "preview: dropped after view and viewed 3+ times -> 1 (A)" ((S POST "/coho
 Check "funnel condition with step outside the funnel -> 400" ((S POST "/cohorts/preview" @{ definition = (Definition @(, @(FunnelCond "dropped" 2))) }).Status -eq 400)
 Check "read API key cannot create cohorts -> 403" ((K POST "/cohorts" @{ name = "x"; definition = $windowShoppers }).Status -eq 403)
 
+Write-Host "`n2b) Actions in cohort rules"
+$action = (S POST "/actions" @{ name = "Engaged $tag"; description = ""; events = @($view, $buy) }).Json
+$actionCond = @{ type = "performed_event"; action = $action.name; count_op = "gte"; count = 1; within_days = 1 }
+$ap = S POST "/cohorts/preview" @{ definition = (Definition @(, @($actionCond))) }
+Check "preview: an action matches any of its events -> 3" ($ap.Status -eq 200 -and $ap.Json.persons -eq 3)
+$actionCond.count = 3
+$ap3 = S POST "/cohorts/preview" @{ definition = (Definition @(, @($actionCond))) }
+Check "preview: an action counts every matching event -> 2 (A and B)" ($ap3.Status -eq 200 -and $ap3.Json.persons -eq 2)
+$actionRet = S POST "/query/retention" @{ start_action = $action.name; return_action = $action.name; period = "day"; periods = 1 }
+Check "retention runs a start and return action -> 3 persons" ($actionRet.Status -eq 200 -and @($actionRet.Json.cohorts | Where-Object { $_.size -eq 3 }).Count -eq 1)
+$actionPaths = S POST "/query/paths" @{ start_action = $action.name; depth = 3; window_seconds = 86400 }
+Check "paths starts from an action -> 3 persons" ($actionPaths.Status -eq 200 -and $actionPaths.Json.persons -eq 3)
+$actionLife = S POST "/query/lifecycle" @{ action = $action.name; period = "day"; lookback_days = 30 }
+$active = @($actionLife.Json.periods | ForEach-Object { $_.new + $_.returning + $_.resurrecting }) | Measure-Object -Sum
+Check "lifecycle follows an action -> 3 active persons" ($actionLife.Status -eq 200 -and $active.Sum -eq 3)
+$actCohort = (S POST "/cohorts" @{ name = "Engaged action $tag"; kind = "dynamic"; definition = (Definition @(, @($actionCond))) }).Json
+$actReady = WaitReady $actCohort.id
+Check "worker calculates an action cohort: 2 persons" ($actReady -and $actReady.member_count -eq 2)
+$missing = S POST "/cohorts/preview" @{ definition = (Definition @(, @(@{ type = "performed_event"; action = "missing-$tag"; count_op = "gte"; count = 1; within_days = 1 }))) }
+Check "an unknown action is rejected -> 400" ($missing.Status -eq 400)
+S DELETE "/cohorts/$($actCohort.id)" | Out-Null
+S DELETE "/actions/$($action.id)" | Out-Null
+
 Write-Host "`n3) Dynamic, property and static cohorts"
 $dyn = (S POST "/cohorts" @{ name = "Window shoppers $tag"; kind = "dynamic"; definition = $windowShoppers }).Json
 $early = S POST "/query/trends" @{ series = @(@{ event = $view }); filters = @(@{ scope = "cohort"; property = "$($dyn.id)"; op = "in" }) }
@@ -111,6 +134,14 @@ Check "static cohort calculated: 2 persons" ($stat.member_count -eq 2)
 $members = (S GET "/cohorts/$($dyn.id)/persons").Json.persons
 Check "members list: person A with both distinct_ids" (@($members).Count -eq 1 -and $members[0].id -eq $personId -and @($members[0].distinct_ids).Count -eq 2)
 Check "StarRocks: membership stored per distinct_id (2 rows for A)" ((StarRocks "SELECT count(*) FROM analytics.cohort_members WHERE cohort_id = $($dyn.id) AND version = (SELECT max(version) FROM analytics.cohort_members WHERE cohort_id = $($dyn.id))") -eq "2")
+$snapshot = WaitFor { [int](StarRocks "SELECT count(*) FROM analytics.cohort_members_history WHERE cohort_id = $($dyn.id)") -gt 0 } 30
+Check "the worker writes a daily cohort history snapshot" $snapshot
+$yesterday = (Get-Date).ToUniversalTime().AddDays(-1).ToString("yyyy-MM-dd")
+$null = StarRocks "INSERT INTO analytics.cohort_members_history (project_id, cohort_id, snapshot_day, distinct_id) VALUES (1, $($dyn.id), '$yesterday', '$anonA'), (1, $($dyn.id), '$yesterday', '$userA')"
+$histIn = (Trend @(@{ scope = "cohort"; property = "$($dyn.id)"; op = "in"; as_of = $yesterday })).Json.results[0].total
+$histNone = (Trend @(@{ scope = "cohort"; property = "$($dyn.id)"; op = "in"; as_of = "2000-01-01" })).Json.results[0].total
+Check "as-of cohort filter uses the history snapshot (3 views)" ($histIn -eq 3)
+Check "as-of date without a snapshot matches nobody" ($histNone -eq 0)
 Check "read API key can list cohorts" (@((K GET "/cohorts").Json.cohorts | Where-Object { $_.id -eq $dyn.id }).Count -eq 1)
 $ours = @($dyn.id, $prop.id, $stat.id)
 function MemberOf([string]$key) { @((K GET "/persons/$([uri]::EscapeDataString($key))/cohorts").Json.cohorts | Where-Object { $ours -contains $_.id } | ForEach-Object { $_.id } | Sort-Object) }
@@ -128,6 +159,15 @@ Check "the earlier anonymous id of A is in the funnel cohort" (@((K GET "/person
 $null = S DELETE "/cohorts/$($fun.id)"
 $unknown = K GET "/persons/nobody-$tag/cohorts"
 Check "person cohorts: unknown id -> 200 with an empty list" ($unknown.Status -eq 200 -and @($unknown.Json.cohorts).Count -eq 0)
+
+Write-Host "`n3b) Cohort deletion is blocked while a flag uses it"
+$guard = (S POST "/cohorts" @{ name = "Guard $tag"; kind = "static"; members = @($personId) }).Json
+$guardFlag = (S POST "/flags" @{ key = "cohort-guard-$tag"; name = "Cohort guard $tag"; enabled = $false; rollout_percentage = 100; variants = @(); conditions = @(@{ property = '$cohort'; op = 'in_cohort'; value = $guard.id }) }).Json
+$usage = (S GET "/cohorts/$($guard.id)/usage").Json
+Check "the cohort usage lists the flag" (@($usage.flags) -contains "cohort-guard-$tag")
+$blocked = S DELETE "/cohorts/$($guard.id)"
+Check "a cohort used by a flag cannot be deleted -> 409" ($blocked.Status -eq 409 -and $blocked.Json.error -match "cohort-guard-$tag")
+Check "deleting the flag unblocks the cohort" ((S DELETE "/flags/$($guardFlag.id)").Status -eq 204 -and (S DELETE "/cohorts/$($guard.id)").Status -eq 204)
 
 Write-Host "`n4) Cohorts in analyses"
 $in = (Trend @(@{ scope = "cohort"; property = "$($dyn.id)"; op = "in" })).Json.results[0].total
@@ -170,6 +210,8 @@ $null = S DELETE "/insights/$($insight.id)"
 Check "deleted cohort -> 404" ((S GET "/cohorts/$($dyn.id)").Status -eq 404)
 $purged = WaitFor { (StarRocks "SELECT count(*) FROM analytics.cohort_members WHERE cohort_id IN ($($dyn.id), $($prop.id), $($stat.id))") -eq "0" } 60
 Check "worker removes the deleted cohorts' rows from StarRocks" $purged
+$historyPurged = WaitFor { (StarRocks "SELECT count(*) FROM analytics.cohort_members_history WHERE cohort_id IN ($($dyn.id), $($prop.id), $($stat.id))") -eq "0" } 60
+Check "worker removes the deleted cohorts' history rows" $historyPurged
 
 if ($script:failed -eq 0) { Write-Host "`nPASSED: all cohort checks" -ForegroundColor Green }
 else { Write-Host "`nFAILED: $script:failed checks failed" -ForegroundColor Red; exit 1 }

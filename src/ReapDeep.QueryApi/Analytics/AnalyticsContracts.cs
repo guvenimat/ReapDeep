@@ -26,13 +26,13 @@ public sealed record FunnelPersonsResponse(int Step, string Kind, long Total, Li
 
 public sealed record RetentionRequest(
     string? StartEvent, string? ReturnEvent, string? Period, int? Periods, string? DateFrom, string? DateTo,
-    List<Filter>? Filters, bool Explain);
+    List<Filter>? Filters, bool Explain, string? StartAction = null, string? ReturnAction = null);
 public sealed record RetentionCohort(string CohortStart, long Size, List<long?> Counts);
 public sealed record RetentionResponse(string Period, int Periods, string Timezone, List<RetentionCohort> Cohorts, List<double?> Average, double TookMs);
 
 public sealed record PathsRequest(
     string? StartEvent, int? Depth, int? WindowSeconds, bool? PageviewPaths, string? DateFrom, string? DateTo,
-    List<Filter>? Filters, bool Explain);
+    List<Filter>? Filters, bool Explain, string? StartAction = null);
 public sealed record PathNode(string Name, long Persons);
 public sealed record PathStep(int Step, long Persons, List<PathNode> Nodes);
 public sealed record PathSequence(List<string> Nodes, long Persons);
@@ -61,7 +61,8 @@ public sealed record RfmMigrationResponse(int WindowDays, int PeriodDays, DateTi
 public sealed record RfmPersonResponse(int WindowDays, string? Segment, string? SegmentName, int? R, int? F, long? RecencyDays, long? Orders, double? Monetary);
 
 public sealed record LifecycleRequest(
-    string? Event, string? Period, int? LookbackDays, string? DateFrom, string? DateTo, List<Filter>? Filters, bool Explain);
+    string? Event, string? Period, int? LookbackDays, string? DateFrom, string? DateTo, List<Filter>? Filters, bool Explain,
+    string? Action = null);
 public sealed record LifecyclePeriod(string Start, long New, long Returning, long Resurrecting, long Dormant);
 public sealed record LifecycleResponse(string? Event, string Period, int LookbackDays, string Timezone, List<LifecyclePeriod> Periods, double TookMs);
 
@@ -78,3 +79,11 @@ public sealed record WebAnalyticsResponse(
 public sealed record FunnelCorrelation(string Event, long ConvertedWith, long DroppedWith, double ConvertedShare, double DroppedShare, double OddsRatio);
 public sealed record FunnelCorrelationResponse(long Converted, long Dropped, List<FunnelCorrelation> Positive, List<FunnelCorrelation> Negative, int MinPersons,
     double TookMs);
+
+public sealed record FunnelPropertyRequest(
+    List<FunnelStep>? Steps, string? DateFrom, string? DateTo, long? WindowSeconds, List<Filter>? Filters,
+    string? Event, string? Property, int? Limit);
+public sealed record FunnelPropertyValue(string Value, long ConvertedWith, long DroppedWith, double ConvertedShare, double DroppedShare,
+    double OddsRatio, double? PValue);
+public sealed record FunnelPropertyResponse(long Converted, long Dropped, string Event, string Property, List<FunnelPropertyValue> Values,
+    int MinPersons, double? TookMs);

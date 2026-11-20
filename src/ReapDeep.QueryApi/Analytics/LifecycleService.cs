@@ -1,13 +1,14 @@
 using System.Diagnostics;
 using ReapDeep.Analytics;
 using ReapDeep.Analytics.Sql;
+using ReapDeep.QueryApi.Actions;
 using ReapDeep.QueryApi.Auth;
 using ReapDeep.QueryApi.Cohorts;
 using ReapDeep.QueryApi.Infrastructure;
 
 namespace ReapDeep.QueryApi.Analytics;
 
-public sealed class LifecycleService(StarRocksClient starRocks, CohortService cohorts)
+public sealed class LifecycleService(StarRocksClient starRocks, CohortService cohorts, ActionRepository actions)
 {
     public const int DefaultLookbackDays = 90;
     const int MinLookbackDays = 7;
@@ -37,7 +38,10 @@ public sealed class LifecycleService(StarRocksClient starRocks, CohortService co
 
     async Task<Plan> BuildPlanAsync(ProjectContext project, LifecycleRequest req, CancellationToken ct)
     {
-        var eventName = string.IsNullOrWhiteSpace(req.Event) ? null : Ensure.NotBlank(req.Event, "event");
+        var series = string.IsNullOrWhiteSpace(req.Event) && string.IsNullOrWhiteSpace(req.Action)
+            ? null
+            : (await actions.ApplyAsync(project.ProjectId, [new Series(req.Event ?? "", null, null, req.Action, null)], ct))[0];
+        var eventName = series is null ? null : Ensure.NotBlank(series.Event, "event");
         var period = Ensure.OneOf(req.Period ?? "week", "period", LifecycleSql.Periods);
         var lookback = Ensure.InRange(req.LookbackDays ?? DefaultLookbackDays, MinLookbackDays, MaxLookbackDays, "lookback_days");
         var defaultSpan = period switch { "day" => TimeSpan.FromDays(14), "week" => TimeSpan.FromDays(56), _ => TimeSpan.FromDays(180) };
@@ -57,6 +61,6 @@ public sealed class LifecycleService(StarRocksClient starRocks, CohortService co
 
         var b = new SqlBuilder(project.ProjectId, scanned.FromUtc, scanned.ToUtc);
         b.AddFilters(req.Filters, await cohorts.ResolveAsync(project, req.Filters, null, ct));
-        return new Plan(eventName, period, lookback, first, last, LifecycleSql.Build(b, eventName, period, scanned, project.TimeZoneId, first, last));
+        return new Plan(eventName, period, lookback, first, last, LifecycleSql.Build(b, eventName, series?.Events, period, scanned, project.TimeZoneId, first, last));
     }
 }

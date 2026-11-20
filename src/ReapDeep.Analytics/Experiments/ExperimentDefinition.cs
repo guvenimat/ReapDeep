@@ -9,6 +9,7 @@ public sealed record ExperimentMetric(string? Kind, string? Event = null, List<s
 
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.SnakeCaseLower, DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull)]
 [JsonSerializable(typeof(ExperimentMetric))]
+[JsonSerializable(typeof(List<ExperimentMetric>))]
 public partial class ExperimentJsonContext : JsonSerializerContext;
 
 public static class ExperimentStatus
@@ -38,24 +39,32 @@ public static class ExperimentRules
     public const long DefaultFunnelWindowSeconds = 7 * 24 * 3600;
     public const long MaxWindowSeconds = 90 * 24 * 3600;
     public const int MaxRangeDays = 366;
+    public const int MaxSecondaryMetrics = 3;
 
-    public static ExperimentMetric Metric(ExperimentMetric? metric)
+    public static List<ExperimentMetric> SecondaryMetrics(IEnumerable<ExperimentMetric>? metrics)
     {
-        Ensure.That(metric is not null, "metric is required");
-        var kind = Ensure.OneOf(metric.Kind, "metric.kind", MetricKinds.All);
+        var list = (metrics ?? []).ToList();
+        Ensure.That(list.Count <= MaxSecondaryMetrics, $"An experiment can have at most {MaxSecondaryMetrics} secondary metrics");
+        return list.Select(m => Metric(m, "secondary metric")).ToList();
+    }
+
+    public static ExperimentMetric Metric(ExperimentMetric? metric, string field = "metric")
+    {
+        Ensure.That(metric is not null, $"{field} is required");
+        var kind = Ensure.OneOf(metric.Kind, $"{field}.kind", MetricKinds.All);
         var window = metric.WindowSeconds;
-        if (window is not null) Ensure.That(window is >= 1 and <= MaxWindowSeconds, "metric.window_seconds must be between 1 second and 90 days");
+        if (window is not null) Ensure.That(window is >= 1 and <= MaxWindowSeconds, $"{field}.window_seconds must be between 1 second and 90 days");
         switch (kind)
         {
             case MetricKinds.Funnel:
-                var steps = (metric.Steps ?? []).Select(s => Event(s, "metric.steps")).ToList();
-                Ensure.That(steps.Count is >= MinSteps and <= MaxSteps, $"metric.steps must contain {MinSteps}-{MaxSteps} events");
+                var steps = (metric.Steps ?? []).Select(s => Event(s, $"{field}.steps")).ToList();
+                Ensure.That(steps.Count is >= MinSteps and <= MaxSteps, $"{field}.steps must contain {MinSteps}-{MaxSteps} events");
                 return new ExperimentMetric(kind, Steps: steps, WindowSeconds: window ?? DefaultFunnelWindowSeconds);
             case MetricKinds.Revenue:
                 var property = ColumnMapper.Validate(metric.Property?.Trim() ?? "");
-                return new ExperimentMetric(kind, Event(metric.Event, "metric.event"), WindowSeconds: window, Property: property);
+                return new ExperimentMetric(kind, Event(metric.Event, $"{field}.event"), WindowSeconds: window, Property: property);
             default:
-                return new ExperimentMetric(kind, Event(metric.Event, "metric.event"), WindowSeconds: window);
+                return new ExperimentMetric(kind, Event(metric.Event, $"{field}.event"), WindowSeconds: window);
         }
     }
 
@@ -91,4 +100,10 @@ public static class ExperimentRules
 
     public static ExperimentMetric ParseMetric(string json) =>
         JsonSerializer.Deserialize(json, ExperimentJsonContext.Default.ExperimentMetric) ?? new ExperimentMetric(MetricKinds.Conversion);
+
+    public static string MetricsJson(IEnumerable<ExperimentMetric> metrics) =>
+        JsonSerializer.Serialize(metrics.ToList(), ExperimentJsonContext.Default.ListExperimentMetric);
+
+    public static List<ExperimentMetric> ParseMetrics(string json) =>
+        JsonSerializer.Deserialize(json, ExperimentJsonContext.Default.ListExperimentMetric) ?? [];
 }

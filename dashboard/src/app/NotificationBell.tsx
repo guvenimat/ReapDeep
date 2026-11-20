@@ -1,24 +1,46 @@
 import { useEffect, useRef, useState } from 'react'
 import { api } from '../api/client'
-import type { NotificationItem } from '../api/types'
+import type { NotificationItem, NotificationPreference } from '../api/types'
 import { Icon } from '../components/icons'
 import { dateTime } from '../lib/format'
 
 const POLL_MS = 60_000
+const KIND_LABELS: Record<string, string> = {
+  alert_fired: 'Alerts that fire',
+  alert_resolved: 'Alerts that resolve',
+  alert_error: 'Alert check errors',
+  note: 'Scheduled strategy notes',
+  experiment_result: 'Stopped experiment results',
+}
 
 export function NotificationBell({ projectId }: { projectId: number }) {
   const [items, setItems] = useState<NotificationItem[]>([])
   const [unread, setUnread] = useState(0)
   const [open, setOpen] = useState(false)
+  const [showPrefs, setShowPrefs] = useState(false)
+  const [preferences, setPreferences] = useState<NotificationPreference[]>([])
   const box = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    if (!projectId) return
     let stop = false
     const load = () => api.notifications().then((r) => { if (!stop) { setItems(r.notifications); setUnread(r.unread) } }, () => {})
     void load()
     const timer = setInterval(load, POLL_MS)
     return () => { stop = true; clearInterval(timer) }
   }, [projectId])
+
+  const loadPreferences = () => api.notificationPreferences().then((r) => setPreferences(r.preferences), () => {})
+  const togglePreference = async (preference: NotificationPreference) => {
+    try {
+      await api.setNotificationPreference(preference.kind, !preference.enabled)
+      setPreferences((current) => current.map((p) => (p.kind === preference.kind ? { ...p, enabled: !p.enabled } : p)))
+      const r = await api.notifications()
+      setItems(r.notifications)
+      setUnread(r.unread)
+    } catch {
+    }
+  }
 
   useEffect(() => {
     if (!open) return
@@ -30,6 +52,7 @@ export function NotificationBell({ projectId }: { projectId: number }) {
   const toggle = () => {
     const next = !open
     setOpen(next)
+    if (next) void loadPreferences()
     if (next && unread > 0) void api.markNotificationsRead().then(() => setUnread(0), () => {})
   }
 
@@ -44,7 +67,7 @@ export function NotificationBell({ projectId }: { projectId: number }) {
         <div className="bell-panel" role="dialog" aria-label="Notifications">
           <div className="bell-head">Notifications</div>
           {items.length === 0
-            ? <p className="editor-hint">Nothing yet. Alerts that fire or resolve and scheduled strategy notes show up here.</p>
+            ? <p className="editor-hint">Nothing yet. Alerts that fire or resolve, stopped experiment results and scheduled strategy notes show up here.</p>
             : (
               <ul className="bell-list">
                 {items.map((n) => (
@@ -58,6 +81,22 @@ export function NotificationBell({ projectId }: { projectId: number }) {
                 ))}
               </ul>
             )}
+          <div className="bell-prefs">
+            <button type="button" className="link small" data-testid="notification-preferences"
+              onClick={() => { setShowPrefs(!showPrefs); if (!showPrefs) void loadPreferences() }}>
+              {showPrefs ? 'Hide preferences' : 'Notification preferences'}
+            </button>
+            {showPrefs && (
+              <div className="check-list" role="group" aria-label="Notification preferences" data-testid="notification-preferences-list">
+                {preferences.map((p) => (
+                  <label key={p.kind} className="check" htmlFor={`notification-pref-${p.kind}`}>
+                    <input id={`notification-pref-${p.kind}`} type="checkbox" checked={p.enabled} data-kind={p.kind} onChange={() => void togglePreference(p)} />
+                    <span>{KIND_LABELS[p.kind] ?? p.kind}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

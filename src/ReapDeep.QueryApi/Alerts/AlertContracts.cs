@@ -1,11 +1,11 @@
 namespace ReapDeep.QueryApi.Alerts;
 
 public sealed record AlertBody(string? Name, long? InsightId, string? Condition, double? Threshold, string? Window, string? WebhookUrl, bool? Enabled,
-    string? Channel = null, List<string>? EmailTo = null);
+    string? Channel = null, List<string>? EmailTo = null, string? Metric = null);
 
 public sealed record AlertRow(
-    long Id, string Name, long InsightId, string InsightName, string Condition, double Threshold, string Window, string Channel, string? WebhookUrl,
-    string[]? EmailTo, string? Secret, bool Enabled, string State, double? LastValue, double? PreviousValue, string? LastError,
+    long Id, string Name, long InsightId, string InsightName, string? Metric, string Condition, double Threshold, string Window, string Channel,
+    string? WebhookUrl, string[]? EmailTo, string? Secret, bool Enabled, string State, double? LastValue, double? PreviousValue, string? LastError,
     DateTime? LastCheckedAt, DateTime NextCheckAt, string? CreatedBy, DateTime CreatedAt);
 
 public sealed record AlertsResponse(List<AlertRow> Alerts);

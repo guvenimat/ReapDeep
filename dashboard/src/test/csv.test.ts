@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { funnelsCsv, retentionCsv, toCsv, trendsCsv } from '../lib/csv'
+import { experimentCsv, funnelsCsv, retentionCsv, stickinessCsv, toCsv, trendsCsv, webCsv } from '../lib/csv'
 
 describe('csv', () => {
   it('quotes separators and neutralizes spreadsheet formulas', () => {
@@ -19,6 +19,30 @@ describe('csv', () => {
 
     expect(t.headers).toEqual(['bucket', 'purchase · total · tr', 'purchase · total · de'])
     expect(t.rows).toEqual([['2026-11-01', 1, null], ['2026-11-02', 2, 1]])
+  })
+
+  it('exports stickiness, web and experiment results', () => {
+    const sticky = stickinessCsv({
+      event: 'purchase', interval: 'day', total_periods: 2, persons: 5, average_periods: 1.4, timezone: 'UTC',
+      buckets: [{ periods: 1, persons: 4, share: 0.8 }, { periods: 2, persons: 1, share: 0.2 }], took_ms: 1,
+    })
+    const web = webCsv({
+      interval: 'day', timezone: 'UTC', date_from: '2026-11-01', date_to: '2026-11-02', previous_from: '2026-10-31',
+      current: { visitors: 3, pageviews: 5, sessions: 2, bounces: 1, bounce_rate: 0.5, avg_session_seconds: 30 },
+      previous: { visitors: 0, pageviews: 0, sessions: 0, bounces: 0, bounce_rate: null, avg_session_seconds: null },
+      series: [{ bucket: '2026-11-01', visitors: 2, pageviews: 3 }], pages: [], breakdowns: [], took_ms: 1,
+    })
+    const experiment = experimentCsv({
+      experiment_id: 1, metric_kind: 'conversion', test: 'two_proportion_z', control_variant: 'control',
+      date_from: '2026-11-01', date_to: '2026-11-02', excluded_persons: 0, srm: null, secondary: [], took_ms: 1,
+      variants: [{
+        key: 'control', percentage: 50, is_control: true, persons: 10, conversions: 2, mean: 0.2, standard_deviation: null, comparison: null,
+      }],
+    })
+
+    expect(sticky.rows).toEqual([[1, 4, 0.8], [2, 1, 0.2]])
+    expect(web.rows).toEqual([['period total', 3, 5], ['2026-11-01', 2, 3]])
+    expect(experiment.rows[0]).toEqual(['primary', 'control', 50, true, 10, 2, 0.2, null, null, null, null, null, null, null, null, null, null])
   })
 
   it('writes one funnel row per breakdown and step, and the retention average last', () => {

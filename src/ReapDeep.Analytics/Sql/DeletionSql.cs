@@ -3,7 +3,8 @@ namespace ReapDeep.Analytics.Sql;
 public static class DeletionSql
 {
     public static readonly string[] TombstoneTables = ["analytics.person_distinct_ids", "analytics.persons"];
-    public static readonly string[] ProjectTables = ["analytics.events", "analytics.person_distinct_ids", "analytics.persons", "analytics.cohort_members"];
+    public static readonly string[] ProjectTables =
+        ["analytics.events", "analytics.person_distinct_ids", "analytics.persons", "analytics.cohort_members", "analytics.cohort_members_history"];
 
     public static SqlQuery DeleteProject(string table, long projectId)
     {

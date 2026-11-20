@@ -4,7 +4,7 @@ import type { Range } from '../../app/route'
 import { Legend } from '../../components/charts/common'
 import { FunnelChart } from '../../components/charts/FunnelChart'
 import { TimeChart } from '../../components/charts/TimeChart'
-import { Status } from '../../components/ui'
+import { StatTile, Status } from '../../components/ui'
 import { num, pct } from '../../lib/format'
 import { useQuery } from '../../lib/hooks'
 import { LIFECYCLE_DEFAULT, lifecycleBody, lifecycleEmpty, LifecycleLegend, type LifecycleState } from '../lifecycle/Lifecycle'
@@ -13,7 +13,9 @@ import { RFM_DEFAULT, rfmBody, RfmGrid, type RfmState } from '../rfm/Rfm'
 import { FUNNEL_DEFAULT, funnelBody, funnelGroups, type FunnelState } from '../funnels/Funnels'
 import { PathList, PATHS_DEFAULT, pathsBody, type PathsState } from '../paths/Paths'
 import { RETENTION_DEFAULT, retentionBody, RetentionTable, type RetentionState } from '../retention/Retention'
+import { STICKINESS_DEFAULT, stickinessBody, stickinessRegulars, type StickinessState } from '../stickiness/Stickiness'
 import { TREND_DEFAULT, trendBody, trendChartSeries, trendInterval, visibleResults, type TrendState } from '../trends/Trends'
+import { WEB_DEFAULT, webBody, webEmpty, type WebState } from '../web/Web'
 import { useAnnotations } from './Annotations'
 
 export function InsightTile({ insight, range }: { insight: Insight; range: Range }) {
@@ -22,6 +24,8 @@ export function InsightTile({ insight, range }: { insight: Insight; range: Range
   if (insight.kind === 'lifecycle') return <LifecycleTile state={{ ...LIFECYCLE_DEFAULT, ...(insight.query as Partial<LifecycleState>) }} range={range} />
   if (insight.kind === 'rfm') return <RfmTile state={{ ...RFM_DEFAULT, ...(insight.query as Partial<RfmState>) }} />
   if (insight.kind === 'paths') return <PathsTile state={{ ...PATHS_DEFAULT, ...(insight.query as Partial<PathsState>) }} range={range} />
+  if (insight.kind === 'stickiness') return <StickinessTile state={{ ...STICKINESS_DEFAULT, ...(insight.query as Partial<StickinessState>) }} range={range} />
+  if (insight.kind === 'web') return <WebTile state={{ ...WEB_DEFAULT, ...(insight.query as Partial<WebState>) }} range={range} />
   return <FunnelTile state={{ ...FUNNEL_DEFAULT, ...(insight.query as Partial<FunnelState>) }} range={range} />
 }
 
@@ -96,6 +100,49 @@ function PathsTile({ state, range }: { state: PathsState; range: Range }) {
   return (
     <Status state={q} empty={q.data?.persons === 0}>
       {q.data && <PathList data={q.data} limit={6} />}
+    </Status>
+  )
+}
+
+function StickinessTile({ state, range }: { state: StickinessState; range: Range }) {
+  const body = JSON.stringify(stickinessBody(state, range))
+  const q = useQuery((signal) => api.stickiness(JSON.parse(body), signal), [body])
+  const d = q.data
+  const unit = d?.interval === 'week' ? 'weeks' : 'days'
+  return (
+    <Status state={q} empty={d?.persons === 0}>
+      {d && (
+        <div className="stats">
+          <StatTile label="Persons" value={num(d.persons)} hint={`did ${d.event} at least once`} />
+          <StatTile label={`Average ${unit} active`} value={d.average_periods === null ? '-' : String(d.average_periods)} hint={`out of ${d.total_periods}`} />
+          <StatTile label="Regulars" value={d.persons ? pct(stickinessRegulars(d) / d.persons) : '-'} hint={`active in at least half of the ${unit}`} />
+        </div>
+      )}
+    </Status>
+  )
+}
+
+function WebTile({ state, range }: { state: WebState; range: Range }) {
+  const body = JSON.stringify(webBody(state, range))
+  const q = useQuery((signal) => api.web(JSON.parse(body), signal), [body])
+  const d = q.data
+  const buckets = d?.series.map((s) => s.bucket) ?? []
+  const annotations = useAnnotations(buckets, d?.interval ?? 'day')
+  return (
+    <Status state={q} empty={webEmpty(d)}>
+      {d && (
+        <>
+          <div className="stats">
+            <StatTile label="Visitors" value={num(d.current.visitors)} hint={`${num(d.current.pageviews)} pageviews`} />
+            <StatTile label="Sessions" value={num(d.current.sessions)} hint={`${num(d.current.bounces)} bounced`} />
+            <StatTile label="Bounce rate" value={d.current.bounce_rate === null ? '—' : pct(d.current.bounce_rate)} hint="of sessions" />
+          </div>
+          <TimeChart buckets={buckets} interval={d.interval} mode="line" height={180} notes={annotations.notes} series={[
+            { key: 'visitors', label: 'Visitors', colorIndex: 0, values: d.series.map((s) => s.visitors) },
+            { key: 'pageviews', label: 'Pageviews', colorIndex: 1, values: d.series.map((s) => s.pageviews) },
+          ]} />
+        </>
+      )}
     </Status>
   )
 }

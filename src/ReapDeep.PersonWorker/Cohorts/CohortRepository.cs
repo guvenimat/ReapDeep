@@ -23,6 +23,28 @@ public sealed class CohortRepository(NpgsqlDataSource db)
             """, new { MaxSeconds = (int)maxInterval.TotalSeconds, Limit = limit })).AsList();
     }
 
+    public async Task<List<long>> ProjectIdsAsync(CancellationToken ct)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand("SELECT id FROM projects ORDER BY id", conn);
+        var ids = new List<long>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) ids.Add(reader.GetInt64(0));
+        return ids;
+    }
+
+    public async Task<Dictionary<string, string[]>> ActionEventsAsync(long projectId, string[] names, CancellationToken ct)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand("SELECT name, events FROM actions WHERE project_id = @ProjectId AND name = ANY(@Names)", conn);
+        cmd.Parameters.AddWithValue("ProjectId", projectId);
+        cmd.Parameters.AddWithValue("Names", names);
+        var result = new Dictionary<string, string[]>(StringComparer.Ordinal);
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) result[reader.GetString(0)] = reader.GetFieldValue<string[]>(1);
+        return result;
+    }
+
     public async Task<NpgsqlConnection?> TryLockAsync(long cohortId, CancellationToken ct)
     {
         var conn = await db.OpenConnectionAsync(ct);

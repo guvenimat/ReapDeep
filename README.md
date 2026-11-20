@@ -27,7 +27,8 @@ retention, path and person questions over hundreds of millions of events.
 ## Architecture
 
 The design decisions, alternatives and measurements behind each component are written up in
-[docs/architecture.md](docs/architecture.md); the key choices are summarized as decision records in
+[docs/architecture.md](docs/architecture.md), and the customer-facing endpoints are described in
+[docs/openapi.yaml](docs/openapi.yaml). The key choices are summarized as decision records in
 [docs/adr](docs/adr): [StarRocks for events](docs/adr/0001-starrocks-for-events.md),
 [a durable 202 through Kafka](docs/adr/0002-durable-202-through-kafka.md),
 [shared tables behind one SQL builder](docs/adr/0003-shared-tables-one-sql-builder.md),
@@ -89,6 +90,7 @@ flowchart LR
 - **Query queue.** The Query API runs as `reapdeep_query` in the `rg_query` resource group (8 concurrent queries), and each request runs at most 4 of its queries at once. A query over a group's limit waits in the StarRocks query queue instead of failing, for at most 15 s, which is half of the Query API's 30 s command timeout. If it is still waiting then, or the queue is full, the API answers `503` with `Retry-After: 5` and "The analytics database is busy; try again in a few seconds". The settings (`enable_query_queue_select`, `enable_group_level_query_queue`, `query_queue_pending_timeout_second`) are StarRocks global variables that `ReapDeep.Migrations` sets on every run, so a recreated database gets them too. StarRocks copies them into each new connection, so services started before a change keep the old values until they reconnect.
 - **Result cache.** Trend, funnel, retention, path, RFM and lifecycle results are cached in Redis for 45 s (`QueryApi__ResultCacheSeconds`, `0` turns it off), keyed by project, time zone, request body and the versions of the cohorts it uses, so a recalculated cohort is never served from an old entry. Responses carry `X-Cache: HIT` or `MISS`, and a request with `Cache-Control: no-cache` skips the cached copy. Without Redis every request runs its query.
 - **Request quotas.** Project endpoints are limited per minute to 300 requests per user or API key and 1,200 per project (`QueryApi__RequestsPerMinutePerPrincipal`, `QueryApi__RequestsPerMinutePerProject`). The counters live in Redis, so the limit holds across instances; past it the API answers `429` with `Retry-After`. Without Redis each instance counts on its own.
+- **Public endpoint limit.** The Recommender limits `/recommend` and `/flags` per client IP (`Recommender__RequestsPerMinutePerIp`, 6,000 by default; `0` turns it off) and answers `429` with `Retry-After: 60`. The local compose sets it to `0` so `load-test.ps1` can measure the 22K requests/s figure; set 6,000 in production. It honors `X-Forwarded-For` only from the networks in `ForwardedHeaders__TrustedNetworks`; set that list when it runs behind a proxy.
 
 ![ReapDeep overview dashboard in Grafana](docs/images/grafana-overview.png)
 
@@ -178,7 +180,7 @@ The Web analytics page (`POST /api/v1/query/web`) is built from `$pageview` even
 
 - **Visitors** are unique persons (anonymous and identified ids merged) with a pageview; **pageviews** count `$pageview` events.
 - A **session** is the SDK's `$session_id` (30 minutes of inactivity, 24 hours at most) with at least one pageview. A **bounce** is a session with exactly one pageview, and the **session duration** runs from the session's first to its last event of any kind. Every tile is compared with the previous period of the same length; a session belongs to the period in which it started.
-- Entry page, referrer, UTM values and device are taken from each session's first pageview, so later internal pages do not count as sources. A missing referrer counts as direct. Each table shows the top 10 values (`limit` up to 100) with sessions, visitors, bounce rate and average duration.
+- Entry page, referrer, UTM values and device are taken from each session's first pageview, so later internal pages do not count as sources. A missing referrer counts as direct, and so does a referrer from the page's own host (a new session after 30 minutes of inactivity), so the site does not appear as its own traffic source. Each table shows the top 10 values (`limit` up to 100) with sessions, visitors, bounce rate and average duration. The chart takes chart notes and the view can be saved as an insight with a CSV export.
 - On the Demo Shop (about 64K events in total) a load takes 70 ms for 7 days, 90 ms for 30 days and 230-410 ms for 180-365 days without the cache; the slowest of the four queries is the session breakdown.
 
 ### Retention and paths
@@ -192,11 +194,11 @@ The Web analytics page (`POST /api/v1/query/web`) is built from `$pageview` even
 
 A trend series counts events, counts unique persons, or aggregates a numeric event property (sum, average, median, 90th percentile, minimum, maximum), for example the daily sum of `amount` on `purchase`. Series are named A, B, C... and a formula combines them with `+ - * /` and parentheses: `A / B` with A = sum of `amount` and B = unique buyers is revenue per buyer. Formulas are evaluated per bucket and on the period totals (so unique-user totals stay correct), per breakdown value, and division by zero gives 0. "Compare to previous period" runs every series over the preceding range of the same length and draws it as a dashed line; the tiles show the change in percent.
 
-**Actions** name a group of events (`/api/v1/actions`, managed on the Events tab), for example `Checkout` = `add_to_cart` or `begin_checkout`. A trend series or funnel step can use `{"action": "Checkout"}` instead of an event (the editors suggest it as `action:Checkout`); the Query API looks the action up on every request, so editing it changes every insight that uses it within the 45-second result cache. Actions work in trends and funnels; retention, paths, lifecycle and cohorts still take single events.
+**Actions** name a group of events (`/api/v1/actions`, managed on the Events tab), for example `Checkout` = `add_to_cart` or `begin_checkout`. A trend series, funnel step, retention start or return event, path start, lifecycle activity or cohort event condition can use `{"action": "Checkout"}` instead of an event (the editors suggest it as `action:Checkout`); the Query API looks the action up on every request, so editing it changes every insight that uses it within the 45-second result cache. Alerts follow their saved trend, so they use the same actions.
 
-**Chart notes** mark a day on trend charts and dashboard tiles (`/api/v1/annotations`, a day and up to 300 characters, any member can add them on the Trends tab): the day gets a dashed line and the note appears in the tooltip, so a spike can be read next to "campaign launched".
+**Chart notes** mark a day on trend and web analytics charts and dashboard tiles (`/api/v1/annotations`, a day and up to 300 characters, any member can add them on the Trends or Web analytics tab): the day gets a dashed line and the note appears in the tooltip, so a spike can be read next to "campaign launched".
 
-**CSV export:** trends, funnels, retention, paths, lifecycle and RFM have a download button in the save bar. The file holds what the chart shows (one column per series for trends, one row per step and breakdown for funnels); values a spreadsheet would read as a formula are prefixed with `'`.
+**CSV export:** trends, funnels, retention, paths, lifecycle, RFM, stickiness and web analytics have a download button in the save bar, and experiment results have one in their card. The file holds what the chart shows (one column per series for trends, one row per step and breakdown for funnels); values a spreadsheet would read as a formula are prefixed with `'`.
 
 ### Lifecycle and RFM
 
@@ -211,23 +213,23 @@ A trend series counts events, counts unique persons, or aggregates a numeric eve
 
 ### Funnel correlation
 
-Under a funnel, "What sets converters apart" (`POST /api/v1/query/funnels/correlation`, same body as the funnel) lists the other events that were clearly more common among the persons who converted, and those more common among the persons who dropped off. Each event shows the share of both groups that did it and a smoothed odds ratio; only events done by at least 3 persons and with odds of at least 1.25× either way are listed. It shows association, not cause.
+Under a funnel, "What sets converters apart" (`POST /api/v1/query/funnels/correlation`, same body as the funnel) lists the other events that were clearly more common among the persons who converted, and those more common among the persons who dropped off. Each event shows the share of both groups that did it and a smoothed odds ratio; only events done by at least 3 persons and with odds of at least 1.25× either way are listed. A second table compares one event property's values (`POST /api/v1/query/funnels/correlation/property`, `event` and `property`) with shares, odds and a two-proportion p-value. It shows association, not cause.
 
 ### Stickiness
 
-The Stickiness tab (`POST /api/v1/query/stickiness`) counts, for an event or an action, how many different days or weeks each person did it in the date range, and shows how many persons fall in each count with the average and the share of regulars (active in at least half of the periods). Persons are merged across their ids, like everywhere else.
+The Stickiness tab (`POST /api/v1/query/stickiness`) counts, for an event or an action, how many different days or weeks each person did it in the date range, and shows how many persons fall in each count with the average and the share of regulars (active in at least half of the periods). Persons are merged across their ids, like everywhere else. The view can be saved as an insight and exported as CSV.
 
 ### Alerts
 
 ![An alert being edited: a daily threshold on a saved trend, sent by email, above the list of webhook, email and Slack alerts](docs/images/alerts.png)
 
-An alert watches a saved trend over the last hour, day or week: *above* or *below* a value, or a *growth* or *drop* of at least N% against the window before. It follows the trend's first series, or its formula when there is one. The alert runner checks hourly-window alerts every 10 minutes, daily ones every hour and weekly ones every 6 hours (instances claim alerts with `FOR UPDATE SKIP LOCKED`), and "Check now" runs one on demand.
+An alert watches a saved trend, funnel or RFM analysis over the last hour, day or week: *above* or *below* a value, or a *growth* or *drop* of at least N% against the window before. A trend alert follows the trend's first series, or its formula when there is one; a funnel alert follows the funnel's overall conversion; an RFM alert follows the customer count or revenue of one segment, is checked daily and supports above/below only. The alert runner checks hourly-window alerts every 10 minutes, daily ones every hour and weekly ones every 6 hours (instances claim alerts with `FOR UPDATE SKIP LOCKED`), and "Check now" runs one on demand.
 
 An alert notifies one channel: a webhook, a Slack incoming webhook (a short text message) or up to 10 email addresses over SMTP (`Alerts__Smtp__Host`, `Port`, `From`, `Username`, `Password`, `EnableSsl`; the local stack sends to Mailpit). A notification goes out only when an alert starts or stops firing; a webhook gets a JSON body (`state`, `value`, `previous_value`, `message`, the insight) and an `X-ReapDeep-Signature: sha256=<HMAC-SHA256(secret, body)>` header; the secret is shown when the alert is created. Each event and the outcome of its delivery are kept in the alert's history. Deliveries are queued in PostgreSQL before they are sent: a network error, a timeout, `408`, `429` or `5xx` (for e-mail, a connection error or a temporary `4xx` SMTP reply) is retried after 1, 5 and 15 minutes, 1 hour and 3 hours (six attempts in all), while other answers fail at once. Every attempt carries `X-ReapDeep-Delivery` (the same id on each retry, so receivers can drop duplicates) and `X-ReapDeep-Attempt`, and the body and signature do not change between attempts. Webhook URLs that resolve to private, loopback or link-local addresses are refused, and the check is repeated on the connection itself so DNS rebinding cannot bypass it; the local compose file sets `Alerts__AllowPrivateWebhooks=true` so tests can use a receiver on the host. A delivery that failed for good can be sent again from the alert's history ("Retry", `POST /api/v1/alerts/{id}/events/{eventId}/retry`): one more attempt with the same delivery id and body, to the alert's current destination. "Send test" in the alert editor (`POST /api/v1/alerts/test`) sends a sample notification with `state: "test"` to the channel being edited, through the same URL and address checks, without changing the alert or its history; a saved webhook alert signs it with its own secret. Only owners and admins manage alerts.
 
 ### Notifications
 
-The bell in the top bar collects what happened in the project: an alert that fires, resolves or cannot be checked, and a scheduled strategy note that is ready. Each entry links to its page, unread entries are marked per user and opening the bell marks them read (`GET /api/v1/notifications`, `POST /api/v1/notifications/read`). The last 200 per project are kept. This works without any e-mail setup; webhooks, Slack and e-mail stay available on top.
+The bell in the top bar collects what happened in the project: an alert that fires, resolves or cannot be checked, a stopped experiment whose results are ready, and a scheduled strategy note that is ready. Each entry links to its page, unread entries are marked per user and opening the bell marks them read (`GET /api/v1/notifications`, `POST /api/v1/notifications/read`). Each user can switch kinds off in the bell's Notification preferences (`GET`/`PUT /api/v1/notifications/preferences`); muted kinds are hidden from the list and the unread count. The last 200 per project are kept. This works without any e-mail setup; webhooks, Slack and e-mail stay available on top.
 
 ### Feature flags
 
@@ -262,7 +264,8 @@ An experiment ties a multivariate flag to a goal and a date range. Owners and ad
   "metric": { "kind": "conversion", "event": "purchase", "window_seconds": 86400 } }
 ```
 
-- **Goals:** `conversion` (did the person do `event` after the first exposure, optionally within `window_seconds`), `funnel` (2-8 ordered `steps` after the first exposure, completed within `window_seconds`, 7 days by default) and `revenue` (sum of the numeric `property` of `event` per person; persons who did not buy count as 0).
+- **Goals:** `conversion` (did the person do `event` after the first exposure, optionally within `window_seconds`), `funnel` (2-8 ordered `steps` after the first exposure, completed within `window_seconds`, 7 days by default) and `revenue` (sum of the numeric `property` of `event` per person; persons who did not buy count as 0). Up to three **secondary metrics** can be added; each is compared with the same control using the same method.
+- **Sample size:** the Experiments page has a calculator. Enter a baseline conversion rate, the relative lift to detect, alpha, power and the number of variants; it returns the persons each variant needs (`POST /api/v1/experiments/sample-size`, the two-proportion sample-size formula).
 - **Exposure:** a person enters the variant of their first `$feature_flag_called` event for the flag inside the experiment's dates; persons are merged identities, so an anonymous exposure followed by sign-in and purchase counts once. Responses that are not a variant (`false`, `true`) are ignored, and persons who saw more than one variant are left out and reported as excluded.
 - **Statistics:** each variant is compared with the control (the first variant unless chosen): a pooled two-proportion z-test for conversion and funnel goals, Welch's t-test for revenue, two-sided p-values, 95% confidence intervals for the absolute difference and for the relative lift (delta method), significant when p < 0.05. A chi-square goodness-of-fit test compares exposed persons with the flag's percentages and warns about a sample ratio mismatch when p < 0.001. The distributions are implemented in C# and unit tested against scipy reference values.
 - **Lifecycle:** `draft` -> `running` (start; the start date defaults to now) -> `stopped` (the end date becomes now). While an experiment runs, its flag's variants and percentages cannot change (`409`) and neither the flag nor the experiment can be deleted; on/off, rollout and targeting can still change. Flag responses carry `locked_by_experiment` (the running experiment's name, or null), and the flag editor shows the lock and disables the variant fields. Results are cached like other analyses (`Cache-Control: no-cache` skips the cache).
@@ -291,17 +294,19 @@ What leaves ReapDeep is aggregated: counts, rates, statistics and event, propert
 
 ![Cohort](docs/images/cohort.png)
 
-A dynamic cohort is a set of OR'ed groups of AND'ed conditions: *did event X at least / at most / exactly N times in the last D days* (optionally where an event property matches), *did not do event Y in the last D days*, or *person property matches*. Windows are 1-90 days. *RFM segment is one of ...* turns RFM segments into a condition (see above). *Dropped after step N* or *reached step N* of a funnel (2-8 steps, a conversion window and a look-back of 1-90 days) keeps a funnel's drop-offs as a cohort that updates itself; the Funnels tab saves one from any drop-off. A static cohort is a list of person ids or distinct_ids, pasted or loaded from a CSV.
+A dynamic cohort is a set of OR'ed groups of AND'ed conditions: *did event or action X at least / at most / exactly N times in the last D days* (optionally where an event property matches), *did not do event or action Y in the last D days*, or *person property matches*. Windows are 1-90 days. *RFM segment is one of ...* turns RFM segments into a condition (see above). *Dropped after step N* or *reached step N* of a funnel (2-8 steps, a conversion window and a look-back of 1-90 days) keeps a funnel's drop-offs as a cohort that updates itself; the Funnels tab saves one from any drop-off. A static cohort is a list of person ids or distinct_ids, pasted or loaded from a CSV.
 
 | A funnel drop-off, saved as a fixed or dynamic cohort | The resulting cohort with its funnel condition |
 |---|---|
 | ![Funnel drop-off](docs/images/funnel-dropoff.png) | ![Funnel cohort](docs/images/cohort-funnel.png) |
 
 - **Materialized membership:** the person worker evaluates the rules in StarRocks and writes the members to `cohort_members` (every distinct_id of each person, so anonymous history counts for the merged person). Cohorts refresh hourly by default; the editor shows a live count computed on the fly.
+- **Historical membership:** a cohort filter can set `as_of` (a date). It then uses the daily snapshot in `cohort_members_history` from that day instead of current membership. The worker writes one snapshot per cohort and day; snapshots start when the feature is deployed and a missing day matches nobody. Snapshots older than `Cohorts:HistoryRetentionDays` (365 by default, `0` keeps them forever) are removed daily. This is a fixed-date view, not membership per event bucket.
 - **Cheap to use in analyses:** `cohort_members` is keyed by `(project_id, distinct_id)` in the same colocate group as `events`, so a cohort filter (`{"scope":"cohort","property":"<id>","op":"in" | "not_in"}`) is a bucket-local semi or anti join on the events table. Trends and funnels can also break down by up to 5 cohorts.
 - **Consistent versions:** each refresh writes a new version and switches to it atomically; the previous version is kept for 60 s so queries already running are not affected.
 - **Membership lookup:** `GET /api/v1/persons/{id}/cohorts` (read key) returns the calculated cohorts a person is in. `{id}` is a person id or any of the person's distinct_ids, including an earlier anonymous one, so a site can ask with its own user id and personalize the page or target a campaign. `GET /api/v1/cohorts/{id}/persons` lists the members page by page.
 - **Privacy:** deletion requests also remove the person from every cohort, and refreshes never run at the same time as a deletion batch of the same project.
+- **Safe deletion:** a cohort used by a feature flag cannot be deleted (`409` naming the flags); remove the cohort condition or the flag first, so a flag never silently loses its targeting.
 
 ### Catalog and recommendations
 
@@ -517,13 +522,13 @@ cd deploy/local
 .\ai-test.ps1           # platform and customer AI switches and features, platform admin access, explanations, the rule-based experiment decision, questions to trends and funnels, the weekly note, caching (fake model only)
 .\server-test.ps1       # server keys, /batch with historical timestamps and duplicates, flag definitions, the .NET SDK sample run inside the compose network, revocation
 .\account-test.ps1      # invitation and password reset emails through Mailpit: single use, expiry, no account enumeration, rate limits
-.\insights-test.ps1     # saved insights and dashboards, chart notes, actions, funnel correlation, API and browser
-.\cohort-test.ps1       # cohorts: rules, identity merge, static lists, filters and breakdowns, recalculation, deletion
-.\rfm-lifecycle-test.ps1  # RFM scores and segments with known answers, rfm_segment cohorts, lifecycle states and look-back
-.\alerts-test.ps1       # alerts: validation, firing and resolving, signed webhooks to a local receiver, manual retry, test notifications, change and formula conditions, errors
+.\insights-test.ps1     # saved insights and dashboards, chart notes, actions, funnel and property correlation, API and browser
+.\cohort-test.ps1       # cohorts: rules, actions, identity merge, static lists, history snapshots and as-of filters, flag-use deletion guard, filters and breakdowns, recalculation, deletion
+.\rfm-lifecycle-test.ps1  # RFM scores and segments with known answers, rfm_segment cohorts, lifecycle states and look-back, stickiness, saved insights
+.\alerts-test.ps1       # alerts: validation, firing and resolving, signed webhooks to a local receiver, notification preferences, manual retry, test notifications, change and formula conditions, errors
 .\recommender-test.ps1  # catalog, key scopes, models from real events, the public Recommender, stock changes, signed for_you requests
-.\flags-test.ps1       # feature flags: validation, access, variant and rollout shares over 6,000 identities, stable assignment, disabled flags, targeting, project isolation, exposure events
-.\experiments-test.ps1  # experiments: known-answer conversion, funnel, window and revenue results (z, t, p, CI), excluded persons, conversions before exposure, SRM warning, variant lock, access, project isolation
+.\flags-test.ps1       # feature flags: validation, access, variant and rollout shares over 6,000 identities, stable assignment, disabled flags, targeting, cohort-targeting deletion guard, project isolation, exposure events
+.\experiments-test.ps1  # experiments: known-answer conversion, funnel, window and revenue results (z, t, p, CI), secondary metrics, sample size, result notifications, excluded persons, conversions before exposure, SRM warning, variant lock, access, project isolation
 .\web-test.ps1          # web analytics: known-answer sessions, bounces, durations, entry pages, referrers, UTM values and devices, time zone buckets, previous period, filters, cache, access, project isolation
 .\query-test.ps1        # Query API: trends, funnels, retention, paths, events, persons, EXPLAIN, latency
 .\durability-test.ps1   # duplicate retries, Redis and Kafka outages without loss, dead letters, de-duplicated event list, ingestion quota, health check
@@ -542,6 +547,8 @@ npm test                # SDK unit tests (vitest + jsdom)
 ```
 
 The contract tests keep the hand-synchronized formats honest without running the stack: the event JSON written by ingestion must have exactly the fields the `events_from_kafka` routine load reads and the `events` table has; the person and distinct id payloads that the person worker and the deletion job write to the outbox must match their routine loads; no text ingestion writes may be longer, in UTF-8 bytes, than its StarRocks column; the SDK may only send fields the ingestion contract reads; and every field the dashboard's TypeScript types use must exist on the Query API contract of the same name.
+
+The end-to-end suite also runs in GitHub Actions (`.github/workflows/e2e.yml`): on demand, it builds the local stack, runs the Query API, web analytics, cohort, RFM/lifecycle, insights and dashboard tests, and uploads the container logs when a step fails.
 
 Useful commands:
 
@@ -589,7 +596,7 @@ ReapDeep is an early v1. It runs end to end locally but has not been operated in
 - Web analytics has no country breakdown (it would need a GeoIP database and a new column). A session that started before the selected range is counted from its first event inside it in the tables, while the tiles count it in the period in which it started; sessions are split only by the SDK's session id, not by a change of source.
 - AI answers are only as good as the model and the numbers behind them; on the generated demo data they are illustrative. The AI query builder knows trends and funnels only.
 - Not in v1: session replay, mobile SDKs, autocapture. The server SDK exists only for .NET; other back ends call `POST /batch` directly.
-- Experiments use fixed-horizon frequentist tests: looking at the results repeatedly while an experiment runs inflates false positives, and several variants are each compared with the control without a multiple-comparison correction. There are no secondary metrics, sample size planner or metric filters yet.
+- Experiments use fixed-horizon frequentist tests: looking at the results repeatedly while an experiment runs inflates false positives, and several variants are each compared with the control without a multiple-comparison correction. Up to three secondary metrics and a sample size calculator are available; per-metric filters are not.
 - Behind a load balancer, set `ForwardedHeaders__TrustedNetworks` (CIDR list) on the ingestion and Query APIs; `X-Forwarded-For` is ignored otherwise. The Query API sends no CORS headers unless `QueryApi__CorsOrigins` is set.
 - The deletion job runs every 30 s in the local compose file so tests finish quickly; the default is once a day (`Deletion__IntervalSeconds`). Raw events also stay in Kafka for its 7-day retention.
 

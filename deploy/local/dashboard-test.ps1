@@ -7,7 +7,8 @@ $envValues = Initialize-LocalEnv
 $readKey = $envValues.READ_API_KEY
 $tag = "dt" + [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
 $anonA = "anonA_$tag"; $user = "user_$tag"; $anonB = "anonB_$tag"
-$chrome = "$env:ProgramFiles\Google\Chrome\Application\chrome.exe"
+$chrome = if ($env:OS -eq 'Windows_NT') { "$env:ProgramFiles\Google\Chrome\Application\chrome.exe" } else { "/usr/bin/google-chrome" }
+$temp = if ($env:TEMP) { $env:TEMP } else { [IO.Path]::GetTempPath() }
 $ua = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36"
 $dash = "http://localhost:3000"
 $script:failed = 0
@@ -31,7 +32,7 @@ function Api([string]$path, [string]$body) {
 }
 
 $cdpPort = 9333
-$cdpProfile = Join-Path $env:TEMP "rd-dash-$tag"
+$cdpProfile = Join-Path $temp "rd-dash-$tag"
 Start-Process $chrome -ArgumentList @("--headless=new", "--disable-gpu", "--no-first-run", "--remote-debugging-port=$cdpPort",
     "--user-data-dir=$cdpProfile", "--window-size=1400,900", "about:blank")
 $deadline = (Get-Date).AddSeconds(15)
@@ -122,6 +123,10 @@ Write-Host "`n2) Connection status and nginx proxy"
 Check "/healthz through nginx" ((Invoke-WebRequest "$dash/healthz" -UseBasicParsing).Content -match '"postgres":"ok".*"starrocks":"ok"')
 $html = Dom "#/events" "document.querySelector('.status.ok')"
 Check "top bar shows 'Connected'" ((Section $html "connection-status") -match "Connected")
+$html = Dom "#/dashboards" "(function(){const b=document.querySelector('.bell-button');if(b&&!window.__bell){window.__bell=1;b.click();return false}return false})() || (document.querySelector('[data-testid=notification-preferences]') ?? false)"
+Check "the notification bell opens the preferences control" ($html -match 'data-testid="notification-preferences"')
+$html = Dom "#/dashboards" "(function(){const bell=document.querySelector('.bell-button');if(bell&&!window.__bell){window.__bell=1;bell.click();return false}const b=document.querySelector('[data-testid=notification-preferences]');if(b&&!window.__np){window.__np=1;b.click();return false}return false})() || (document.querySelector('[data-testid=notification-preferences-list]') ?? false)"
+Check "notification preferences list the kinds" ($html -match 'Stopped experiment results' -and $html -match 'data-kind="alert_fired"')
 
 Write-Host "`n3) Trends tab"
 $q = Q '{"series":[{"event":"page___TAG__","metric":"total"},{"event":"page___TAG__","metric":"unique_users"}],"filters":[],"deduplicate":false,"chart":"line"}'
@@ -151,6 +156,7 @@ Check "table: step 3 conversion 50%" ($table -match '>50%<')
 $html = Dom "#/funnels?range=7d&q=$q" "(function(){const b=document.querySelector('button.dropoff[data-step=`"1`"]');if(b&&!window.__d){window.__d=1;b.click()}return false})() || document.querySelector('[data-testid=funnel-dropped] tbody tr')"
 $panel = Section $html "funnel-dropped"
 Check "clicking the step 2 drop-off lists the 1 person who left (anonymous B)" ($panel -match '1 persons reached step 1' -and $html -match 'cell-sub">anonymous' -and $html -match 'data-testid="save-dropped-cohort"')
+Check "the funnel has a property correlation picker" ($html -match 'data-testid="property-correlation-picker"')
 
 Write-Host "`n4b) RFM and Lifecycle tabs"
 $q = Q '{"window_days":365,"purchase_event":"step3___TAG__","amount_property":"amount","filters":[]}'
@@ -171,6 +177,13 @@ $html = Dom "#/web?range=24h&q=$q" "document.querySelector('[data-testid=web-pag
 Check "Web analytics: one visitor, one pageview, one session, all bounced" ((Section $html "web-visitors") -match '>1</div>' -and (Section $html "web-pageviews") -match '>1</div>' -and (Section $html "web-sessions") -match '>1</div>' -and (Section $html "web-bounce-rate") -match '>100%</div>')
 Check "Web analytics: visitors and pageviews chart with two lines" (([regex]::Matches((Section $html "web-chart"), 'class="line"')).Count -eq 2)
 Check "Web analytics: the page, the direct source and the desktop device are listed" ((Section $html "web-pages") -match "data-value=""/dt-$tag""" -and (Section $html "web-sources") -match '>Direct<' -and (Section $html "web-devices") -match 'data-value="Desktop"')
+Check "Web analytics offers save, CSV and chart notes" ($html -match 'data-testid="save-insight"' -and $html -match 'data-testid="export-csv"' -and $html -match 'data-annotations=""')
+
+$html = Dom "#/stickiness?range=24h" "document.querySelector('[data-testid=save-insight]')"
+Check "Stickiness tab offers save and an event-or-action field" ($html -match 'data-testid="save-insight"' -and $html -match 'placeholder="event or action"')
+
+$html = Dom "#/cohorts/new" "document.querySelector('[data-testid=cohort-editor]')"
+Check "the cohort editor accepts an event or action" ($html -match 'placeholder="event or action"')
 
 $html = Dom "#/alerts" "document.querySelector('[data-testid=alerts-card]') && !document.querySelector('.skeleton')"
 Check "Alerts tab renders for the owner with a 'New alert' action" ($html -match 'data-testid="alerts-card"' -and $html -match 'data-testid="new-alert"')
@@ -203,10 +216,28 @@ Check "the flags table marks the locked flag" ($html -match "flag-lock[^>]*>Lock
 $null = Owner POST "/experiments/$($lockExperiment.id)/stop"
 $cleaned = (Owner DELETE "/experiments/$($lockExperiment.id)").Status -eq 204 -and (Owner DELETE "/flags/$($lockFlag.id)").Status -eq 204
 Check "the lock check's experiment and flag are deleted" $cleaned
+$html = Dom "#/dashboards" "(function(){const b=document.querySelector('.bell-button');if(b&&!window.__b1){window.__b1=1;b.click();return false}const p=document.querySelector('[data-testid=notification-preferences]');if(p&&!window.__p1){window.__p1=1;p.click();return false}const c=document.querySelector('input[data-kind=alert_fired]');if(c&&!window.__c1){window.__c1=1;c.click();return false}const c2=document.querySelector('input[data-kind=alert_fired]');if(c2&&!c2.checked){document.body.setAttribute('data-muted','1');return true}return false})()"
+$prefs = @((Owner GET "/notifications/preferences").Json.preferences)
+Check "unchecking a kind mutes it" ($html -match 'data-muted="1"' -and @($prefs | Where-Object { $_.kind -eq "alert_fired" -and -not $_.enabled }).Count -eq 1)
+$html = Dom "#/dashboards" "(function(){const b=document.querySelector('.bell-button');if(b&&!window.__b2){window.__b2=1;b.click();return false}const p=document.querySelector('[data-testid=notification-preferences]');if(p&&!window.__p2){window.__p2=1;p.click();return false}const c=document.querySelector('input[data-kind=alert_fired]');if(c&&!window.__c2){window.__c2=1;c.click();return false}const c2=document.querySelector('input[data-kind=alert_fired]');if(c2&&c2.checked){document.body.setAttribute('data-enabled','1');return true}return false})()"
+$prefs = @((Owner GET "/notifications/preferences").Json.preferences)
+Check "checking it again unmutes" ($html -match 'data-enabled="1"' -and @($prefs | Where-Object { $_.kind -eq "alert_fired" -and $_.enabled }).Count -eq 1)
+$guardCohort = (Owner POST "/cohorts" @{ name = "UI guard $tag"; kind = "static"; members = @("guard-$tag") }).Json
+$guardFlag = (Owner POST "/flags" @{ key = "ui-guard-$tag"; name = "UI guard $tag"; enabled = $false; rollout_percentage = 100; variants = @(); conditions = @(@{ property = '$cohort'; op = 'in_cohort'; value = $guardCohort.id }) }).Json
+$html = Dom "#/cohorts/$($guardCohort.id)" "document.querySelector('[data-testid=cohort-detail]') && document.querySelector('.dashboard-bar button.danger') && !document.querySelector('.skeleton')"
+$html = Dom "#/cohorts/$($guardCohort.id)" "(function(){const b=document.querySelector('.dashboard-bar button.danger');if(b&&!window.__gd){window.__gd=1;b.click();return false}return document.querySelector('.form-message.error')?.textContent || false})()"
+Check "deleting a cohort used by a flag shows the guard message" ($html -match 'used by the feature flag' -and $html -match "ui-guard-$tag")
+Check "the guarded cohort is kept" ((Owner GET "/cohorts/$($guardCohort.id)").Status -eq 200)
+Check "the guard check's flag and cohort are deleted" ((Owner DELETE "/flags/$($guardFlag.id)").Status -eq 204 -and (Owner DELETE "/cohorts/$($guardCohort.id)").Status -eq 204)
 $html = Dom "#/experiments" "document.querySelector('[data-testid=experiments-card]') && !document.querySelector('.skeleton')"
 Check "Experiments tab renders for the owner with a 'New experiment' action" ($html -match 'data-testid="experiments-card"' -and $html -match 'data-testid="new-experiment"')
 $html = Dom "#/experiments/new" "document.querySelector('[data-testid=experiment-editor] .suggest input') && !document.querySelector('.skeleton')"
 Check "the experiment editor opens with a goal event field that suggests names and a flag picker" ((Section $html "experiment-editor") -match 'role="combobox"' -and (Section $html "experiment-editor") -match 'id="experiment-flag"' -and (Section $html "experiment-editor") -match 'Create experiment')
+Check "the experiment editor has a secondary metrics section" ($html -match 'Secondary metrics' -and $html -match 'data-testid="add-secondary-metric"')
+$html = Dom "#/experiments" "document.querySelector('[data-testid=sample-size]') && document.querySelector('[data-testid=calculate-sample-size]')"
+Check "the experiments page has a sample size calculator" ($html -match 'data-testid="sample-size"' -and $html -match 'data-testid="calculate-sample-size"')
+$html = Dom "#/experiments" "(function(){const b=document.querySelector('[data-testid=calculate-sample-size]');if(b&&!window.__ss){window.__ss=1;b.click()}return false})() || (document.querySelector('[data-testid=sample-size-result]')?.textContent.includes('3,841') ?? false)"
+Check "the sample size calculator shows 3,841 per variant and 7,682 total" ($html -match '3,841' -and $html -match '7,682')
 
 Write-Host "`n4c) Catalog tab"
 $html = Dom "#/catalog" "[...document.querySelectorAll('[data-testid=recommendation-performance] tbody tr')].some((r) => r.textContent.includes('pdp-$tag'))"

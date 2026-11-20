@@ -45,6 +45,55 @@ public class ActionSqlTests
     }
 
     [Fact]
+    public void Retention_matches_the_events_of_start_and_return_actions()
+    {
+        var q = RetentionSql.Build(Builder(), "Signed up", ["$identify"], "Bought", ["purchase", "order_completed"], "week", 6, Range(), "UTC", To);
+
+        Assert.Matches(@"e\.event IN \(@p\d+, @p\d+, @p\d+\)", q.Sql);
+        Assert.Matches(@"e\.event IN \(@p\d+\) AND e\.timestamp < @p\d+ AS is_start", q.Sql);
+        Assert.Matches(@"e\.event IN \(@p\d+, @p\d+\) AS is_ret", q.Sql);
+        Assert.DoesNotContain(q.Parameters, p => (p.Value as string) is "Signed up" or "Bought");
+    }
+
+    [Fact]
+    public void Paths_start_from_any_event_of_an_action()
+    {
+        var q = PathSql.Steps(Builder(), "Browsing", ["product_viewed", "category_viewed"], 4, 3600, true);
+
+        Assert.Matches(@"e\.event IN \(@p\d+, @p\d+\) AS is_start", q.Sql);
+        Assert.DoesNotContain(q.Parameters, p => (p.Value as string) == "Browsing");
+    }
+
+    [Fact]
+    public void Lifecycle_follows_the_events_of_an_action()
+    {
+        var q = LifecycleSql.Build(Builder(), "Buying", ["purchase", "order_completed"], "week", Range(), "UTC", 1, 2);
+
+        Assert.Matches(@"e\.event IN \(@p\d+, @p\d+\)", q.Sql);
+        Assert.DoesNotContain(q.Parameters, p => (p.Value as string) == "Buying");
+    }
+
+    [Fact]
+    public void Property_correlation_reads_the_first_value_of_the_chosen_event()
+    {
+        var q = FunnelSql.PropertyCorrelation(Builder(), [new FunnelStep("view", null), new FunnelStep("buy", null)], 3600, "view", "plan", 10);
+
+        Assert.Contains("window_funnel(3600, e.timestamp, 0, [(e.event = @p", q.Sql);
+        Assert.Contains("min_by(CAST(get_json_string(e.properties, @p", q.Sql);
+        Assert.Contains(" AS VARCHAR)", q.Sql);
+        Assert.Contains("HAVING COUNT(*) >= 3", q.Sql);
+        Assert.Contains(q.Parameters, p => Equals(p.Value, "$.\"plan\""));
+    }
+
+    [Fact]
+    public void Property_correlation_casts_numeric_event_columns_to_text()
+    {
+        var q = FunnelSql.PropertyCorrelation(Builder(), [new FunnelStep("view", null), new FunnelStep("buy", null)], 3600, "view", "screen_width", 10);
+
+        Assert.Contains("min_by(CAST(e.screen_width AS VARCHAR)", q.Sql);
+    }
+
+    [Fact]
     public void Stickiness_counts_active_periods_per_person_with_tenant_filters_and_actions()
     {
         var q = StickinessSql.Build(Builder(), "Engaged", ["product_viewed", "purchase"], "day", Range(), "UTC");

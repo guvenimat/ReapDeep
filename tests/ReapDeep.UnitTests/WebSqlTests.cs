@@ -60,6 +60,16 @@ public class WebSqlTests
     }
 
     [Fact]
+    public void Session_sources_treat_a_referrer_from_the_same_host_as_direct()
+    {
+        var q = WebSql.Sessions(Builder(), 10);
+
+        Assert.Contains("lower(e.referring_domain) = lower(e.host)", q.Sql);
+        Assert.Contains("concat('www.', lower(e.host))", q.Sql);
+        Assert.Contains(q.Parameters, p => Equals(p.Value, "$direct"));
+    }
+
+    [Fact]
     public void Pageview_queries_filter_on_the_pageview_event()
     {
         foreach (var name in new[] { "series", "pages" })
@@ -97,7 +107,8 @@ public class WebSqlTests
         }
         Assert.Equal(WebSql.Dimensions.Length - 1, Regex.Matches(q.Sql, "UNION ALL").Count);
         var direct = Assert.Single(q.Parameters, x => Equals(x.Value, "$direct")).Name;
-        Assert.Contains($"COALESCE(e.referring_domain, {direct}) AS referring_domain", q.Sql);
+        Assert.Contains("CASE WHEN e.referring_domain IS NULL OR lower(e.referring_domain) = lower(e.host)", q.Sql);
+        Assert.Contains($"THEN {direct} ELSE e.referring_domain END AS referring_domain", q.Sql);
     }
 
     [Fact]

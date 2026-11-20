@@ -323,7 +323,7 @@ public class ExperimentResultTests
 {
     static Experiment Experiment(string kind, string control = "control") => new(1, "Checkout", "", 7, "new-checkout", true,
         [new("control", 50), new("test", 50)], control, ExperimentStatus.Running, new ExperimentMetric(kind, "purchase", Property: kind == "revenue" ? "amount" : null),
-        DateTime.UtcNow.AddDays(-1), null, null, null, DateTime.UtcNow, DateTime.UtcNow);
+        [], DateTime.UtcNow.AddDays(-1), null, null, null, DateTime.UtcNow, DateTime.UtcNow);
 
     [Fact]
     public void Conversion_results_compare_every_variant_with_the_control_and_report_exclusions()
@@ -357,5 +357,35 @@ public class ExperimentResultTests
         Assert.All(none.Variants, v => Assert.Equal(0, v.Persons));
         Assert.Null(none.Variants.Single(v => v.Key == "test").Comparison);
         Assert.Null(none.Srm);
+    }
+}
+
+public class SampleSizeTests
+{
+    [Fact]
+    public void Normal_quantiles_match_reference_values()
+    {
+        Assert.Equal(1.959964, Distributions.NormalQuantile(0.975), 6);
+        Assert.Equal(0.841621, Distributions.NormalQuantile(0.8), 6);
+    }
+
+    [Fact]
+    public void Two_proportion_sample_size_matches_the_formula()
+    {
+        var size = ExperimentStats.ForTwoProportions(0.1, 0.2);
+
+        Assert.Equal(3841, size.PerVariant);
+        Assert.Equal(7682, size.Total);
+        Assert.Equal(0.1, size.BaselineRate);
+        Assert.Equal(0.2, size.RelativeLift);
+        Assert.Equal(2, size.Variants);
+    }
+
+    [Fact]
+    public void More_variants_multiply_the_total_but_not_the_per_variant_count()
+    {
+        var three = ExperimentStats.ForTwoProportions(0.1, 0.2, variants: 3);
+        Assert.Equal(3841, three.PerVariant);
+        Assert.Equal(11523, three.Total);
     }
 }

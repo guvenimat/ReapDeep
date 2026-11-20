@@ -21,7 +21,9 @@ public sealed record CohortCondition(
     List<string>? Steps = null,
     int? Step = null,
     string? Outcome = null,
-    long? WindowSeconds = null);
+    long? WindowSeconds = null,
+    string? Action = null,
+    [property: JsonIgnore] List<string>? Events = null);
 
 public static class ConditionTypes
 {

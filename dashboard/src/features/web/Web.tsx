@@ -5,8 +5,11 @@ import { Legend } from '../../components/charts/common'
 import { TimeChart } from '../../components/charts/TimeChart'
 import { completeFilters, FilterEditor } from '../../components/editors'
 import { Card, Segmented, StatTile, Status } from '../../components/ui'
+import { webCsv } from '../../lib/csv'
 import { duration, ms, num, pct } from '../../lib/format'
 import { useDebounced, useQuery } from '../../lib/hooks'
+import { AnnotationNotes, useAnnotations } from '../insights/Annotations'
+import { SaveInsight } from '../insights/SaveInsight'
 
 type PagesView = 'top' | 'entry'
 type SourceView = 'referring_domain' | 'utm_source' | 'utm_medium' | 'utm_campaign'
@@ -48,9 +51,11 @@ export function valueLabel(dimension: WebDimension | 'pathname', value: string |
   return value === null || value === '' ? '(none)' : value
 }
 
-const webEmpty = (d?: WebAnalyticsResponse) => !!d && d.current.pageviews === 0 && d.previous.pageviews === 0
+export const webEmpty = (d?: WebAnalyticsResponse) => !!d && d.current.pageviews === 0 && d.previous.pageviews === 0
 
-export function Web({ params, range, onChange }: { params: URLSearchParams; range: Range; onChange: (q: string) => void }) {
+export function Web({ params, range, onChange, onInsight }: {
+  params: URLSearchParams; range: Range; onChange: (q: string) => void; onInsight: (id?: string) => void
+}) {
   const state = readState(params, WEB_DEFAULT)
   const set = (patch: Partial<WebState>) => onChange(JSON.stringify({ ...state, ...patch }))
   const request = useDebounced(JSON.stringify(webBody(state, range)))
@@ -62,6 +67,7 @@ export function Web({ params, range, onChange }: { params: URLSearchParams; rang
       <div className="card web-filters">
         <FilterEditor filters={state.filters} onChange={(filters) => set({ filters })} />
       </div>
+      <SaveInsight kind="web" query={state} params={params} onInsight={onInsight} csv={d && webCsv(d)} />
       <Status state={q} empty={webEmpty(d)} emptyTitle="No pageviews in this range"
         emptyText="Web analytics counts $pageview events. The JS SDK sends them automatically.">
         {d && <WebReport d={d} state={state} set={set} />}
@@ -77,6 +83,7 @@ function WebReport({ d, state, set }: { d: WebAnalyticsResponse; state: WebState
   const p = d.previous
   const vs = 'vs previous'
   const rows = (dim: WebDimension) => d.breakdowns.find((b) => b.dimension === dim)?.rows ?? []
+  const annotations = useAnnotations(d.series.map((s) => s.bucket), d.interval)
   return (
     <>
       <div className="stats web-stats">
@@ -89,10 +96,11 @@ function WebReport({ d, state, set }: { d: WebAnalyticsResponse; state: WebState
       </div>
       <Card testId="web-chart" title="Visitors and pageviews" meta={`${d.timezone} · ${ms(d.took_ms)}`}>
         <Legend items={[{ label: 'Visitors', colorIndex: 0 }, { label: 'Pageviews', colorIndex: 1 }]} />
-        <TimeChart buckets={d.series.map((s) => s.bucket)} interval={d.interval} mode="line" series={[
+        <TimeChart buckets={d.series.map((s) => s.bucket)} interval={d.interval} mode="line" notes={annotations.notes} series={[
           { key: 'visitors', label: 'Visitors', colorIndex: 0, values: d.series.map((s) => s.visitors) },
           { key: 'pageviews', label: 'Pageviews', colorIndex: 1, values: d.series.map((s) => s.pageviews) },
         ]} />
+        <AnnotationNotes notes={annotations.notes} from={annotations.from} to={annotations.to} onChange={annotations.reload} />
         <p className="footnote">Previous period: the same length right before {d.date_from.slice(0, 10)}; the tiles compare against it. <PreviousSummary p={p} /></p>
       </Card>
       <div className="web-grid">

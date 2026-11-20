@@ -3,21 +3,29 @@ import type { Filter } from '../../api/types'
 import { readState, toDateRange, type Range } from '../../app/route'
 import { completeFilters, EditorSection, eventOrAction, FilterEditor, SuggestInput } from '../../components/editors'
 import { Card, Segmented, StatTile, Status } from '../../components/ui'
+import { stickinessCsv } from '../../lib/csv'
 import { ms, num, pct } from '../../lib/format'
 import { useDebounced, useQuery } from '../../lib/hooks'
+import { SaveInsight } from '../insights/SaveInsight'
 
-type StickyInterval = 'day' | 'week'
-interface StickinessState { event: string; interval: StickyInterval; filters: Filter[] }
-const DEFAULT: StickinessState = { event: '', interval: 'day', filters: [] }
+export type StickyInterval = 'day' | 'week'
+export interface StickinessState { event: string; interval: StickyInterval; filters: Filter[] }
+export const STICKINESS_DEFAULT: StickinessState = { event: '', interval: 'day', filters: [] }
 
-function body(state: StickinessState, range: Range) {
+export function stickinessBody(state: StickinessState, range: Range) {
   return { ...eventOrAction(state.event.trim()), interval: state.interval, filters: completeFilters(state.filters), ...toDateRange(range) }
 }
 
-export function Stickiness({ params, range, onChange }: { params: URLSearchParams; range: Range; onChange: (q: string) => void }) {
-  const state = readState(params, DEFAULT)
+export function stickinessRegulars(d: { persons: number; buckets: { periods: number; persons: number }[]; total_periods: number }): number {
+  return d.buckets.filter((b) => b.periods * 2 >= d.total_periods).reduce((s, b) => s + b.persons, 0)
+}
+
+export function Stickiness({ params, range, onChange, onInsight }: {
+  params: URLSearchParams; range: Range; onChange: (q: string) => void; onInsight: (id?: string) => void
+}) {
+  const state = readState(params, STICKINESS_DEFAULT)
   const set = (patch: Partial<StickinessState>) => onChange(JSON.stringify({ ...state, ...patch }))
-  const request = useDebounced(JSON.stringify(body(state, range)))
+  const request = useDebounced(JSON.stringify(stickinessBody(state, range)))
   const q = useQuery((signal) => {
     const b = JSON.parse(request)
     return b.event || b.action ? api.stickiness(b, signal) : Promise.reject(new Error('Pick an event or an action'))
@@ -27,7 +35,7 @@ export function Stickiness({ params, range, onChange }: { params: URLSearchParam
   const max = Math.max(1, ...(d?.buckets.map((b) => b.persons) ?? [0]))
   const lastActive = d ? Math.max(1, ...d.buckets.filter((b) => b.persons > 0).map((b) => b.periods)) : 1
   const shown = d?.buckets.filter((b) => b.periods <= lastActive) ?? []
-  const regulars = d ? d.buckets.filter((b) => b.periods * 2 >= d.total_periods).reduce((s, b) => s + b.persons, 0) : 0
+  const regulars = d ? stickinessRegulars(d) : 0
 
   return (
     <div className="layout">
@@ -45,6 +53,7 @@ export function Stickiness({ params, range, onChange }: { params: URLSearchParam
         <FilterEditor filters={state.filters} onChange={(filters) => set({ filters })} />
       </aside>
       <section className="content">
+        <SaveInsight kind="stickiness" query={state} params={params} onInsight={onInsight} csv={d && stickinessCsv(d)} />
         <Status state={q} empty={d?.persons === 0}>
           {d && (
             <>

@@ -88,9 +88,12 @@ Check "delete -> 204, then the query reports the unknown action" ((S DELETE "/ac
 Write-Host "`n2d) Funnel correlation"
 function At([int]$minutesAgo) { [DateTime]::UtcNow.AddMinutes(-$minutesAgo).ToString("o") }
 function Ev([string]$who, [string]$name, [int]$ago) { "{`"event`":`"$name`",`"distinct_id`":`"$who`",`"timestamp`":`"$(At $ago)`"}" }
+function Evp([string]$who, [string]$name, [int]$ago, [string]$segment) {
+    "{`"event`":`"$name`",`"distinct_id`":`"$who`",`"timestamp`":`"$(At $ago)`",`"properties`":{`"segment`":`"$segment`"}}"
+}
 $corr = @()
-foreach ($k in 1..3) { $corr += (Ev "cv$k-$tag" "cview_$tag" 10); $corr += (Ev "cv$k-$tag" "coupon_$tag" 9); $corr += (Ev "cv$k-$tag" "cbuy_$tag" 8) }
-foreach ($k in 1..3) { $corr += (Ev "dv$k-$tag" "cview_$tag" 10); $corr += (Ev "dv$k-$tag" "faq_$tag" 9) }
+foreach ($k in 1..3) { $corr += (Evp "cv$k-$tag" "cview_$tag" 10 "pro"); $corr += (Ev "cv$k-$tag" "coupon_$tag" 9); $corr += (Ev "cv$k-$tag" "cbuy_$tag" 8) }
+foreach ($k in 1..3) { $corr += (Evp "dv$k-$tag" "cview_$tag" 10 "free"); $corr += (Ev "dv$k-$tag" "faq_$tag" 9) }
 $content = New-Object System.Net.Http.StringContent(('{"api_key":"pk_dev_local","batch":[' + ($corr -join ",") + ']}'), [Text.Encoding]::UTF8, "text/plain")
 if ([int]$plain.PostAsync("http://localhost:8000/capture", $content).Result.StatusCode -ne 202) { throw "capture failed" }
 $corrBody = "{`"steps`":[{`"event`":`"cview_$tag`"},{`"event`":`"cbuy_$tag`"}],`"window_seconds`":86400}"
@@ -102,6 +105,13 @@ $faq = @($cr.negative | Where-Object { $_.event -eq "faq_$tag" })[0]
 Check "the coupon is more common among converters: all 3 users converted, none dropped" ($coupon -and $coupon.converted_with -eq 3 -and $coupon.dropped_with -eq 0 -and $coupon.odds_ratio -gt 1)
 Check "the faq is more common among those who dropped: none converted, all 3 dropped" ($faq -and $faq.converted_with -eq 0 -and $faq.dropped_with -eq 3 -and $faq.odds_ratio -lt 1)
 Check "the funnel's own steps are never candidates" (-not (@($cr.positive) + @($cr.negative) | Where-Object { $_.event -in "cview_$tag", "cbuy_$tag" }))
+$propBody = "{`"steps`":[{`"event`":`"cview_$tag`"},{`"event`":`"cbuy_$tag`"}],`"window_seconds`":86400,`"event`":`"cview_$tag`",`"property`":`"segment`"}"
+$pc = (K POST "/query/funnels/correlation/property" $propBody).Json
+$pro = @($pc.values | Where-Object { $_.value -eq "pro" })[0]
+$free = @($pc.values | Where-Object { $_.value -eq "free" })[0]
+Check "property correlation: pro -> 3 converted, 0 dropped" ($pc.converted -eq 3 -and $pc.dropped -eq 3 -and $pro -and $pro.converted_with -eq 3 -and $pro.dropped_with -eq 0)
+Check "property correlation: free -> 0 converted, 3 dropped" ($free -and $free.converted_with -eq 0 -and $free.dropped_with -eq 3)
+Check "property correlation reports a p-value" ($null -ne $pro.p_value -and $null -ne $free.p_value)
 
 Write-Host "`n3) Dashboards"
 $d = S POST "/dashboards" "{`"name`":`"Board $tag`",`"insight_ids`":[$($tr.Json.id),$($fu.Json.id)]}"
@@ -112,8 +122,9 @@ Check "unknown insight id -> 400" ((S PUT "/dashboards/$($d.Json.id)" '{"insight
 Check "dashboard list shows the item count" ((((S GET "/dashboards").Json.dashboards) | Where-Object { $_.id -eq $d.Json.id }).items -eq 2)
 
 Write-Host "`n4) Dashboard in the browser"
-$chrome = "$env:ProgramFiles\Google\Chrome\Application\chrome.exe"
-$port = 9445; $profileDir = Join-Path $env:TEMP "rd-insights-$tag"
+$chrome = if ($env:OS -eq 'Windows_NT') { "$env:ProgramFiles\Google\Chrome\Application\chrome.exe" } else { "/usr/bin/google-chrome" }
+$temp = if ($env:TEMP) { $env:TEMP } else { [IO.Path]::GetTempPath() }
+$port = 9445; $profileDir = Join-Path $temp "rd-insights-$tag"
 Start-Process $chrome -ArgumentList @("--headless=new", "--disable-gpu", "--no-first-run", "--remote-debugging-port=$port", "--user-data-dir=$profileDir", "--window-size=1400,900", "about:blank")
 $deadline = (Get-Date).AddSeconds(15)
 do { Start-Sleep -Milliseconds 300; try { $null = Invoke-RestMethod "http://127.0.0.1:$port/json/version"; $up = $true } catch { $up = $false } } until ($up -or (Get-Date) -gt $deadline)

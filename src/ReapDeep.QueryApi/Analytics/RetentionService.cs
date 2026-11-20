@@ -1,13 +1,14 @@
 using System.Diagnostics;
 using ReapDeep.Analytics;
 using ReapDeep.Analytics.Sql;
+using ReapDeep.QueryApi.Actions;
 using ReapDeep.QueryApi.Auth;
 using ReapDeep.QueryApi.Cohorts;
 using ReapDeep.QueryApi.Infrastructure;
 
 namespace ReapDeep.QueryApi.Analytics;
 
-public sealed class RetentionService(StarRocksClient starRocks, CohortService cohortService)
+public sealed class RetentionService(StarRocksClient starRocks, CohortService cohortService, ActionRepository actions)
 {
     sealed record Plan(string Period, int Periods, TimeRange Cohorts, SqlQuery Query);
 
@@ -41,8 +42,12 @@ public sealed class RetentionService(StarRocksClient starRocks, CohortService co
 
     async Task<Plan> BuildPlanAsync(ProjectContext project, RetentionRequest req, CancellationToken ct)
     {
-        var startEvent = Ensure.NotBlank(req.StartEvent, "start_event");
-        var returnEvent = string.IsNullOrWhiteSpace(req.ReturnEvent) ? startEvent : req.ReturnEvent.Trim();
+        var start = await ResolveAsync(project.ProjectId, req.StartEvent, req.StartAction, ct);
+        var startEvent = Ensure.NotBlank(start.Event, "start_event");
+        var returnSeries = string.IsNullOrWhiteSpace(req.ReturnEvent) && string.IsNullOrWhiteSpace(req.ReturnAction)
+            ? start
+            : await ResolveAsync(project.ProjectId, req.ReturnEvent, req.ReturnAction, ct);
+        var returnEvent = Ensure.NotBlank(returnSeries.Event, "return_event");
         var period = Ensure.OneOf(req.Period ?? "week", "period", "day", "week");
         var periods = Ensure.InRange(req.Periods ?? (period == "week" ? 8 : 14), 1, 30, "periods");
 
@@ -55,9 +60,12 @@ public sealed class RetentionService(StarRocksClient starRocks, CohortService co
 
         var b = new SqlBuilder(project.ProjectId, activity.FromUtc, activity.ToUtc);
         b.AddFilters(req.Filters, await cohortService.ResolveAsync(project, req.Filters, null, ct));
-        var query = RetentionSql.Build(b, startEvent, returnEvent, period, periods, activity, project.TimeZoneId, cohorts.ToUtc);
+        var query = RetentionSql.Build(b, startEvent, start.Events, returnEvent, returnSeries.Events, period, periods, activity, project.TimeZoneId, cohorts.ToUtc);
         return new Plan(period, periods, cohorts, query);
     }
+
+    async Task<Series> ResolveAsync(long projectId, string? eventName, string? action, CancellationToken ct) =>
+        (await actions.ApplyAsync(projectId, [new Series(eventName ?? "", null, null, action, null)], ct))[0];
 
     static List<double?> WeightedAverage(List<RetentionCohort> cohorts, int periods) =>
         Enumerable.Range(0, periods + 1).Select(k =>

@@ -67,7 +67,8 @@ public sealed class SessionService(AccountRepository accounts, AuthCache cache, 
 
     public Task InvalidateUserAsync(long userId) => cache.RemoveUserAsync(userId);
 
-    public static string NormalizeEmail(string email) => email.Trim().ToLowerInvariant();
+    public static string NormalizeEmail(string email) =>
+        email.Trim().ToLowerInvariant();
 
     CookieOptions CookieOptions(DateTime? expires) => new()
     {

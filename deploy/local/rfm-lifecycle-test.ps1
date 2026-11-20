@@ -153,7 +153,11 @@ $fromSeg = ($mig.rows | Where-Object { $_.from -ne "none" } | Measure-Object per
 $toNone = ($mig.rows | Where-Object { $_.to -eq "none" } | Measure-Object persons -Sum).Sum
 Check "30 days ago 7 of the 10 were customers; c8, c9 and c10 are new -> $fromSeg / $fromNone" ($fromSeg -eq 7 -and $fromNone -eq 3 -and -not $toNone)
 Check "period_days 14 -> 400" ((S POST "/query/rfm/migration" @{ purchase_event = $buy; period_days = 14 }).Status -eq 400)
-function SleepCleanups { [int](cmd /c "docker exec reapdeep-starrocks sh -c ""grep -c __MySqlConnector__Sleep /data/deploy/starrocks/fe/log/fe.audit.log"" 2>nul") }
+function SleepCleanups {
+    $out = & docker exec reapdeep-starrocks sh -c "grep -c __MySqlConnector__Sleep /data/deploy/starrocks/fe/log/fe.audit.log" 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $out) { return 0 }
+    return [int]$out
+}
 $cleanupsBefore = SleepCleanups
 $since = (Get-Date).ToUniversalTime().AddSeconds(-1).ToString("o")
 foreach ($delay in 20, 40, 60, 90, 120) {
@@ -213,7 +217,9 @@ Check "weekly counting and validation" ((S POST "/query/stickiness" @{ event = $
 Write-Host "`n5) Saved insights"
 $i1 = S POST "/insights" @{ name = "RFM $tag"; kind = "rfm"; query = @{ window_days = 365; purchase_event = $buy } }
 $i2 = S POST "/insights" @{ name = "Lifecycle $tag"; kind = "lifecycle"; query = @{ event = $act; period = "week" } }
-Check "rfm and lifecycle insights can be saved" ($i1.Status -eq 201 -and $i2.Status -eq 201)
+$i3 = S POST "/insights" @{ name = "Stickiness $tag"; kind = "stickiness"; query = @{ event = $act; interval = "day"; filters = @() } }
+$i4 = S POST "/insights" @{ name = "Web $tag"; kind = "web"; query = @{ filters = @(); pages = "top"; sources = "referring_domain"; devices = "device_type" } }
+Check "rfm, lifecycle, stickiness and web insights can be saved" ($i1.Status -eq 201 -and $i2.Status -eq 201 -and $i3.Status -eq 201 -and $i4.Status -eq 201)
 
 Write-Host "`n6) Refunds"
 $refunder = "refunder_$tag"
@@ -228,7 +234,7 @@ Check "but never counts as an order or as the last purchase -> $($refunded.order
 
 Write-Host "`n7) Cleanup"
 $null = S DELETE "/cohorts/$($cohort.id)"
-foreach ($i in @($i1, $i2)) { if ($i.Json.id) { $null = S DELETE "/insights/$($i.Json.id)" } }
+foreach ($i in @($i1, $i2, $i3, $i4)) { if ($i.Json.id) { $null = S DELETE "/insights/$($i.Json.id)" } }
 
 if ($script:failed -eq 0) { Write-Host "`nPASSED: all RFM and lifecycle checks" -ForegroundColor Green }
 else { Write-Host "`nFAILED: $script:failed checks failed" -ForegroundColor Red; exit 1 }

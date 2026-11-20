@@ -37,6 +37,24 @@ public class SqlBuilderTests
         AssertTenantAndTimeFilters(query);
     }
 
+    [Fact]
+    public void A_cohort_filter_with_as_of_uses_the_daily_history_snapshot()
+    {
+        var cohorts = new Dictionary<long, CohortRef> { [7] = new(7, "Window shoppers", 123) };
+        var b = Builder();
+        b.AddFilters([new Filter("cohort", "7", "in", null, "2026-10-05")], cohorts);
+        var sql = b.Select("COUNT(*)");
+
+        Assert.Contains("analytics.cohort_members_history cm0", sql);
+        Assert.Contains("snapshot_day = CAST(@p", sql);
+        Assert.DoesNotContain("cm0.version", sql);
+        Assert.Throws<ValidationException>(() =>
+        {
+            var bad = Builder();
+            bad.AddFilters([new Filter("cohort", "7", "in", null, "05.10.2026")], cohorts);
+        });
+    }
+
     [Theory]
     [InlineData("total")]
     [InlineData("unique_users")]
@@ -53,9 +71,9 @@ public class SqlBuilderTests
     public void Funnel_retention_and_paths_keep_the_tenant_filter()
     {
         AssertTenantAndTimeFilters(FunnelSql.Build(Builder(), [new FunnelStep("a", null), new FunnelStep("b", null)], 3600, null, 0.1));
-        AssertTenantAndTimeFilters(RetentionSql.Build(Builder(), "signup", "login", "week", 6, Range(), "Europe/Istanbul", To));
-        AssertTenantAndTimeFilters(PathSql.Steps(Builder(), "$pageview", 4, 3600, true));
-        AssertTenantAndTimeFilters(PathSql.Sequences(Builder(), "$pageview", 4, 3600, true, 25));
+        AssertTenantAndTimeFilters(RetentionSql.Build(Builder(), "signup", null, "login", null, "week", 6, Range(), "Europe/Istanbul", To));
+        AssertTenantAndTimeFilters(PathSql.Steps(Builder(), "$pageview", null, 4, 3600, true));
+        AssertTenantAndTimeFilters(PathSql.Sequences(Builder(), "$pageview", null, 4, 3600, true, 25));
         AssertTenantAndTimeFilters(EventSql.Build(Builder(), "x", null, ["a", "b"], null, 50));
     }
 
@@ -136,7 +154,7 @@ public class SqlBuilderTests
     [Fact]
     public void Fixed_offset_ranges_avoid_convert_tz()
     {
-        var query = RetentionSql.Build(Builder(), "a", "b", "day", 7, Range(), "Europe/Istanbul", To);
+        var query = RetentionSql.Build(Builder(), "a", null, "b", null, "day", 7, Range(), "Europe/Istanbul", To);
         Assert.Contains("seconds_add(e.timestamp, 10800)", query.Sql);
         Assert.DoesNotContain("convert_tz", query.Sql);
     }

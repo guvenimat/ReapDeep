@@ -9,7 +9,10 @@ import { useQuery } from '../../lib/hooks'
 import { InsightTile } from './InsightTile'
 import { insightHref, KIND_LABEL } from './SaveInsight'
 
-const KIND_ICON: Record<InsightKind, IconName> = { trends: 'trends', funnels: 'funnels', retention: 'retention', paths: 'paths', lifecycle: 'lifecycle', rfm: 'rfm' }
+const KIND_ICON: Record<InsightKind, IconName> = {
+  trends: 'trends', funnels: 'funnels', retention: 'retention', paths: 'paths', lifecycle: 'lifecycle', rfm: 'rfm',
+  stickiness: 'retention', web: 'globe',
+}
 
 export function Dashboards({ id, params, range, openDashboard }: {
   id?: string; params: URLSearchParams; range: Range; openDashboard: (id?: string) => void
@@ -71,7 +74,7 @@ function DashboardList({ params, openDashboard }: { params: URLSearchParams; ope
         <FormMessage error={error} />
       </Card>
 
-      <Card title="Saved insights" meta="Save a trend, funnel, retention or paths query from its tab">
+      <Card title="Saved insights" meta="Save an analysis from its tab">
         <Status state={insights} empty={insights.data?.insights.length === 0} emptyText="Open an analysis tab and save it to see it here.">
           <div className="table-wrap">
             <table data-testid="insights-table">

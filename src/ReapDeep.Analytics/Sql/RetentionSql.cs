@@ -8,14 +8,18 @@ public static class RetentionSql
         ? $"CAST(floor(datediff({local}, '1970-01-05') / 7) AS BIGINT)"
         : $"CAST(datediff({local}, '1970-01-05') AS BIGINT)";
 
-    public static SqlQuery Build(SqlBuilder b, string startEvent, string returnEvent, string period, int periods,
+    public static SqlQuery Build(SqlBuilder b, string startEvent, IReadOnlyList<string>? startEvents,
+        string returnEvent, IReadOnlyList<string>? returnEvents, string period, int periods,
         TimeRange range, string tz, DateTime cohortEndUtc)
     {
-        b.Where($"e.event IN ({b.P(startEvent)}, {b.P(returnEvent)})");
-        var start = b.P(startEvent);
-        var ret = b.P(returnEvent);
+        var starts = startEvents is { Count: > 0 } ? startEvents : [startEvent];
+        var returns = returnEvents is { Count: > 0 } ? returnEvents : [returnEvent];
+        var names = starts.Concat(returns).Distinct().ToList();
+        b.Where($"e.event IN ({string.Join(", ", names.Select(b.P))})");
+        var start = SqlFragments.EventIs(b, startEvent, startEvents);
+        var ret = SqlFragments.EventIs(b, returnEvent, returnEvents);
         var ev = b.Select($"{b.Person()} AS person, {PeriodIndex(period, SqlFragments.LocalTime(b, range, tz))} AS p, " +
-                          $"e.event = {start} AND e.timestamp < {b.P(cohortEndUtc)} AS is_start, e.event = {ret} AS is_ret");
+                          $"{start} AND e.timestamp < {b.P(cohortEndUtc)} AS is_start, {ret} AS is_ret");
         return b.Build(
             $"WITH ev AS ({ev}), " +
             "cohort AS (SELECT person, MIN(p) AS c FROM ev WHERE is_start GROUP BY person), " +

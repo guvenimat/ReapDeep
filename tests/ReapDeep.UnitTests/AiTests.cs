@@ -13,7 +13,7 @@ public class AiTests
             control ? null : new ExperimentComparison(diff, diff - 0.01, diff + 0.01, diff * 10, null, null, null, significant ? 0.01 : 0.4, null, significant));
 
     static ExperimentResults Results(ExperimentSrm? srm, params ExperimentVariantResult[] variants) =>
-        new(1, "conversion", "z", "control", DateTime.UtcNow.AddDays(-7), DateTime.UtcNow, [.. variants], 0, srm, 0);
+        new(1, "conversion", "z", "control", DateTime.UtcNow.AddDays(-7), DateTime.UtcNow, [.. variants], 0, srm, [], 0);
 
     [Fact]
     public void A_sample_ratio_warning_overrides_everything()

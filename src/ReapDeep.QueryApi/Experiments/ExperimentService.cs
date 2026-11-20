@@ -14,22 +14,37 @@ public sealed class ExperimentService(StarRocksClient starRocks)
     {
         var (from, _) = ExperimentRules.Range(x.StartDate, x.EndDate, now);
         DateTime? to = x.EndDate is { } end && end < now ? end : null;
-        return new ExperimentResultsKey(x.Id, x.FlagKey, x.Variants, x.ControlVariant, x.Metric, from, to);
+        return new ExperimentResultsKey(x.Id, x.FlagKey, x.Variants, x.ControlVariant, x.Metric, x.SecondaryMetrics, from, to);
     }
 
     public async Task<ExperimentResults> RunAsync(ProjectContext project, Experiment x, CancellationToken ct)
     {
         var sw = Stopwatch.StartNew();
         var (from, to) = ExperimentRules.Range(x.StartDate, x.EndDate, DateTime.UtcNow);
-        var query = ExperimentSql.Build(new SqlBuilder(project.ProjectId, from, to), x.FlagKey, x.Variants.Select(v => v.Key).ToList(), x.Metric);
         using var gate = StarRocksClient.RequestGate();
+        var primary = MeasureAsync(project, x, x.Metric, from, to, gate, ct);
+        var secondary = x.SecondaryMetrics.Select(m => MeasureAsync(project, x, m, from, to, gate, ct)).ToList();
+        var primaryResult = await primary;
+        var secondaryResults = await Task.WhenAll(secondary);
+        return primaryResult with
+        {
+            Secondary = secondaryResults.Select((r, i) => new ExperimentMetricResults(r.MetricKind, x.SecondaryMetrics[i], r.Test, r.Variants,
+                r.ExcludedPersons, r.Srm)).ToList(),
+            TookMs = sw.Elapsed.TotalMilliseconds,
+        };
+    }
+
+    async Task<ExperimentResults> MeasureAsync(ProjectContext project, Experiment x, ExperimentMetric metric, DateTime from, DateTime to,
+        SemaphoreSlim gate, CancellationToken ct)
+    {
+        var query = ExperimentSql.Build(new SqlBuilder(project.ProjectId, from, to), x.FlagKey, x.Variants.Select(v => v.Key).ToList(), metric);
         var rows = await starRocks.QueryAsync(query, r => new VariantRow(
             r.IsDBNull(0) ? null : r.GetString(0),
             Convert.ToInt64(r.GetValue(1)),
             r.IsDBNull(2) ? 0 : Convert.ToInt64(r.GetValue(2)),
             r.IsDBNull(3) ? 0 : Convert.ToDouble(r.GetValue(3)),
             r.IsDBNull(4) ? null : Convert.ToDouble(r.GetValue(4))), gate, ct);
-        return Analyse(x, rows, from, to) with { TookMs = sw.Elapsed.TotalMilliseconds };
+        return Analyse(x with { Metric = metric }, rows, from, to);
     }
 
     public static ExperimentResults Analyse(Experiment x, IReadOnlyList<VariantRow> rows, DateTime from, DateTime to)
@@ -52,7 +67,7 @@ public sealed class ExperimentService(StarRocksClient starRocks)
 
         var srm = ExperimentStats.SampleRatioMismatch(x.Variants.Select(v => ((byKey.GetValueOrDefault(v.Key) ?? empty).Persons, v.Percentage)).ToList());
         return new ExperimentResults(x.Id, x.Metric.Kind ?? MetricKinds.Conversion, revenue ? "welch_t" : "two_proportion_z", x.ControlVariant,
-            from, to, variants, excluded, srm is null ? null : new ExperimentSrm(srm.ChiSquare, srm.PValue, srm.Mismatch, ExperimentStats.SrmAlpha), 0);
+            from, to, variants, excluded, srm is null ? null : new ExperimentSrm(srm.ChiSquare, srm.PValue, srm.Mismatch, ExperimentStats.SrmAlpha), [], 0);
     }
 
     static ExperimentComparison? Compare(bool revenue, VariantRow control, VariantRow row)

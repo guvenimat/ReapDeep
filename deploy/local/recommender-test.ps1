@@ -133,7 +133,10 @@ $variantEvents += @(1..2 | ForEach-Object { (InSession "t$_-$tag" "ta$_-$tag" "p
 $variantEvents += @(1..2 | ForEach-Object { (Events "u$_-$tag" "product_viewed" @($H)) + "," + (Events "u$_-$tag" "purchase" @($J)) })
 Capture ("[" + ($variantEvents -join ",") + "]")
 $variantsReady = WaitFor {
-    (Ids (Reco "model=co_viewed_session&item_id=$H&limit=3")) -contains $I -and (Ids (Reco "model=co_viewed&item_id=$H&limit=3")) -contains $J
+    $s = Ids (Reco "model=co_viewed_session&item_id=$H&limit=3")
+    $c = Ids (Reco "model=co_viewed&item_id=$H&limit=3")
+    $w = Ids (Reco "model=co_viewed_weighted&item_id=$H&limit=3")
+    $s.Count -gt 0 -and $s[0] -eq $I -and $c -contains $J -and $w.Count -gt 0 -and $w[0] -eq $J
 } 180
 Check "worker calculated the weighted and session variants" $variantsReady
 $plainCo = Ids (Reco "model=co_viewed&item_id=$H&limit=3")

@@ -1,0 +1,1196 @@
+openapi: 3.0.3
+info:
+  title: ReapDeep public API
+  version: 1.0.0
+  description: |
+    The interfaces a customer uses to send events, query analytics, manage the
+    catalog and read recommendations and feature flags. Management endpoints
+    used only by the dashboard (members, API keys, projects, platform settings)
+    are intentionally left out.
+
+    Authentication depends on the interface:
+
+    - `readKey` (`rk_...`) queries analytics and reads persons and cohorts.
+    - `serverKey` (`sk_...`) sends server-side events and reads flag definitions.
+    - `catalogKey` (`ck_...`) writes the product catalog.
+    - `publicKey` (`pk_...`) is public and is used by the browser SDK.
+    - A dashboard session cookie can replace a read key.
+
+    API keys are scoped to one project. Session requests name the project in
+    `X-Project-Id`.
+
+    The SQL and query shapes behind these endpoints are described in
+    [architecture.md](architecture.md) and the [README](../README.md).
+
+servers:
+  - url: http://localhost:8001
+    description: Query API
+  - url: http://localhost:8000
+    description: Ingestion API
+  - url: http://localhost:8002
+    description: Recommender
+
+tags:
+  - name: Capture
+  - name: Query
+  - name: Persons and cohorts
+  - name: Catalog
+  - name: Experiments
+  - name: Recommendations and flags
+
+paths:
+  /capture:
+    post:
+      tags: [Capture]
+      summary: Send browser events
+      description: Accepts a batch of up to 1,000 events and answers 202 only after Kafka acknowledged every event.
+      servers:
+        - url: http://localhost:8000
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaptureRequest'
+      responses:
+        '202':
+          description: Every event is durably in Kafka.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Accepted'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '429':
+          description: The project's per-second event quota was reached. Retry after the `Retry-After` header.
+        '503':
+          description: Kafka did not acknowledge within 10 seconds. Retry with the same `event_id`.
+  /batch:
+    post:
+      tags: [Capture]
+      summary: Send server-side events
+      description: Up to 5,000 events and 10 MB per request. The server key must stay on the server; a request with an `Origin` header is refused.
+      servers:
+        - url: http://localhost:8000
+      security:
+        - serverKey: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BatchRequest'
+      responses:
+        '202':
+          description: The batch is durably in Kafka.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Accepted'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: A browser (an `Origin` header) tried to use a server key.
+  /api/v1/query/trends:
+    post:
+      tags: [Query]
+      summary: Trends
+      security:
+        - readKey: []
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TrendRequest'
+      responses:
+        '200':
+          description: One result per series, optionally with a breakdown and the previous period.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrendResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/query/funnels:
+    post:
+      tags: [Query]
+      summary: Funnels
+      security:
+        - readKey: []
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FunnelRequest'
+      responses:
+        '200':
+          description: Counts, conversion and optional time to convert.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FunnelResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/v1/query/funnels/persons:
+    post:
+      tags: [Query]
+      summary: Persons who dropped off or converted
+      security:
+        - readKey: []
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FunnelPersonsRequest'
+      responses:
+        '200':
+          description: A page of persons at one funnel step.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /api/v1/query/funnels/correlation:
+    post:
+      tags: [Query]
+      summary: What sets converters apart
+      security:
+        - readKey: []
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FunnelRequest'
+      responses:
+        '200':
+          description: Events that are more common among converters or among persons who dropped off.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /api/v1/query/funnels/correlation/property:
+    post:
+      tags: [Query]
+      summary: Property values that set converters apart
+      description: Compares the values of one event property between the persons who converted and the persons who dropped off. Values seen by at least 3 persons are returned with a two-proportion p-value.
+      security:
+        - readKey: []
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FunnelPropertyRequest'
+      responses:
+        '200':
+          description: The property values, shares, odds and p-values.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FunnelPropertyResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/v1/experiments/sample-size:
+    post:
+      tags: [Experiments]
+      summary: Sample size for a two-proportion test
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SampleSizeRequest'
+      responses:
+        '200':
+          description: The persons each variant and all variants need.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SampleSize'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/v1/query/retention:
+    post:
+      tags: [Query]
+      summary: Retention
+      security:
+        - readKey: []
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RetentionRequest'
+      responses:
+        '200':
+          description: One row per cohort, plus the weighted average.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RetentionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/v1/query/paths:
+    post:
+      tags: [Query]
+      summary: Paths
+      security:
+        - readKey: []
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PathsRequest'
+      responses:
+        '200':
+          description: Top events per step and the most common full paths.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PathsResponse'
+  /api/v1/query/lifecycle:
+    post:
+      tags: [Query]
+      summary: Lifecycle
+      security:
+        - readKey: []
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LifecycleRequest'
+      responses:
+        '200':
+          description: New, returning, resurrecting and dormant persons per period.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LifecycleResponse'
+  /api/v1/query/stickiness:
+    post:
+      tags: [Query]
+      summary: Stickiness
+      security:
+        - readKey: []
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StickinessRequest'
+      responses:
+        '200':
+          description: How many persons were active on 1, 2, ... different days or weeks.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StickinessResponse'
+  /api/v1/query/web:
+    post:
+      tags: [Query]
+      summary: Web analytics
+      security:
+        - readKey: []
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WebAnalyticsRequest'
+      responses:
+        '200':
+          description: Summary, time series, top pages and session breakdowns.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WebAnalyticsResponse'
+  /api/v1/query/rfm:
+    post:
+      tags: [Query]
+      summary: RFM segments
+      security:
+        - readKey: []
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RfmRequest'
+      responses:
+        '200':
+          description: Scores, the 5x5 grid and the 11 segments.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /api/v1/query/rfm/migration:
+    post:
+      tags: [Query]
+      summary: Segment movement
+      security:
+        - readKey: []
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                window_days: { type: integer, enum: [90, 180, 365] }
+                period_days: { type: integer, enum: [7, 30, 90] }
+      responses:
+        '200':
+          description: Where each segment's members came from and where they went.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /api/v1/persons:
+    get:
+      tags: [Persons and cohorts]
+      summary: Search persons
+      security:
+        - readKey: []
+        - session: []
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 200 } }
+      responses:
+        '200':
+          description: A page of persons.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /api/v1/persons/{id}:
+    get:
+      tags: [Persons and cohorts]
+      summary: Person profile and event history
+      security:
+        - readKey: []
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/PersonId'
+      responses:
+        '200':
+          description: The person, their distinct ids, properties and recent events.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/persons/{id}/cohorts:
+    get:
+      tags: [Persons and cohorts]
+      summary: Cohorts a person belongs to
+      description: "`{id}` can be the person id or any of the person's distinct ids, including an earlier anonymous one."
+      security:
+        - readKey: []
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/PersonId'
+      responses:
+        '200':
+          description: The calculated dynamic and static cohorts that contain the person.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /api/v1/persons/{id}/rfm:
+    get:
+      tags: [Persons and cohorts]
+      summary: A person's RFM
+      security:
+        - readKey: []
+        - session: []
+      parameters:
+        - $ref: '#/components/parameters/PersonId'
+        - { name: window_days, in: query, schema: { type: integer, enum: [90, 180, 365] } }
+        - { name: purchase_event, in: query, schema: { type: string, default: purchase } }
+      responses:
+        '200':
+          description: The person's segment, scores and spend.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /api/v1/cohorts:
+    get:
+      tags: [Persons and cohorts]
+      summary: List cohorts
+      security:
+        - readKey: []
+        - session: []
+      responses:
+        '200':
+          description: The project's cohorts.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+    post:
+      tags: [Persons and cohorts]
+      summary: Create a dynamic or static cohort
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CohortBody'
+      responses:
+        '201':
+          description: The cohort was created and queued for calculation.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/v1/cohorts/preview:
+    post:
+      tags: [Persons and cohorts]
+      summary: Count the persons matching a cohort definition now
+      security:
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                definition:
+                  $ref: '#/components/schemas/CohortDefinition'
+      responses:
+        '200':
+          description: The live count and the query time.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  persons: { type: integer }
+                  took_ms: { type: number }
+  /api/v1/cohorts/{id}/persons:
+    get:
+      tags: [Persons and cohorts]
+      summary: Cohort members
+      security:
+        - readKey: []
+        - session: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: integer, format: int64 } }
+        - { name: cursor, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, maximum: 200 } }
+      responses:
+        '200':
+          description: A page of persons with their distinct ids and properties.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+  /api/v1/items:
+    get:
+      tags: [Catalog]
+      summary: List catalog items
+      security:
+        - readKey: []
+        - session: []
+      responses:
+        '200':
+          description: The project's catalog.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/CatalogItem'
+    put:
+      tags: [Catalog]
+      summary: Create or update catalog items
+      security:
+        - catalogKey: []
+        - session: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                items:
+                  type: array
+                  items:
+                    $ref: '#/components/schemas/CatalogItem'
+      responses:
+        '202':
+          description: The items were accepted.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/v1/items/{id}:
+    delete:
+      tags: [Catalog]
+      summary: Delete a catalog item
+      security:
+        - catalogKey: []
+        - session: []
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '204':
+          description: Deleted.
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /recommend:
+    get:
+      tags: [Recommendations and flags]
+      summary: Recommendations
+      description: Public, CORS-enabled and served from memory. `for_you` requires an HMAC signature.
+      servers:
+        - url: http://localhost:8002
+      security:
+        - publicKey: []
+      parameters:
+        - { name: api_key, in: query, required: true, schema: { type: string } }
+        - { name: model, in: query, schema: { type: string, enum: [popular, trending, co_viewed, bought_together, co_viewed_weighted, co_viewed_session, for_you] } }
+        - { name: item_id, in: query, schema: { type: string } }
+        - { name: category, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 10 } }
+        - { name: max_per_category, in: query, schema: { type: integer, minimum: 1, maximum: 50 } }
+        - { name: fallback, in: query, schema: { type: string, enum: [popular, content] } }
+        - { name: distinct_id, in: query, schema: { type: string } }
+        - { name: expires, in: query, schema: { type: integer, format: int64 } }
+        - { name: signature, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: The recommended items, filtered by stock and category.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RecommendResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          description: The per-IP request limit was reached. Retry after `Retry-After` seconds.
+  /flags:
+    get:
+      tags: [Recommendations and flags]
+      summary: Feature flags
+      description: Public, CORS-enabled and evaluated from memory. Send the person properties used for targeting.
+      servers:
+        - url: http://localhost:8002
+      security:
+        - publicKey: []
+      parameters:
+        - { name: api_key, in: query, required: true, schema: { type: string } }
+        - { name: identity, in: query, required: true, schema: { type: string } }
+        - { name: properties, in: query, schema: { type: string }, description: A JSON object of string, number or boolean values. }
+      responses:
+        '200':
+          description: Every enabled flag, with a variant, `true` or `false`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FlagsResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+
+components:
+  securitySchemes:
+    readKey:
+      type: http
+      scheme: bearer
+      description: A project read key (`rk_...`) or a session.
+    serverKey:
+      type: http
+      scheme: bearer
+      description: A server key (`sk_...`). Keep it on the server.
+    catalogKey:
+      type: http
+      scheme: bearer
+      description: A catalog write key (`ck_...`).
+    publicKey:
+      type: apiKey
+      in: query
+      name: api_key
+      description: The project's public key (`pk_...`).
+    session:
+      type: apiKey
+      in: cookie
+      name: rd_session
+      description: A dashboard session. Send the project in `X-Project-Id`.
+
+  parameters:
+    PersonId:
+      name: id
+      in: path
+      required: true
+      description: A person id or any of the person's distinct ids.
+      schema: { type: string }
+
+  responses:
+    BadRequest:
+      description: The request is not valid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: The key is missing, invalid or does not allow this interface.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotFound:
+      description: The resource was not found in this project.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+
+  schemas:
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+      required: [error]
+
+    Event:
+      type: object
+      required: [event, distinct_id]
+      properties:
+        event: { type: string, maxLength: 200 }
+        distinct_id: { type: string, maxLength: 200 }
+        event_id: { type: string, description: A stable id makes retries idempotent. }
+        timestamp: { type: string, format: date-time }
+        session_id: { type: string }
+        properties: { type: object, additionalProperties: true }
+
+    CaptureRequest:
+      type: object
+      required: [api_key, batch]
+      properties:
+        api_key: { type: string }
+        sent_at: { type: string, format: date-time }
+        batch:
+          type: array
+          maxItems: 1000
+          items:
+            $ref: '#/components/schemas/Event'
+
+    BatchRequest:
+      type: object
+      required: [batch]
+      properties:
+        batch:
+          type: array
+          maxItems: 5000
+          items:
+            $ref: '#/components/schemas/Event'
+
+    Accepted:
+      type: object
+      properties:
+        accepted: { type: integer }
+        duplicates: { type: integer }
+        rejected: { type: integer }
+
+    Filter:
+      type: object
+      required: [property, op]
+      properties:
+        scope: { type: string, enum: [event, person, cohort], default: event }
+        property: { type: string }
+        op: { type: string, enum: [eq, neq, contains, not_contains, gt, gte, lt, lte, in, not_in, is_set, is_not_set, in_cohort, not_in_cohort] }
+        value: { type: string }
+        as_of: { type: string, format: date, description: For cohort filters, use the daily membership snapshot from this day. }
+
+    Breakdown:
+      type: object
+      required: [property]
+      properties:
+        scope: { type: string, enum: [event, person, cohort], default: event }
+        property: { type: string }
+        limit: { type: integer, maximum: 25 }
+        cohort_ids: { type: array, maxItems: 5, items: { type: integer } }
+
+    Series:
+      type: object
+      required: [event, metric]
+      properties:
+        event: { type: string }
+        action: { type: string, description: Use an action instead of an event. }
+        metric: { type: string, enum: [total, unique_users, sum, average, median, p90, min, max] }
+        property: { type: string }
+
+    TrendRequest:
+      type: object
+      required: [series]
+      properties:
+        series:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items:
+            $ref: '#/components/schemas/Series'
+        formula: { type: string, description: For example `A / B * 100`. }
+        interval: { type: string, enum: [hour, day, week, month] }
+        date_from: { type: string, format: date }
+        date_to: { type: string, format: date }
+        filters:
+          type: array
+          items:
+            $ref: '#/components/schemas/Filter'
+        breakdown:
+          $ref: '#/components/schemas/Breakdown'
+        compare: { type: boolean }
+        deduplicate: { type: boolean }
+        explain: { type: boolean }
+
+    TrendResponse:
+      type: object
+      properties:
+        interval: { type: string }
+        timezone: { type: string }
+        took_ms: { type: number }
+        results:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+
+    FunnelStep:
+      type: object
+      properties:
+        event: { type: string }
+        action: { type: string }
+        filters:
+          type: array
+          items:
+            $ref: '#/components/schemas/Filter'
+
+    FunnelRequest:
+      type: object
+      required: [steps]
+      properties:
+        steps:
+          type: array
+          minItems: 2
+          maxItems: 8
+          items:
+            $ref: '#/components/schemas/FunnelStep'
+        window_seconds: { type: integer, description: Conversion window; 7 days by default. }
+        sampling: { type: number, minimum: 0, maximum: 1, description: 1 is exact. }
+        date_from: { type: string, format: date }
+        date_to: { type: string, format: date }
+        filters:
+          type: array
+          items:
+            $ref: '#/components/schemas/Filter'
+        breakdown:
+          $ref: '#/components/schemas/Breakdown'
+
+    FunnelPropertyRequest:
+      type: object
+      required: [steps, event, property]
+      properties:
+        steps:
+          type: array
+          minItems: 2
+          maxItems: 8
+          items:
+            $ref: '#/components/schemas/FunnelStep'
+        event: { type: string }
+        property: { type: string }
+        window_seconds: { type: integer }
+        date_from: { type: string, format: date }
+        date_to: { type: string, format: date }
+        filters:
+          type: array
+          items:
+            $ref: '#/components/schemas/Filter'
+
+    FunnelPropertyValue:
+      type: object
+      properties:
+        value: { type: string }
+        converted_with: { type: integer }
+        dropped_with: { type: integer }
+        converted_share: { type: number }
+        dropped_share: { type: number }
+        odds_ratio: { type: number }
+        p_value: { type: number, nullable: true }
+
+    FunnelPropertyResponse:
+      type: object
+      properties:
+        converted: { type: integer }
+        dropped: { type: integer }
+        event: { type: string }
+        property: { type: string }
+        min_persons: { type: integer }
+        took_ms: { type: number }
+        values:
+          type: array
+          items:
+            $ref: '#/components/schemas/FunnelPropertyValue'
+
+    SampleSizeRequest:
+      type: object
+      properties:
+        baseline_rate: { type: number, description: Between 0 and 1. }
+        relative_lift: { type: number, description: For example 0.2 for a 20% lift. }
+        alpha: { type: number, default: 0.05 }
+        power: { type: number, default: 0.8 }
+        variants: { type: integer, minimum: 2, maximum: 10, default: 2 }
+
+    SampleSize:
+      type: object
+      properties:
+        per_variant: { type: integer }
+        total: { type: integer }
+        baseline_rate: { type: number }
+        relative_lift: { type: number }
+        alpha: { type: number }
+        power: { type: number }
+        variants: { type: integer }
+
+    FunnelPersonsRequest:
+      allOf:
+        - $ref: '#/components/schemas/FunnelRequest'
+        - type: object
+          properties:
+            step: { type: integer }
+            kind: { type: string, enum: [dropped, converted] }
+            limit: { type: integer, maximum: 200 }
+
+    FunnelResponse:
+      type: object
+      properties:
+        window_seconds: { type: integer }
+        sampling: { type: number }
+        took_ms: { type: number }
+        results:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+
+    RetentionRequest:
+      type: object
+      required: [start_event]
+      properties:
+        start_event: { type: string }
+        start_action: { type: string }
+        return_event: { type: string }
+        return_action: { type: string }
+        period: { type: string, enum: [day, week], default: week }
+        periods: { type: integer, minimum: 1, maximum: 30 }
+        date_from: { type: string, format: date }
+        date_to: { type: string, format: date }
+        filters:
+          type: array
+          items:
+            $ref: '#/components/schemas/Filter'
+
+    RetentionResponse:
+      type: object
+      properties:
+        period: { type: string }
+        periods: { type: integer }
+        timezone: { type: string }
+        took_ms: { type: number }
+        cohorts:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        average:
+          type: array
+          items: { type: number, nullable: true }
+
+    PathsRequest:
+      type: object
+      required: [start_event]
+      properties:
+        start_event: { type: string }
+        start_action: { type: string }
+        depth: { type: integer, minimum: 2, maximum: 6 }
+        window_seconds: { type: integer, minimum: 60, maximum: 604800 }
+        pageview_paths: { type: boolean, default: true }
+        date_from: { type: string, format: date }
+        date_to: { type: string, format: date }
+        filters:
+          type: array
+          items:
+            $ref: '#/components/schemas/Filter'
+
+    PathsResponse:
+      type: object
+      properties:
+        start_event: { type: string }
+        depth: { type: integer }
+        persons: { type: integer }
+        took_ms: { type: number }
+        steps:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        paths:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+
+    LifecycleRequest:
+      type: object
+      properties:
+        event: { type: string, description: Empty counts any event as activity. }
+        action: { type: string }
+        period: { type: string, enum: [day, week, month] }
+        lookback_days: { type: integer, minimum: 7, maximum: 365 }
+        date_from: { type: string, format: date }
+        date_to: { type: string, format: date }
+        filters:
+          type: array
+          items:
+            $ref: '#/components/schemas/Filter'
+
+    LifecycleResponse:
+      type: object
+      properties:
+        event: { type: string, nullable: true }
+        period: { type: string }
+        lookback_days: { type: integer }
+        timezone: { type: string }
+        took_ms: { type: number }
+        periods:
+          type: array
+          items:
+            type: object
+            properties:
+              start: { type: string }
+              new: { type: integer }
+              returning: { type: integer }
+              resurrecting: { type: integer }
+              dormant: { type: integer }
+
+    StickinessRequest:
+      type: object
+      properties:
+        event: { type: string }
+        action: { type: string }
+        interval: { type: string, enum: [day, week] }
+        date_from: { type: string, format: date }
+        date_to: { type: string, format: date }
+        filters:
+          type: array
+          items:
+            $ref: '#/components/schemas/Filter'
+
+    StickinessResponse:
+      type: object
+      properties:
+        event: { type: string }
+        interval: { type: string }
+        total_periods: { type: integer }
+        persons: { type: integer }
+        average_periods: { type: number, nullable: true }
+        timezone: { type: string }
+        took_ms: { type: number }
+        buckets:
+          type: array
+          items:
+            type: object
+            properties:
+              periods: { type: integer }
+              persons: { type: integer }
+              share: { type: number }
+
+    WebAnalyticsRequest:
+      type: object
+      properties:
+        date_from: { type: string, format: date }
+        date_to: { type: string, format: date }
+        interval: { type: string, enum: [hour, day, week, month] }
+        limit: { type: integer, minimum: 1, maximum: 100 }
+        filters:
+          type: array
+          items:
+            $ref: '#/components/schemas/Filter'
+
+    WebAnalyticsResponse:
+      type: object
+      properties:
+        interval: { type: string }
+        timezone: { type: string }
+        date_from: { type: string }
+        date_to: { type: string }
+        previous_from: { type: string }
+        current: { type: object, additionalProperties: true }
+        previous: { type: object, additionalProperties: true }
+        series:
+          type: array
+          items: { type: object, additionalProperties: true }
+        pages:
+          type: array
+          items: { type: object, additionalProperties: true }
+        breakdowns:
+          type: array
+          items: { type: object, additionalProperties: true }
+        took_ms: { type: number }
+
+    RfmRequest:
+      type: object
+      properties:
+        window_days: { type: integer, enum: [90, 180, 365] }
+        purchase_event: { type: string, default: purchase }
+        amount_property: { type: string, default: amount }
+        filters:
+          type: array
+          items:
+            $ref: '#/components/schemas/Filter'
+
+    CohortCondition:
+      type: object
+      required: [type]
+      properties:
+        type: { type: string, enum: [performed_event, not_performed_event, person_property, rfm_segment, funnel] }
+        event: { type: string }
+        action: { type: string, description: Use an action instead of an event on performed_event and not_performed_event. }
+        count_op: { type: string, enum: [gte, lte, eq] }
+        count: { type: integer, minimum: 1, maximum: 10000 }
+        within_days: { type: integer, minimum: 1, maximum: 90 }
+        filters:
+          type: array
+          maxItems: 5
+          items:
+            $ref: '#/components/schemas/Filter'
+        property: { type: string }
+        op: { type: string }
+        value: {}
+        segments:
+          type: array
+          items: { type: string }
+        steps:
+          type: array
+          minItems: 2
+          maxItems: 8
+          items: { type: string }
+        step: { type: integer }
+        outcome: { type: string, enum: [dropped, converted] }
+        window_seconds: { type: integer }
+
+    CohortDefinition:
+      type: object
+      required: [groups]
+      properties:
+        groups:
+          type: array
+          minItems: 1
+          maxItems: 5
+          items:
+            type: object
+            properties:
+              conditions:
+                type: array
+                minItems: 1
+                maxItems: 10
+                items:
+                  $ref: '#/components/schemas/CohortCondition'
+
+    CohortBody:
+      type: object
+      required: [name, kind]
+      properties:
+        name: { type: string, maxLength: 200 }
+        description: { type: string, maxLength: 1000 }
+        kind: { type: string, enum: [dynamic, static] }
+        definition:
+          $ref: '#/components/schemas/CohortDefinition'
+        members:
+          type: array
+          maxItems: 100000
+          items: { type: string }
+
+    CatalogItem:
+      type: object
+      required: [item_id, title]
+      properties:
+        item_id: { type: string }
+        title: { type: string }
+        category: { type: string }
+        price: { type: number, nullable: true }
+        currency: { type: string }
+        in_stock: { type: boolean, default: true }
+        url: { type: string, description: An http(s) URL or a path starting with `/`. }
+        image_url: { type: string, description: An http(s) URL or a path starting with `/`. }
+        attributes: { type: object, additionalProperties: true }
+
+    RecommendedItem:
+      type: object
+      properties:
+        item_id: { type: string }
+        title: { type: string }
+        category: { type: string }
+        in_stock: { type: boolean }
+        score: { type: number }
+        source: { type: string }
+
+    RecommendResponse:
+      type: object
+      properties:
+        model: { type: string }
+        item_id: { type: string, nullable: true }
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RecommendedItem'
+
+    FlagsResponse:
+      type: object
+      properties:
+        flags:
+          type: object
+          additionalProperties: true

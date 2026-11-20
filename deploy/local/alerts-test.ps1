@@ -99,13 +99,22 @@ try {
     $sumInsight = (S POST "/insights" @{ name = "Alert sum $tag"; kind = "trends"; query = @{ series = @(@{ event = $ev; metric = "sum"; property = "amount" }, @{ event = $ev; metric = "unique_users" }); formula = "A / B" } }).Json
     $broken = (S POST "/insights" @{ name = "Broken $tag"; kind = "trends"; query = @{ series = @(@{ event = $ev; metric = "avg" }) } }).Json
     $funnel = (S POST "/insights" @{ name = "Funnel $tag"; kind = "funnels"; query = @{ steps = @("a", "b") } }).Json
+    $rfmInsight = (S POST "/insights" @{ name = "RFM $tag"; kind = "rfm"; query = @{ window_days = 365; purchase_event = $ev; amount_property = "amount" } }).Json
 
     Write-Host "`n2) Validation and access"
     $base = @{ name = "Volume $tag"; insight_id = $insight.id; condition = "above"; threshold = 2; window = "day"; webhook_url = $hookUrl }
     function With($patch) { $b = $base.Clone(); foreach ($k in $patch.Keys) { $b[$k] = $patch[$k] }; $b }
     Check "ftp webhook -> 400" ((S POST "/alerts" (With @{ webhook_url = "ftp://example.com/x" })).Status -eq 400)
     Check "webhook with credentials -> 400" ((S POST "/alerts" (With @{ webhook_url = "http://user:pw@example.com/x" })).Status -eq 400)
-    Check "funnel insight -> 400 (alerts watch trends)" ((S POST "/alerts" (With @{ insight_id = $funnel.id })).Status -eq 400)
+    $funnelAlert = S POST "/alerts" (With @{ name = "Funnel alert $tag"; insight_id = $funnel.id; metric = "funnel_conversion"; threshold = 0; enabled = $false })
+    Check "funnel insight -> 201 with the overall conversion metric" ($funnelAlert.Status -eq 201 -and $funnelAlert.Json.metric -eq "funnel_conversion")
+    $funnelCheck = (S POST "/alerts/$($funnelAlert.Json.id)/check").Json
+    Check "a funnel alert evaluates the overall conversion -> $($funnelCheck.value)" ($funnelCheck.state -eq "ok" -and $funnelCheck.value -eq 0)
+    $rfmAlert = S POST "/alerts" (With @{ name = "RFM alert $tag"; insight_id = $rfmInsight.id; metric = "rfm_persons:champions"; threshold = 0; enabled = $false })
+    Check "RFM insight -> 201 with a segment metric" ($rfmAlert.Status -eq 201 -and $rfmAlert.Json.metric -eq "rfm_persons:champions")
+    $rfmCheck = (S POST "/alerts/$($rfmAlert.Json.id)/check").Json
+    Check "an RFM alert evaluates the segment customers -> $($rfmCheck.value)" ($rfmCheck.state -eq "ok" -and $rfmCheck.value -eq 0)
+    Check "an RFM alert rejects a change condition -> 400" ((S POST "/alerts" (With @{ insight_id = $rfmInsight.id; metric = "rfm_persons:champions"; condition = "increase" })).Status -eq 400)
     Check "change condition with a non-positive percentage -> 400" ((S POST "/alerts" (With @{ condition = "increase"; threshold = 0 })).Status -eq 400)
     Check "unknown window -> 400" ((S POST "/alerts" (With @{ window = "month" })).Status -eq 400)
     Check "read API key cannot list alerts -> 403" ((K GET "/alerts").Status -eq 403)
@@ -139,6 +148,11 @@ try {
     Check "firing and resolving left two notifications that link to the alerts tab" ($mine.Count -eq 2 -and $mine[0].kind -eq "alert_resolved" -and $mine[1].kind -eq "alert_fired" -and $mine[0].link -eq "#/alerts")
     Check "they start unread" ($notes.unread -ge 2 -and $mine[0].unread -eq $true)
     Check "marking them read clears the unread count" ((S POST "/notifications/read").Status -eq 204 -and (S GET "/notifications").Json.unread -eq 0)
+    $prefs = @((S GET "/notifications/preferences").Json.preferences)
+    Check "notification preferences list the five kinds" (@($prefs).Count -eq 5 -and @($prefs | Where-Object { $_.kind -eq "alert_fired" -and $_.enabled }).Count -eq 1)
+    Check "muting a kind removes it from the list" ((S PUT "/notifications/preferences" @{ kind = "alert_fired"; enabled = $false }).Status -eq 204 -and @((S GET "/notifications").Json.notifications | Where-Object { $_.kind -eq "alert_fired" }).Count -eq 0)
+    Check "unmuting a kind brings it back" ((S PUT "/notifications/preferences" @{ kind = "alert_fired"; enabled = $true }).Status -eq 204 -and @((S GET "/notifications").Json.notifications | Where-Object { $_.kind -eq "alert_fired" }).Count -ge 1)
+    Check "a read key cannot read notification preferences -> 403" ((Send $plain GET "/notifications/preferences" $null @{ Authorization = "Bearer $readKey"; "X-Project-Id" = "1" }).Status -eq 403)
     Check "a read key cannot read notifications -> 403" ((Send $plain GET "/notifications" $null @{ Authorization = "Bearer $readKey"; "X-Project-Id" = "1" }).Status -eq 403)
 
     Write-Host "`n4b) Failed deliveries are retried"
@@ -229,7 +243,7 @@ try {
     $null = S DELETE "/insights/$($insight.id)"
     Check "deleting the insight deletes its alerts" (-not ((S GET "/alerts").Json.alerts | Where-Object { $_.id -in @($alert.id, $inc.id) }))
     foreach ($a in @($per, $bad)) { $null = S DELETE "/alerts/$($a.id)" }
-    foreach ($i in @($sumInsight, $broken, $funnel)) { $null = S DELETE "/insights/$($i.id)" }
+    foreach ($i in @($sumInsight, $broken, $funnel, $rfmInsight)) { $null = S DELETE "/insights/$($i.id)" }
     Check "alerts of this run removed" (-not ((S GET "/alerts").Json.alerts | Where-Object { $_.name -like "*$tag" }))
 }
 finally {

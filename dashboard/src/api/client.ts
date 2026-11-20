@@ -1,4 +1,4 @@
-import type { FunnelCorrelationResponse, StickinessResponse, NotificationItem, MemberLink, PlatformAuditEntry, AiNote, DigestSchedule, DigestFrequency, AiAccess, AiFeature, PlatformOrganization, AiAnswer, AiQueryAnswer, ActionDef, Annotation,
+import type { FunnelCorrelationResponse, FunnelPropertyResponse, SampleSize, StickinessResponse, NotificationItem, NotificationPreference, MemberLink, PlatformAuditEntry, AiNote, DigestSchedule, DigestFrequency, AiAccess, AiFeature, PlatformOrganization, AiAnswer, AiQueryAnswer, ActionDef, Annotation,
   Alert, AlertEvent, AlertInput, AlertTestInput, AlertTestResult, AuthTokenInfo, Experiment, ExperimentInput, ExperimentResults, FeatureFlag, FlagInput,
   ApiKey, CatalogItem, CatalogItemDetail, CatalogItemInput, Cohort, CohortDefinition, CohortKind, CohortPerson, Dashboard, DashboardSummary, DateRange, DeletionRequest, EventRow, FunnelPersonsResponse, FunnelRequest, FunnelResponse, Insight, InsightKind,
   HitRate, KeyScope, Me, Member, Metadata, ModelRun, LifecycleResponse, PathsResponse, WebAnalyticsResponse, Person, PersonCohortsResponse, RecommendationPerformanceResponse, RetentionResponse, RfmMigrationResponse, RfmPerson, RfmResponse, Role, TrendRequest, TrendResponse, ProjectDetail,
@@ -120,9 +120,14 @@ export const api = {
   aiQuery: (question: string) => request<AiQueryAnswer>('POST', '/api/v1/ai/query', { question }),
   aiDigest: () => request<AiAnswer>('POST', '/api/v1/ai/digest'),
   funnelCorrelation: (body: object, signal?: AbortSignal) => request<FunnelCorrelationResponse>('POST', '/api/v1/query/funnels/correlation', body, signal),
+  funnelPropertyCorrelation: (body: object, signal?: AbortSignal) =>
+    request<FunnelPropertyResponse>('POST', '/api/v1/query/funnels/correlation/property', body, signal),
   stickiness: (body: object, signal?: AbortSignal) => request<StickinessResponse>('POST', '/api/v1/query/stickiness', body, signal),
   notifications: () => request<{ notifications: NotificationItem[]; unread: number }>('GET', '/api/v1/notifications?limit=30'),
   markNotificationsRead: () => request<void>('POST', '/api/v1/notifications/read'),
+  notificationPreferences: () => request<{ preferences: NotificationPreference[] }>('GET', '/api/v1/notifications/preferences'),
+  setNotificationPreference: (kind: string, enabled: boolean) =>
+    request<void>('PUT', '/api/v1/notifications/preferences', { kind, enabled }),
   aiNotes: (signal?: AbortSignal) => request<{ notes: AiNote[] }>('GET', '/api/v1/ai/notes', undefined, signal),
   aiSchedule: (signal?: AbortSignal) => request<DigestSchedule>('GET', '/api/v1/ai/schedule', undefined, signal),
   setAiSchedule: (body: { frequency: DigestFrequency; weekday?: number; month_day?: number; hour?: number; email_to?: string[] }) =>
@@ -160,7 +165,7 @@ export const api = {
   recalculateCohort: (id: number) => request<Cohort>('POST', `/api/v1/cohorts/${id}/recalculate`),
   deleteCohort: (id: number) => request<void>('DELETE', `/api/v1/cohorts/${id}`),
   cohortUsage: (id: number, signal?: AbortSignal) =>
-    request<{ insights: { id: number; name: string; kind: string }[] }>('GET', `/api/v1/cohorts/${id}/usage`, undefined, signal),
+    request<{ insights: { id: number; name: string; kind: string }[]; flags: string[] }>('GET', `/api/v1/cohorts/${id}/usage`, undefined, signal),
   cohortPersons: (id: number, cursor?: string, signal?: AbortSignal) =>
     request<{ persons: CohortPerson[]; next_cursor: string | null }>('GET', `/api/v1/cohorts/${id}/persons?${qs({ cursor, limit: 50 })}`, undefined, signal),
   previewCohort: (definition: CohortDefinition, signal?: AbortSignal) =>
@@ -193,6 +198,7 @@ export const api = {
   experiments: (signal?: AbortSignal) => request<{ experiments: Experiment[] }>('GET', '/api/v1/experiments', undefined, signal),
   experiment: (id: number, signal?: AbortSignal) => request<Experiment>('GET', `/api/v1/experiments/${id}`, undefined, signal),
   experimentResults: (id: number, signal?: AbortSignal) => request<ExperimentResults>('GET', `/api/v1/experiments/${id}/results`, undefined, signal),
+  sampleSize: (body: object) => request<SampleSize>('POST', '/api/v1/experiments/sample-size', body),
   createExperiment: (body: ExperimentInput) => request<Experiment>('POST', '/api/v1/experiments', body),
   updateExperiment: (id: number, body: Partial<ExperimentInput>) => request<Experiment>('PUT', `/api/v1/experiments/${id}`, body),
   startExperiment: (id: number) => request<Experiment>('POST', `/api/v1/experiments/${id}/start`),

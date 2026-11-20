@@ -48,8 +48,11 @@ public static class WebSql
     public static SqlQuery Sessions(SqlBuilder b, int limit)
     {
         b.Where("e.session_id IS NOT NULL");
+        var referrer = $"CASE WHEN e.referring_domain IS NULL OR lower(e.referring_domain) = lower(e.host) " +
+                       $"OR lower(e.referring_domain) = concat('www.', lower(e.host)) " +
+                       $"OR concat('www.', lower(e.referring_domain)) = lower(e.host) THEN {b.P(Direct)} ELSE e.referring_domain END";
         var ev = b.Select($"{b.Person()} AS person, e.session_id AS sid, e.timestamp AS ts, IF(e.event = {b.P(Pageview)}, 1, 0) AS pv, " +
-                          $"e.pathname AS entry_page, COALESCE(e.referring_domain, {b.P(Direct)}) AS referring_domain, " +
+                          $"e.pathname AS entry_page, {referrer} AS referring_domain, " +
                           "e.utm_source, e.utm_medium, e.utm_campaign, e.device_type, e.browser, e.os");
         const string first = "IF(pv = 1, ts, NULL)";
         var attributes = string.Join(", ", Dimensions.Select(d => $"min_by({d}, {first}) AS {d}"));

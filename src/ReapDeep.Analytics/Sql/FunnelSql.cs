@@ -77,6 +77,26 @@ public static class FunnelSql
     public static double OddsRatio(long convertedWith, long convertedTotal, long droppedWith, long droppedTotal) =>
         ((convertedWith + 1.0) / (convertedTotal - convertedWith + 1.0)) / ((droppedWith + 1.0) / (droppedTotal - droppedWith + 1.0));
 
+    public static SqlQuery PropertyCorrelation(SqlBuilder b, IReadOnlyList<FunnelStep> steps, long windowSeconds, string eventName, string property, int limit)
+    {
+        var conds = steps.Select(st =>
+        {
+            var parts = new List<string> { SqlFragments.EventIs(b, st.Event, st.Events) };
+            parts.AddRange(st.Filters?.Select(b.Condition) ?? []);
+            return "(" + string.Join(" AND ", parts) + ")";
+        }).ToList();
+        var scanned = steps.SelectMany(st => st.Events is { Count: > 0 } events ? events : [st.Event]).Append(eventName).Distinct().ToList();
+        b.Where($"e.event IN ({string.Join(", ", scanned.Select(b.P))})");
+        var value = $"CAST({ColumnMapper.Expression(b, "event", property)} AS VARCHAR)";
+        var inner = b.Select($"{b.Person()} AS person, window_funnel({windowSeconds}, e.timestamp, 0, [{string.Join(", ", conds)}]) AS lvl, " +
+                             $"min_by({value}, IF(e.event = {b.P(eventName)}, e.timestamp, NULL)) AS value", groupBy: "1");
+        return b.Build(
+            $"WITH p AS (SELECT person, IF(lvl >= {steps.Count}, 1, 0) AS ok, value FROM ({inner}) x WHERE lvl > 0 AND value IS NOT NULL), " +
+            "t AS (SELECT SUM(ok) AS s, SUM(1 - ok) AS f FROM p) " +
+            "SELECT value, SUM(ok) AS cw, SUM(1 - ok) AS dw, MAX(t.s) AS s, MAX(t.f) AS f FROM p CROSS JOIN t GROUP BY value " +
+            $"HAVING COUNT(*) >= {MinCorrelationPersons} ORDER BY COUNT(*) DESC, value LIMIT {limit}");
+    }
+
     public static SqlQuery Build(SqlBuilder b, IReadOnlyList<FunnelStep> steps, long windowSeconds, Breakdown? bd, double sampling)
     {
         var conds = Conditions(b, steps);

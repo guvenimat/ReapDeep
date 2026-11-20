@@ -5,6 +5,7 @@ using ReapDeep.QueryApi.Analytics;
 using ReapDeep.QueryApi.Auth;
 using ReapDeep.QueryApi.Flags;
 using ReapDeep.QueryApi.Infrastructure;
+using ReapDeep.QueryApi.Notifications;
 
 namespace ReapDeep.QueryApi.Experiments;
 
@@ -15,12 +16,17 @@ public static class ExperimentEndpoints
         api.MapGet("/experiments", List);
         api.MapGet("/experiments/{id:long}", Get);
         api.MapGet("/experiments/{id:long}/results", GetResults);
+        api.MapPost("/experiments/sample-size", SampleSize).RequireUser();
         api.MapPost("/experiments", Create).RequireManager();
         api.MapPut("/experiments/{id:long}", Update).RequireManager();
         api.MapPost("/experiments/{id:long}/start", Start).RequireManager();
         api.MapPost("/experiments/{id:long}/stop", Stop).RequireManager();
         api.MapDelete("/experiments/{id:long}", Delete).RequireManager();
     }
+
+    static IResult SampleSize(SampleSizeRequest req) =>
+        ApiResults.Ok(ExperimentStats.ForTwoProportions(req.BaselineRate ?? 0.1, req.RelativeLift ?? 0.2, req.Alpha ?? ExperimentStats.Alpha,
+            req.Power ?? 0.8, req.Variants ?? 2), AppJsonContext.Default.SampleSize);
 
     static async Task<IResult> List(ProjectContext project, ExperimentRepository experiments, CancellationToken ct) =>
         ApiResults.Ok(new ExperimentsResponse(await experiments.ListAsync(project.ProjectId, ct)), AppJsonContext.Default.ExperimentsResponse);
@@ -74,13 +80,16 @@ public static class ExperimentEndpoints
             : ApiResults.Conflict("The experiment could not be started: its end date has passed or it is no longer a draft");
     }
 
-    static async Task<IResult> Stop(long id, ProjectContext project, ExperimentRepository experiments, CancellationToken ct)
+    static async Task<IResult> Stop(long id, ProjectContext project, ExperimentRepository experiments, NotificationRepository notifications,
+        CancellationToken ct)
     {
         if (await experiments.GetAsync(project.ProjectId, id, ct) is not { } current) return ApiResults.NotFound("Experiment not found");
         if (current.Status != ExperimentStatus.Running) return ApiResults.Conflict($"Only a running experiment can be stopped (this one is {current.Status})");
-        return await experiments.StopAsync(project.ProjectId, id, project.UserId!.Value, ct) is { } stopped
-            ? ApiResults.Ok(stopped, AppJsonContext.Default.Experiment)
-            : ApiResults.Conflict("The experiment is no longer running");
+        if (await experiments.StopAsync(project.ProjectId, id, project.UserId!.Value, ct) is not { } stopped)
+            return ApiResults.Conflict("The experiment is no longer running");
+        await notifications.AddAsync(project.ProjectId, NotificationKinds.ExperimentResult, $"Experiment \"{stopped.Name}\" stopped",
+            "The results are ready: open the experiment to compare the variants.", $"#/experiments/{id}", ct);
+        return ApiResults.Ok(stopped, AppJsonContext.Default.Experiment);
     }
 
     static async Task<IResult> Delete(long id, ProjectContext project, ExperimentRepository experiments, CancellationToken ct)
@@ -102,13 +111,15 @@ public static class ExperimentEndpoints
         var sameFlag = current is not null && flagId == current.FlagId;
         var control = ExperimentRules.Control(req.ControlVariant ?? (sameFlag ? current!.ControlVariant : null), flag.Variants);
         var metric = ExperimentRules.Metric(req.Metric ?? current?.Metric);
+        var secondary = ExperimentRules.SecondaryMetrics(req.SecondaryMetrics ?? current?.SecondaryMetrics);
         var start = Date(req.StartDate, current?.StartDate, project.TimeZone, isEnd: false, "start_date");
         var end = Date(req.EndDate, current?.EndDate, project.TimeZone, isEnd: true, "end_date");
         Ensure.That(start is not null || current is null || current.Status == ExperimentStatus.Draft, "start_date cannot be removed once the experiment has started");
         Ensure.That(start is null || end is null || end > start, "end_date must be after start_date");
         if (start is not null && end is not null)
             Ensure.That(end.Value - start.Value <= TimeSpan.FromDays(ExperimentRules.MaxRangeDays), $"An experiment can run for at most {ExperimentRules.MaxRangeDays} days");
-        return new ExperimentRepository.ExperimentValues(name, description, flagId, control, ExperimentRules.MetricJson(metric), start, end);
+        return new ExperimentRepository.ExperimentValues(name, description, flagId, control, ExperimentRules.MetricJson(metric),
+            ExperimentRules.MetricsJson(secondary), start, end);
     }
 
     static DateTime? Date(string? requested, DateTime? current, TimeZoneInfo tz, bool isEnd, string name) => requested switch

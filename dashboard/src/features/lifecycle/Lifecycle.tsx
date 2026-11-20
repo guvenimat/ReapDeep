@@ -3,7 +3,7 @@ import { readState, toDateRange, type Range } from '../../app/route'
 import { api } from '../../api/client'
 import { Legend } from '../../components/charts/common'
 import { LIFECYCLE_STATUSES, LifecycleChart } from '../../components/charts/LifecycleChart'
-import { completeFilters, EditorSection, FilterEditor, SuggestInput } from '../../components/editors'
+import { completeFilters, EditorSection, eventOrAction, FilterEditor, SuggestInput } from '../../components/editors'
 import { Card, Segmented, StatTile, Status } from '../../components/ui'
 import { bucketLabel, ms, num } from '../../lib/format'
 import { useDebounced, useQuery } from '../../lib/hooks'
@@ -17,8 +17,10 @@ export const LIFECYCLE_DEFAULT: LifecycleState = { event: '', period: 'week', lo
 const LOOKBACKS = [30, 90, 180, 365]
 
 export function lifecycleBody(state: LifecycleState, range: Range) {
+  const activity = eventOrAction(state.event.trim())
   return {
-    event: state.event.trim() || undefined,
+    event: 'event' in activity ? activity.event || undefined : undefined,
+    action: 'action' in activity ? activity.action : undefined,
     period: state.period,
     lookback_days: state.lookback_days,
     filters: completeFilters(state.filters),
@@ -49,9 +51,9 @@ export function Lifecycle({ params, range, onChange, onInsight }: {
   return (
     <div className="layout">
       <aside className="panel">
-        <EditorSection title="Activity" hint="Leave empty to count any event as activity, or pick one, for example purchase, to follow customers.">
+        <EditorSection title="Activity" hint="Leave empty to count any event as activity, or pick an event or an action, for example purchase, to follow customers.">
           <label className="field" htmlFor="lifecycle-event"><span>Active means did</span>
-            <SuggestInput id="lifecycle-event" list="events" value={state.event} placeholder="any event" onChange={(v) => set({ event: v })} aria-label="Lifecycle event" />
+            <SuggestInput id="lifecycle-event" list="events-actions" value={state.event} placeholder="any event or action" onChange={(v) => set({ event: v })} aria-label="Lifecycle event" />
           </label>
         </EditorSection>
         <EditorSection title="Period">

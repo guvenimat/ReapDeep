@@ -84,6 +84,15 @@ public class AlertTests
         Assert.Equal(firing, AlertRules.Evaluate(condition, threshold, value, previous).Firing);
 
     [Theory]
+    [InlineData("hour", null, 10)]
+    [InlineData("day", "trend", 60)]
+    [InlineData("week", "funnel_conversion", 360)]
+    [InlineData("day", "rfm_persons:champions", 1440)]
+    [InlineData("day", "rfm_revenue:at_risk", 1440)]
+    public void Rfm_alerts_are_checked_once_a_day_and_others_follow_the_window(string window, string? metric, int minutes) =>
+        Assert.Equal(TimeSpan.FromMinutes(minutes), AlertRules.CheckEvery(window, metric));
+
+    [Theory]
     [InlineData("pending", true, "fired")]
     [InlineData("ok", true, "fired")]
     [InlineData("error", true, "fired")]

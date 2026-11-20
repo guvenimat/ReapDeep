@@ -185,7 +185,9 @@ function CohortSelect({ value, onChange }: { value: string; onChange: (id: strin
 export function FilterEditor({ filters, onChange }: { filters: Filter[]; onChange: (f: Filter[]) => void }) {
   const update = (i: number, patch: Partial<Filter>) => onChange(filters.map((f, k) => (k === i ? { ...f, ...patch } : f)))
   const changeScope = (i: number, scope: Scope) =>
-    update(i, scope === 'cohort' ? { scope, property: '', op: 'in', value: undefined } : { scope, op: filters[i].scope === 'cohort' ? 'eq' : filters[i].op })
+    update(i, scope === 'cohort'
+      ? { scope, property: '', op: 'in', value: undefined }
+      : { scope, op: filters[i].scope === 'cohort' ? 'eq' : filters[i].op, as_of: undefined })
   return (
     <EditorSection title="Filters">
       {filters.map((f, i) => (
@@ -198,8 +200,17 @@ export function FilterEditor({ filters, onChange }: { filters: Filter[]; onChang
             <IconButton icon="close" label="Remove filter" onClick={() => onChange(filters.filter((_, k) => k !== i))} />
           </div>
           {f.scope === 'cohort' ? (
-            <Segmented<Op> size="sm" label="Cohort membership" value={f.op} onChange={(op) => update(i, { op })}
-              options={[{ id: 'in', label: 'In cohort' }, { id: 'not_in', label: 'Not in cohort' }]} />
+            <>
+              <Segmented<Op> size="sm" label="Cohort membership" value={f.op} onChange={(op) => update(i, { op })}
+                options={[{ id: 'in', label: 'In cohort' }, { id: 'not_in', label: 'Not in cohort' }]} />
+              <div className="row">
+                <label className="inline" htmlFor={`cohort-as-of-${i}`}>as of
+                  <input id={`cohort-as-of-${i}`} type="date" value={f.as_of ?? ''} aria-label="Cohort as of"
+                    onChange={(e) => update(i, { as_of: e.target.value || undefined })} />
+                </label>
+                <span className="editor-hint">Optional: use the daily snapshot from that day instead of current membership.</span>
+              </div>
+            </>
           ) : (
             <div className="row">
               <OpSelect value={f.op} onChange={(op) => update(i, { op })} />

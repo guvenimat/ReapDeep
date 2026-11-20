@@ -2,6 +2,7 @@ using System.Text.Json;
 using ReapDeep.Analytics;
 using ReapDeep.Analytics.Cohorts;
 using ReapDeep.QueryApi.Auth;
+using ReapDeep.QueryApi.Flags;
 using ReapDeep.QueryApi.Infrastructure;
 
 namespace ReapDeep.QueryApi.Cohorts;
@@ -42,10 +43,11 @@ public static class CohortEndpoints
     static async Task<IResult> PersonCohorts(string personId, ProjectContext project, CohortService service, CancellationToken ct) =>
         ApiResults.Ok(await service.OfPersonAsync(project, personId, ct), AppJsonContext.Default.PersonCohortsResponse);
 
-    static async Task<IResult> Usage(long id, ProjectContext project, CohortRepository cohorts, CancellationToken ct) =>
+    static async Task<IResult> Usage(long id, ProjectContext project, CohortRepository cohorts, FlagRepository flags, CancellationToken ct) =>
         await cohorts.GetAsync(project.ProjectId, id, ct) is null
             ? ApiResults.NotFound("Cohort not found")
-            : ApiResults.Ok(new CohortUsageResponse(await cohorts.UsageAsync(project.ProjectId, id, ct)), AppJsonContext.Default.CohortUsageResponse);
+            : ApiResults.Ok(new CohortUsageResponse(await cohorts.UsageAsync(project.ProjectId, id, ct),
+                await flags.NamesUsingCohortAsync(project.ProjectId, id, ct)), AppJsonContext.Default.CohortUsageResponse);
 
     static async Task<IResult> Preview(CohortPreviewRequest req, ProjectContext project, CohortService service, CancellationToken ct) =>
         ApiResults.Ok(await service.PreviewAsync(project, req.Definition, ct), AppJsonContext.Default.CohortPreviewResponse);
@@ -58,13 +60,13 @@ public static class CohortEndpoints
         var kind = Ensure.OneOf(req.Kind ?? CohortKinds.Dynamic, "kind", CohortKinds.All);
 
         var (definition, members) = kind == CohortKinds.Dynamic
-            ? (DefinitionJson(req.Definition), (IReadOnlyList<string>)[])
+            ? (await DefinitionJsonAsync(project, req.Definition, service, ct), (IReadOnlyList<string>)[])
             : ("{}", await service.StaticMembersAsync(project, req.Members, ct));
         var row = await cohorts.CreateAsync(project.ProjectId, name, description, kind, definition, members, project.UserId!.Value, ct);
         return ApiResults.Created(row, AppJsonContext.Default.CohortRow);
     }
 
-    static async Task<IResult> Update(long id, CohortBody req, ProjectContext project, CohortRepository cohorts, CancellationToken ct)
+    static async Task<IResult> Update(long id, CohortBody req, ProjectContext project, CohortRepository cohorts, CohortService service, CancellationToken ct)
     {
         if (await cohorts.GetAsync(project.ProjectId, id, ct) is not { } existing) return ApiResults.NotFound("Cohort not found");
         Ensure.That(req.Kind is null || req.Kind == existing.Row.Kind, "kind cannot be changed");
@@ -73,7 +75,7 @@ public static class CohortEndpoints
         var name = req.Name is null ? null : Ensure.NotBlank(req.Name, "name");
         var description = req.Description?.Trim();
         Ensure.That(description is null || description.Length <= 1000, "description can be at most 1000 characters");
-        var definition = req.Definition is null ? null : DefinitionJson(req.Definition);
+        var definition = req.Definition is null ? null : await DefinitionJsonAsync(project, req.Definition, service, ct);
         return await cohorts.UpdateAsync(project.ProjectId, id, name, description, definition, ct) is { } row
             ? ApiResults.Ok(row, AppJsonContext.Default.CohortRow)
             : ApiResults.NotFound("Cohort not found");
@@ -93,9 +95,14 @@ public static class CohortEndpoints
             ? ApiResults.Accepted(c.Row, AppJsonContext.Default.CohortRow)
             : ApiResults.NotFound("Cohort not found");
 
-    static async Task<IResult> Delete(long id, ProjectContext project, CohortRepository cohorts, CancellationToken ct) =>
-        await cohorts.DeleteAsync(project.ProjectId, id, ct) ? Results.NoContent() : ApiResults.NotFound("Cohort not found");
+    static async Task<IResult> Delete(long id, ProjectContext project, CohortRepository cohorts, FlagRepository flags, CancellationToken ct)
+    {
+        var names = await flags.NamesUsingCohortAsync(project.ProjectId, id, ct);
+        if (names.Count > 0)
+            return ApiResults.Conflict($"The cohort is used by the feature flag{(names.Count > 1 ? "s" : "")} {string.Join(", ", names.Select(n => $"'{n}'"))}; remove the cohort condition first");
+        return await cohorts.DeleteAsync(project.ProjectId, id, ct) ? Results.NoContent() : ApiResults.NotFound("Cohort not found");
+    }
 
-    static string DefinitionJson(CohortDefinition? definition) =>
-        JsonSerializer.Serialize(CohortRules.Normalize(definition), CohortJsonContext.Default.CohortDefinition);
+    static async Task<string> DefinitionJsonAsync(ProjectContext project, CohortDefinition? definition, CohortService service, CancellationToken ct) =>
+        JsonSerializer.Serialize(await service.NormalizeAsync(project, definition, ct), CohortJsonContext.Default.CohortDefinition);
 }

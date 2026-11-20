@@ -164,8 +164,9 @@ try {
     Check "a cohort member gets the flag once the worker syncs the cohort" $synced
     Check "the other member too, and not_in_cohort is off for them" ((Value (Flags "beta-$tag-2") $inKey) -eq $true -and (Value (Flags "beta-$tag-1") $outKey) -eq $false)
     Check "someone outside the cohort: in_cohort off, not_in_cohort on" ((Value (Flags "stranger-$tag") $inKey) -eq $false -and (Value (Flags "stranger-$tag") $outKey) -eq $true)
-    $null = S DELETE "/cohorts/$($beta.id)"
-    Check "deleting the cohort turns the in_cohort flag off for its former members" (WaitFor { (Value (Flags "beta-$tag-1") $inKey) -eq $false } 60)
+    $blocked = S DELETE "/cohorts/$($beta.id)"
+    Check "a cohort used by an enabled flag cannot be deleted -> 409" ($blocked.Status -eq 409 -and $blocked.Json.error -match $inKey)
+    Check "the refused delete leaves the flag targeting intact" ((Value (Flags "beta-$tag-1") $inKey) -eq $true)
 
     Write-Host "`n9) Project isolation"
     $other = (S POST "/projects" @{ name = "Flags $tag" }).Json
