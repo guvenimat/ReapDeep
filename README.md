@@ -548,7 +548,7 @@ npm test                # SDK unit tests (vitest + jsdom)
 
 The contract tests keep the hand-synchronized formats honest without running the stack: the event JSON written by ingestion must have exactly the fields the `events_from_kafka` routine load reads and the `events` table has; the person and distinct id payloads that the person worker and the deletion job write to the outbox must match their routine loads; no text ingestion writes may be longer, in UTF-8 bytes, than its StarRocks column; the SDK may only send fields the ingestion contract reads; and every field the dashboard's TypeScript types use must exist on the Query API contract of the same name.
 
-The end-to-end suite also runs in GitHub Actions (`.github/workflows/e2e.yml`): nightly at 03:00 UTC or on demand, it builds the local stack, runs the Query API, web analytics, cohort, RFM/lifecycle, insights and dashboard tests, and uploads the container logs when a step fails.
+The end-to-end suite also runs in GitHub Actions (`.github/workflows/e2e.yml`): on demand, it builds the local stack, runs the Query API, web analytics, cohort, RFM/lifecycle, insights and dashboard tests, and uploads the container logs when a step fails.
 
 Useful commands:
 
