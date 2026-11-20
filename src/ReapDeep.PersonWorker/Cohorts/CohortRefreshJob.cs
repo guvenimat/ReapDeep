@@ -66,7 +66,9 @@ public sealed class CohortRefreshJob(CohortRepository cohorts, StarRocksStore? s
             {
                 try
                 {
-                    await store.ExecuteAsync(CohortSql.Snapshot(cohort.ProjectId, cohort.Id, version, DateTime.UtcNow), ct);
+                    var snapshotDay = DateTime.UtcNow;
+                    await store.ExecuteAsync(CohortSql.DeleteSnapshot(cohort.ProjectId, cohort.Id, snapshotDay), ct);
+                    await store.ExecuteAsync(CohortSql.Snapshot(cohort.ProjectId, cohort.Id, version, snapshotDay), ct);
                 }
                 catch (Exception ex) when (!ct.IsCancellationRequested)
                 {

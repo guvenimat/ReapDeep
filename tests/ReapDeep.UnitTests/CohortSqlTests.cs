@@ -63,6 +63,21 @@ public class CohortSqlTests
     }
 
     [Fact]
+    public void Snapshot_replace_deletes_the_same_project_cohort_and_day_before_inserting()
+    {
+        var q = CohortSql.DeleteSnapshot(Project, 7, new DateTime(2026, 11, 20, 15, 30, 0, DateTimeKind.Utc));
+
+        Assert.StartsWith("DELETE FROM analytics.cohort_members_history", q.Sql);
+        Assert.Contains("project_id = @p", q.Sql);
+        Assert.Contains("cohort_id = @p", q.Sql);
+        Assert.Contains("snapshot_day = CAST(@p", q.Sql);
+        Assert.DoesNotContain("2026-11-20", q.Sql);
+        Assert.Contains(q.Parameters, p => p.Value is long v && v == Project);
+        Assert.Contains(q.Parameters, p => p.Value is long v && v == 7);
+        Assert.Contains(q.Parameters, p => Equals(p.Value, "2026-11-20"));
+    }
+
+    [Fact]
     public void Values_are_parameters_not_sql_text()
     {
         var def = Def([Performed("bought'; DROP TABLE x", filters: [new Filter("event", "$browser", "eq", Json("\"Chrome\""))]), Property("plan", "premium-tier")]);
