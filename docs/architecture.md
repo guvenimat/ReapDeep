@@ -525,11 +525,12 @@ The system is verified end to end against the real stack rather than with mocks:
 | `query-test.ps1` | every query type against data with known answers, EXPLAIN plans, latency |
 | `deletion-test.ps1` | person and distinct ID deletion, returning users, tombstone purge, removal from cohorts |
 | `cohort-test.ps1` | cohort rules against known answers (identity merge, negation, OR, static lists, actions), history snapshots and `as_of` filters, the flag-use deletion guard, filters and breakdowns, 404/409, recalculation, purge |
-| `alerts-test.ps1` | alert validation, firing and resolving against known values, signed webhooks received by a local listener, trend/funnel/RFM metrics, change and formula conditions, error states, cascade on insight deletion |
+| `alerts-test.ps1` | alert validation, firing and resolving against known values, signed webhooks received by a local listener, trend/funnel/RFM metrics, in-app notifications and per-kind preferences, change and formula conditions, error states, cascade on insight deletion |
 | `rfm-lifecycle-test.ps1` | one customer per RFM segment with known scores (ties, merged identities, orders without `order_id`, invalid amounts), `rfm_segment` cohorts, every lifecycle state per day and the look-back |
 | `auth-test.ps1`, `settings-test.ps1` | sessions, roles, API keys, CORS, forwarded headers, StarRocks grants |
 | `web-test.ps1` | visitors, pageviews, sessions, bounces and durations against hand-built sessions (including a merged identity, a session without a pageview, a pageview without a session and an earlier custom event), local-time buckets, the previous period, entry pages, referrers, UTM values, devices, filters, cache, access and project isolation |
-| `experiments-test.ps1` | conversion, funnel, window and revenue results against hand-built data with z, t, p and intervals from scipy, secondary metrics, sample size, excluded persons, conversions before exposure, SRM on skewed data, the variant lock, access and project isolation |
+| `experiments-test.ps1` | conversion, funnel, window and revenue results against hand-built data with z, t, p and intervals from scipy, secondary metrics, sample size, result notifications, excluded persons, conversions before exposure, SRM on skewed data, the variant lock, access and project isolation |
+| `flags-test.ps1` | variant and rollout shares over 6,000 identities, stable assignment, person-property and cohort targeting, the cohort-targeting deletion guard, access, exposure events and project isolation |
 | `dashboard-test.ps1`, `insights-test.ps1` | headless Chrome over the DevTools Protocol, every tab and dashboards; funnel and property correlation |
 | `load-test.ps1` | throughput, latency, loss and freshness; the 100M-event query benchmark |
 
