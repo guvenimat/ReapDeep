@@ -306,6 +306,7 @@ A dynamic cohort is a set of OR'ed groups of AND'ed conditions: *did event or ac
 - **Consistent versions:** each refresh writes a new version and switches to it atomically; the previous version is kept for 60 s so queries already running are not affected.
 - **Membership lookup:** `GET /api/v1/persons/{id}/cohorts` (read key) returns the calculated cohorts a person is in. `{id}` is a person id or any of the person's distinct_ids, including an earlier anonymous one, so a site can ask with its own user id and personalize the page or target a campaign. `GET /api/v1/cohorts/{id}/persons` lists the members page by page.
 - **Privacy:** deletion requests also remove the person from every cohort, and refreshes never run at the same time as a deletion batch of the same project.
+- **Safe deletion:** a cohort used by a feature flag cannot be deleted (`409` naming the flags); remove the cohort condition or the flag first, so a flag never silently loses its targeting.
 
 ### Catalog and recommendations
 
@@ -522,7 +523,7 @@ cd deploy/local
 .\server-test.ps1       # server keys, /batch with historical timestamps and duplicates, flag definitions, the .NET SDK sample run inside the compose network, revocation
 .\account-test.ps1      # invitation and password reset emails through Mailpit: single use, expiry, no account enumeration, rate limits
 .\insights-test.ps1     # saved insights and dashboards, chart notes, actions, funnel and property correlation, API and browser
-.\cohort-test.ps1       # cohorts: rules, actions, identity merge, static lists, history snapshots and as-of filters, filters and breakdowns, recalculation, deletion
+.\cohort-test.ps1       # cohorts: rules, actions, identity merge, static lists, history snapshots and as-of filters, flag-use deletion guard, filters and breakdowns, recalculation, deletion
 .\rfm-lifecycle-test.ps1  # RFM scores and segments with known answers, rfm_segment cohorts, lifecycle states and look-back, stickiness, saved insights
 .\alerts-test.ps1       # alerts: validation, firing and resolving, signed webhooks to a local receiver, notification preferences, manual retry, test notifications, change and formula conditions, errors
 .\recommender-test.ps1  # catalog, key scopes, models from real events, the public Recommender, stock changes, signed for_you requests

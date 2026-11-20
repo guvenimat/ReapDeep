@@ -84,4 +84,23 @@ public sealed class FlagRepository(NpgsqlDataSource db)
         await using var conn = await db.OpenConnectionAsync(ct);
         return (await conn.QueryAsync<long>("SELECT id FROM cohorts WHERE project_id = @ProjectId AND id = ANY(@Ids)", new { ProjectId = projectId, Ids = ids })).AsList();
     }
+
+    public async Task<List<string>> NamesUsingCohortAsync(long projectId, long cohortId, CancellationToken ct)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand("""
+            SELECT f.key FROM feature_flags f
+            WHERE f.project_id = $1 AND EXISTS (
+                SELECT 1 FROM jsonb_array_elements(f.conditions) c
+                WHERE c->>'op' IN ('in_cohort', 'not_in_cohort') AND c->>'value' = $2
+            )
+            ORDER BY f.key
+            """, conn);
+        cmd.Parameters.Add(new NpgsqlParameter<long> { TypedValue = projectId });
+        cmd.Parameters.Add(new NpgsqlParameter<string> { TypedValue = cohortId.ToString() });
+        var keys = new List<string>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) keys.Add(reader.GetString(0));
+        return keys;
+    }
 }

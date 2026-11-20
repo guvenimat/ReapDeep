@@ -301,6 +301,7 @@ last D days, did not perform an event, person property) or a static list of IDs.
 | Versioned writes with a 60 s grace period | overwrite in place | a refresh writes a new version and switches `active_version` in PostgreSQL in one transaction; queries already running finish on the old version, which is dropped once it has been retired for 60 s. |
 | Shared/exclusive per-project advisory lock between refreshes and deletion batches | none | without it a refresh that read the static list before a deletion committed could write the deleted IDs back afterwards (found by `deletion-test.ps1`). |
 | A daily snapshot in `cohort_members_history`; a filter can set `as_of` | keep every version, or evaluate the rules at query time | old versions are purged after 60 s. A daily snapshot is small (one row per member and day) and lets an analysis use membership on a fixed past day. This is not per-bucket membership: a missing snapshot day matches nobody. |
+| Refuse to delete a cohort while a flag condition references it | delete and leave the flag targeting an empty cohort | a deleted cohort would silently turn an `in_cohort` condition into "nobody"; the `409` names the flags so the manager can remove the condition first. |
 
 Semantics: analyses use current membership unless a cohort filter sets `as_of`. Refreshes run hourly by default (every 30 s in the local
 compose file), at most two at a time, and the jobs' StarRocks user is in its own resource group with a
@@ -523,7 +524,7 @@ The system is verified end to end against the real stack rather than with mocks:
 | `identity-test.ps1` | all identity rules, replays, outbox ordering, the colocated `LEFT JOIN` |
 | `query-test.ps1` | every query type against data with known answers, EXPLAIN plans, latency |
 | `deletion-test.ps1` | person and distinct ID deletion, returning users, tombstone purge, removal from cohorts |
-| `cohort-test.ps1` | cohort rules against known answers (identity merge, negation, OR, static lists, actions), history snapshots and `as_of` filters, filters and breakdowns, 404/409, recalculation, purge |
+| `cohort-test.ps1` | cohort rules against known answers (identity merge, negation, OR, static lists, actions), history snapshots and `as_of` filters, the flag-use deletion guard, filters and breakdowns, 404/409, recalculation, purge |
 | `alerts-test.ps1` | alert validation, firing and resolving against known values, signed webhooks received by a local listener, trend/funnel/RFM metrics, change and formula conditions, error states, cascade on insight deletion |
 | `rfm-lifecycle-test.ps1` | one customer per RFM segment with known scores (ties, merged identities, orders without `order_id`, invalid amounts), `rfm_segment` cohorts, every lifecycle state per day and the look-back |
 | `auth-test.ps1`, `settings-test.ps1` | sessions, roles, API keys, CORS, forwarded headers, StarRocks grants |

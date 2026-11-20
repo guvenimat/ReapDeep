@@ -2,6 +2,7 @@ using System.Text.Json;
 using ReapDeep.Analytics;
 using ReapDeep.Analytics.Cohorts;
 using ReapDeep.QueryApi.Auth;
+using ReapDeep.QueryApi.Flags;
 using ReapDeep.QueryApi.Infrastructure;
 
 namespace ReapDeep.QueryApi.Cohorts;
@@ -93,8 +94,13 @@ public static class CohortEndpoints
             ? ApiResults.Accepted(c.Row, AppJsonContext.Default.CohortRow)
             : ApiResults.NotFound("Cohort not found");
 
-    static async Task<IResult> Delete(long id, ProjectContext project, CohortRepository cohorts, CancellationToken ct) =>
-        await cohorts.DeleteAsync(project.ProjectId, id, ct) ? Results.NoContent() : ApiResults.NotFound("Cohort not found");
+    static async Task<IResult> Delete(long id, ProjectContext project, CohortRepository cohorts, FlagRepository flags, CancellationToken ct)
+    {
+        var names = await flags.NamesUsingCohortAsync(project.ProjectId, id, ct);
+        if (names.Count > 0)
+            return ApiResults.Conflict($"The cohort is used by the feature flag{(names.Count > 1 ? "s" : "")} {string.Join(", ", names.Select(n => $"'{n}'"))}; remove the cohort condition first");
+        return await cohorts.DeleteAsync(project.ProjectId, id, ct) ? Results.NoContent() : ApiResults.NotFound("Cohort not found");
+    }
 
     static async Task<string> DefinitionJsonAsync(ProjectContext project, CohortDefinition? definition, CohortService service, CancellationToken ct) =>
         JsonSerializer.Serialize(await service.NormalizeAsync(project, definition, ct), CohortJsonContext.Default.CohortDefinition);

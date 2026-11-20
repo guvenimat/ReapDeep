@@ -160,6 +160,13 @@ $null = S DELETE "/cohorts/$($fun.id)"
 $unknown = K GET "/persons/nobody-$tag/cohorts"
 Check "person cohorts: unknown id -> 200 with an empty list" ($unknown.Status -eq 200 -and @($unknown.Json.cohorts).Count -eq 0)
 
+Write-Host "`n3b) Cohort deletion is blocked while a flag uses it"
+$guard = (S POST "/cohorts" @{ name = "Guard $tag"; kind = "static"; members = @($personId) }).Json
+$guardFlag = (S POST "/flags" @{ key = "cohort-guard-$tag"; name = "Cohort guard $tag"; enabled = $false; rollout_percentage = 100; variants = @(); conditions = @(@{ property = '$cohort'; op = 'in_cohort'; value = $guard.id }) }).Json
+$blocked = S DELETE "/cohorts/$($guard.id)"
+Check "a cohort used by a flag cannot be deleted -> 409" ($blocked.Status -eq 409 -and $blocked.Json.error -match "cohort-guard-$tag")
+Check "deleting the flag unblocks the cohort" ((S DELETE "/flags/$($guardFlag.id)").Status -eq 204 -and (S DELETE "/cohorts/$($guard.id)").Status -eq 204)
+
 Write-Host "`n4) Cohorts in analyses"
 $in = (Trend @(@{ scope = "cohort"; property = "$($dyn.id)"; op = "in" })).Json.results[0].total
 $out = (Trend @(@{ scope = "cohort"; property = "$($dyn.id)"; op = "not_in" })).Json.results[0].total
