@@ -6,9 +6,7 @@ public class AuthTokenTests
 {
     [Theory]
     [InlineData(" Ada@Example.com ", "ada@example.com")]
-    [InlineData("İSTANBUL@Example.com", "istanbul@example.com")]
-    [InlineData("ırmak@Example.com", "irmak@example.com")]
-    public void Email_normalization_folds_turkish_letters(string input, string expected) =>
+    public void Email_normalization_trims_and_lowercases(string input, string expected) =>
         Assert.Equal(expected, SessionService.NormalizeEmail(input));
 
     [Fact]

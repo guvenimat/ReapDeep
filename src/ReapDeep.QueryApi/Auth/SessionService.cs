@@ -68,7 +68,7 @@ public sealed class SessionService(AccountRepository accounts, AuthCache cache, 
     public Task InvalidateUserAsync(long userId) => cache.RemoveUserAsync(userId);
 
     public static string NormalizeEmail(string email) =>
-        email.Trim().Replace('\u0130', 'i').Replace('\u0131', 'i').ToLowerInvariant();
+        email.Trim().ToLowerInvariant();
 
     CookieOptions CookieOptions(DateTime? expires) => new()
     {
