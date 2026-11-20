@@ -65,7 +65,7 @@ export function Actions() {
               <span className="spacer" />
               <button type="button" className="icon-button" aria-label={`Edit ${a.name}`} title="Edit" onClick={() => edit(a)}><Icon name="edit" /></button>
               <button type="button" className="icon-button" aria-label={`Delete ${a.name}`} title="Delete" disabled={busy}
-                onClick={() => window.confirm(`Delete the action "${a.name}"? Insights that use it will stop working.`) && run(() => api.deleteAction(a.id))}>
+                onClick={() => window.confirm(`Delete the action "${a.name}"? Saved insights that use it will stop working; cohorts that use it block the delete.`) && run(() => api.deleteAction(a.id))}>
                 <Icon name="trash" />
               </button>
             </li>

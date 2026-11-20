@@ -39,6 +39,10 @@ public static class ActionEndpoints
     static async Task<IResult> Update(long id, ActionBody req, ProjectContext project, ActionRepository actions, CancellationToken ct)
     {
         var (name, description, events) = Validate(req);
+        var current = await actions.NameAsync(project.ProjectId, id, ct);
+        if (current is null) return ApiResults.NotFound("Action not found");
+        if (!string.Equals(current, name, StringComparison.Ordinal) && await actions.CohortsUsingAsync(project.ProjectId, current, ct) is { Count: > 0 } users)
+            return ApiResults.Conflict($"The action is used by the cohort{(users.Count > 1 ? "s" : "")} {string.Join(", ", users.Select(n => $"'{n}'"))}; it cannot be renamed while a cohort uses it");
         return await actions.UpdateAsync(project.ProjectId, id, name, description, events, ct) switch
         {
             { Found: false } => ApiResults.NotFound("Action not found"),
@@ -47,8 +51,14 @@ public static class ActionEndpoints
         };
     }
 
-    static async Task<IResult> Delete(long id, ProjectContext project, ActionRepository actions, CancellationToken ct) =>
-        await actions.DeleteAsync(project.ProjectId, id, ct) ? Results.NoContent() : ApiResults.NotFound("Action not found");
+    static async Task<IResult> Delete(long id, ProjectContext project, ActionRepository actions, CancellationToken ct)
+    {
+        var name = await actions.NameAsync(project.ProjectId, id, ct);
+        if (name is null) return ApiResults.NotFound("Action not found");
+        if (await actions.CohortsUsingAsync(project.ProjectId, name, ct) is { Count: > 0 } names)
+            return ApiResults.Conflict($"The action is used by the cohort{(names.Count > 1 ? "s" : "")} {string.Join(", ", names.Select(n => $"'{n}'"))}; remove it from the cohort first");
+        return await actions.DeleteAsync(project.ProjectId, id, ct) ? Results.NoContent() : ApiResults.NotFound("Action not found");
+    }
 
     static (string Name, string Description, string[] Events) Validate(ActionBody req)
     {
@@ -120,6 +130,35 @@ public sealed class ActionRepository(NpgsqlDataSource db)
     {
         await using var conn = await db.OpenConnectionAsync(ct);
         return await conn.ExecuteAsync("DELETE FROM actions WHERE project_id = @ProjectId AND id = @Id", new { ProjectId = projectId, Id = id }) > 0;
+    }
+
+    public async Task<string?> NameAsync(long projectId, long id, CancellationToken ct)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand("SELECT name FROM actions WHERE project_id = $1 AND id = $2", conn);
+        cmd.Parameters.Add(new NpgsqlParameter<long> { TypedValue = projectId });
+        cmd.Parameters.Add(new NpgsqlParameter<long> { TypedValue = id });
+        return await cmd.ExecuteScalarAsync(ct) as string;
+    }
+
+    public async Task<List<string>> CohortsUsingAsync(long projectId, string actionName, CancellationToken ct)
+    {
+        await using var conn = await db.OpenConnectionAsync(ct);
+        await using var cmd = new NpgsqlCommand("""
+            SELECT c.name FROM cohorts c
+            WHERE c.project_id = $1 AND c.deleted_at IS NULL AND c.kind = 'dynamic'
+              AND EXISTS (
+                SELECT 1 FROM jsonb_array_elements(COALESCE(c.definition->'groups', '[]'::jsonb)) g,
+                              jsonb_array_elements(COALESCE(g->'conditions', '[]'::jsonb)) cond
+                WHERE cond->>'action' = $2)
+            ORDER BY c.name
+            """, conn);
+        cmd.Parameters.Add(new NpgsqlParameter<long> { TypedValue = projectId });
+        cmd.Parameters.Add(new NpgsqlParameter<string> { TypedValue = actionName });
+        var names = new List<string>();
+        await using var reader = await cmd.ExecuteReaderAsync(ct);
+        while (await reader.ReadAsync(ct)) names.Add(reader.GetString(0));
+        return names;
     }
 
     public async Task<List<Series>> ApplyAsync(long projectId, List<Series> series, CancellationToken ct)

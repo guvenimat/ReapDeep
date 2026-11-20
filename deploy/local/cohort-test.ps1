@@ -116,8 +116,16 @@ $actReady = WaitReady $actCohort.id
 Check "worker calculates an action cohort: 2 persons" ($actReady -and $actReady.member_count -eq 2)
 $missing = S POST "/cohorts/preview" @{ definition = (Definition @(, @(@{ type = "performed_event"; action = "missing-$tag"; count_op = "gte"; count = 1; within_days = 1 }))) }
 Check "an unknown action is rejected -> 400" ($missing.Status -eq 400)
+$blockedDelete = S DELETE "/actions/$($action.id)"
+Check "an action used by a cohort cannot be deleted -> 409" ($blockedDelete.Status -eq 409 -and $blockedDelete.Json.error -match "Engaged action $tag")
+$blockedRename = S PUT "/actions/$($action.id)" @{ name = "Renamed $tag"; description = ""; events = @($view, $buy) }
+Check "an action used by a cohort cannot be renamed -> 409" ($blockedRename.Status -eq 409)
+$sameName = S PUT "/actions/$($action.id)" @{ name = $action.name; description = "still used"; events = @($view, $buy) }
+Check "a used action can still change its description and events -> 200" ($sameName.Status -eq 200)
 S DELETE "/cohorts/$($actCohort.id)" | Out-Null
-S DELETE "/actions/$($action.id)" | Out-Null
+Start-Sleep -Seconds 1
+$freeDelete = S DELETE "/actions/$($action.id)"
+Check "once the cohort is deleted the action can be deleted -> 204" ($freeDelete.Status -eq 204)
 
 Write-Host "`n3) Dynamic, property and static cohorts"
 $dyn = (S POST "/cohorts" @{ name = "Window shoppers $tag"; kind = "dynamic"; definition = $windowShoppers }).Json
