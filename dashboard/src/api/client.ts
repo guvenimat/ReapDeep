@@ -165,7 +165,7 @@ export const api = {
   recalculateCohort: (id: number) => request<Cohort>('POST', `/api/v1/cohorts/${id}/recalculate`),
   deleteCohort: (id: number) => request<void>('DELETE', `/api/v1/cohorts/${id}`),
   cohortUsage: (id: number, signal?: AbortSignal) =>
-    request<{ insights: { id: number; name: string; kind: string }[] }>('GET', `/api/v1/cohorts/${id}/usage`, undefined, signal),
+    request<{ insights: { id: number; name: string; kind: string }[]; flags: string[] }>('GET', `/api/v1/cohorts/${id}/usage`, undefined, signal),
   cohortPersons: (id: number, cursor?: string, signal?: AbortSignal) =>
     request<{ persons: CohortPerson[]; next_cursor: string | null }>('GET', `/api/v1/cohorts/${id}/persons?${qs({ cursor, limit: 50 })}`, undefined, signal),
   previewCohort: (definition: CohortDefinition, signal?: AbortSignal) =>

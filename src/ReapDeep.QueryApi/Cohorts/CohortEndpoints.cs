@@ -43,10 +43,11 @@ public static class CohortEndpoints
     static async Task<IResult> PersonCohorts(string personId, ProjectContext project, CohortService service, CancellationToken ct) =>
         ApiResults.Ok(await service.OfPersonAsync(project, personId, ct), AppJsonContext.Default.PersonCohortsResponse);
 
-    static async Task<IResult> Usage(long id, ProjectContext project, CohortRepository cohorts, CancellationToken ct) =>
+    static async Task<IResult> Usage(long id, ProjectContext project, CohortRepository cohorts, FlagRepository flags, CancellationToken ct) =>
         await cohorts.GetAsync(project.ProjectId, id, ct) is null
             ? ApiResults.NotFound("Cohort not found")
-            : ApiResults.Ok(new CohortUsageResponse(await cohorts.UsageAsync(project.ProjectId, id, ct)), AppJsonContext.Default.CohortUsageResponse);
+            : ApiResults.Ok(new CohortUsageResponse(await cohorts.UsageAsync(project.ProjectId, id, ct),
+                await flags.NamesUsingCohortAsync(project.ProjectId, id, ct)), AppJsonContext.Default.CohortUsageResponse);
 
     static async Task<IResult> Preview(CohortPreviewRequest req, ProjectContext project, CohortService service, CancellationToken ct) =>
         ApiResults.Ok(await service.PreviewAsync(project, req.Definition, ct), AppJsonContext.Default.CohortPreviewResponse);

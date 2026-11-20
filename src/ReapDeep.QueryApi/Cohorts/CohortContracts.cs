@@ -29,4 +29,4 @@ public sealed record PersonCohort(long Id, string Name, string Kind, DateTime? C
 public sealed record PersonCohortsResponse(List<PersonCohort> Cohorts);
 
 public sealed record CohortUsage(long Id, string Name, string Kind);
-public sealed record CohortUsageResponse(List<CohortUsage> Insights);
+public sealed record CohortUsageResponse(List<CohortUsage> Insights, List<string> Flags);

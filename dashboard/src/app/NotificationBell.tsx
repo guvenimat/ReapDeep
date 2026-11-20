@@ -19,23 +19,25 @@ export function NotificationBell({ projectId }: { projectId: number }) {
   const [open, setOpen] = useState(false)
   const [showPrefs, setShowPrefs] = useState(false)
   const [preferences, setPreferences] = useState<NotificationPreference[]>([])
-  const [version, setVersion] = useState(0)
   const box = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    if (!projectId) return
     let stop = false
     const load = () => api.notifications().then((r) => { if (!stop) { setItems(r.notifications); setUnread(r.unread) } }, () => {})
     void load()
     const timer = setInterval(load, POLL_MS)
     return () => { stop = true; clearInterval(timer) }
-  }, [projectId, version])
+  }, [projectId])
 
   const loadPreferences = () => api.notificationPreferences().then((r) => setPreferences(r.preferences), () => {})
   const togglePreference = async (preference: NotificationPreference) => {
     try {
       await api.setNotificationPreference(preference.kind, !preference.enabled)
       setPreferences((current) => current.map((p) => (p.kind === preference.kind ? { ...p, enabled: !p.enabled } : p)))
-      setVersion((v) => v + 1)
+      const r = await api.notifications()
+      setItems(r.notifications)
+      setUnread(r.unread)
     } catch {
     }
   }
@@ -87,8 +89,8 @@ export function NotificationBell({ projectId }: { projectId: number }) {
             {showPrefs && (
               <div className="check-list" role="group" aria-label="Notification preferences" data-testid="notification-preferences-list">
                 {preferences.map((p) => (
-                  <label key={p.kind} className="check">
-                    <input type="checkbox" checked={p.enabled} data-kind={p.kind} onChange={() => void togglePreference(p)} />
+                  <label key={p.kind} className="check" htmlFor={`notification-pref-${p.kind}`}>
+                    <input id={`notification-pref-${p.kind}`} type="checkbox" checked={p.enabled} data-kind={p.kind} onChange={() => void togglePreference(p)} />
                     <span>{KIND_LABELS[p.kind] ?? p.kind}</span>
                   </label>
                 ))}

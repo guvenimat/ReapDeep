@@ -527,7 +527,7 @@ cd deploy/local
 .\rfm-lifecycle-test.ps1  # RFM scores and segments with known answers, rfm_segment cohorts, lifecycle states and look-back, stickiness, saved insights
 .\alerts-test.ps1       # alerts: validation, firing and resolving, signed webhooks to a local receiver, notification preferences, manual retry, test notifications, change and formula conditions, errors
 .\recommender-test.ps1  # catalog, key scopes, models from real events, the public Recommender, stock changes, signed for_you requests
-.\flags-test.ps1       # feature flags: validation, access, variant and rollout shares over 6,000 identities, stable assignment, disabled flags, targeting, project isolation, exposure events
+.\flags-test.ps1       # feature flags: validation, access, variant and rollout shares over 6,000 identities, stable assignment, disabled flags, targeting, cohort-targeting deletion guard, project isolation, exposure events
 .\experiments-test.ps1  # experiments: known-answer conversion, funnel, window and revenue results (z, t, p, CI), secondary metrics, sample size, result notifications, excluded persons, conversions before exposure, SRM warning, variant lock, access, project isolation
 .\web-test.ps1          # web analytics: known-answer sessions, bounces, durations, entry pages, referrers, UTM values and devices, time zone buckets, previous period, filters, cache, access, project isolation
 .\query-test.ps1        # Query API: trends, funnels, retention, paths, events, persons, EXPLAIN, latency

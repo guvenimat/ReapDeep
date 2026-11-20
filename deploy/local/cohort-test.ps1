@@ -163,6 +163,8 @@ Check "person cohorts: unknown id -> 200 with an empty list" ($unknown.Status -e
 Write-Host "`n3b) Cohort deletion is blocked while a flag uses it"
 $guard = (S POST "/cohorts" @{ name = "Guard $tag"; kind = "static"; members = @($personId) }).Json
 $guardFlag = (S POST "/flags" @{ key = "cohort-guard-$tag"; name = "Cohort guard $tag"; enabled = $false; rollout_percentage = 100; variants = @(); conditions = @(@{ property = '$cohort'; op = 'in_cohort'; value = $guard.id }) }).Json
+$usage = (S GET "/cohorts/$($guard.id)/usage").Json
+Check "the cohort usage lists the flag" (@($usage.flags) -contains "cohort-guard-$tag")
 $blocked = S DELETE "/cohorts/$($guard.id)"
 Check "a cohort used by a flag cannot be deleted -> 409" ($blocked.Status -eq 409 -and $blocked.Json.error -match "cohort-guard-$tag")
 Check "deleting the flag unblocks the cohort" ((S DELETE "/flags/$($guardFlag.id)").Status -eq 204 -and (S DELETE "/cohorts/$($guard.id)").Status -eq 204)
