@@ -87,7 +87,7 @@ public static class FunnelSql
         }).ToList();
         var scanned = steps.SelectMany(st => st.Events is { Count: > 0 } events ? events : [st.Event]).Append(eventName).Distinct().ToList();
         b.Where($"e.event IN ({string.Join(", ", scanned.Select(b.P))})");
-        var value = ColumnMapper.Expression(b, "event", property);
+        var value = $"CAST({ColumnMapper.Expression(b, "event", property)} AS VARCHAR)";
         var inner = b.Select($"{b.Person()} AS person, window_funnel({windowSeconds}, e.timestamp, 0, [{string.Join(", ", conds)}]) AS lvl, " +
                              $"min_by({value}, IF(e.event = {b.P(eventName)}, e.timestamp, NULL)) AS value", groupBy: "1");
         return b.Build(

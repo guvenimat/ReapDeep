@@ -79,9 +79,18 @@ public class ActionSqlTests
         var q = FunnelSql.PropertyCorrelation(Builder(), [new FunnelStep("view", null), new FunnelStep("buy", null)], 3600, "view", "plan", 10);
 
         Assert.Contains("window_funnel(3600, e.timestamp, 0, [(e.event = @p", q.Sql);
-        Assert.Contains("min_by(get_json_string(e.properties, @p", q.Sql);
+        Assert.Contains("min_by(CAST(get_json_string(e.properties, @p", q.Sql);
+        Assert.Contains(" AS VARCHAR)", q.Sql);
         Assert.Contains("HAVING COUNT(*) >= 3", q.Sql);
         Assert.Contains(q.Parameters, p => Equals(p.Value, "$.\"plan\""));
+    }
+
+    [Fact]
+    public void Property_correlation_casts_numeric_event_columns_to_text()
+    {
+        var q = FunnelSql.PropertyCorrelation(Builder(), [new FunnelStep("view", null), new FunnelStep("buy", null)], 3600, "view", "screen_width", 10);
+
+        Assert.Contains("min_by(CAST(e.screen_width AS VARCHAR)", q.Sql);
     }
 
     [Fact]
