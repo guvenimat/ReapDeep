@@ -41,12 +41,15 @@ public static class AlertRules
         _ => TimeSpan.FromDays(7),
     };
 
-    public static TimeSpan CheckEvery(string window) => window switch
-    {
-        "hour" => TimeSpan.FromMinutes(10),
-        "day" => TimeSpan.FromHours(1),
-        _ => TimeSpan.FromHours(6),
-    };
+    public static TimeSpan CheckEvery(string window, string? metric = null) =>
+        metric?.StartsWith("rfm_", StringComparison.Ordinal) == true
+            ? TimeSpan.FromHours(24)
+            : window switch
+            {
+                "hour" => TimeSpan.FromMinutes(10),
+                "day" => TimeSpan.FromHours(1),
+                _ => TimeSpan.FromHours(6),
+            };
 
     public static void Validate(string condition, double threshold)
     {

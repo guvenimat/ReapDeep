@@ -48,7 +48,7 @@ public sealed class AlertService(AlertRepository alerts, InsightRepository insig
 
     internal async Task<AlertCheckResponse> EvaluateAsync(AlertRepository.AlertRecord alert, CancellationToken ct)
     {
-        var next = DateTime.UtcNow + AlertRules.CheckEvery(alert.WindowUnit);
+        var next = DateTime.UtcNow + AlertRules.CheckEvery(alert.WindowUnit, alert.Metric);
         double value;
         double? previous;
         try
