@@ -51,16 +51,21 @@ export function CorrelationCard({ request }: { request: string }) {
           )}
         </Status>
       </Card>
-      <PropertyCorrelationCard request={request} />
+      <PropertyCorrelationCard request={request} key={request} />
     </>
   )
 }
 
 function PropertyCorrelationCard({ request }: { request: string }) {
   const funnel = JSON.parse(request) as { steps?: ({ event?: string } | { action?: string })[] }
-  const first = funnel.steps?.find((s): s is { event: string } => 'event' in s && !!s.event)?.event ?? ''
-  const [event, setEvent] = useState(first)
+  const defaultEvent = funnel.steps?.find((s): s is { event: string } => 'event' in s && !!s.event)?.event ?? ''
+  const [event, setEvent] = useState(defaultEvent)
   const [property, setProperty] = useState('')
+  const [applied, setApplied] = useState<{ event: string; property: string } | null>(null)
+  const ready = event.trim() !== '' && property.trim() !== ''
+  const apply = () => {
+    if (ready) setApplied({ event: event.trim(), property: property.trim() })
+  }
   return (
     <Card className="corr-card" title={<><Icon name="sparkles" />What property values set converters apart</>}
       meta="Compares one event property between the people who converted and the people who dropped off">
@@ -71,10 +76,11 @@ function PropertyCorrelationCard({ request }: { request: string }) {
         <label className="field" htmlFor="correlation-property"><span>Property</span>
           <SuggestInput id="correlation-property" list="event-props" value={property} placeholder="property" onChange={setProperty} aria-label="Property correlation property" />
         </label>
+        <button type="button" className="primary" onClick={apply} disabled={!ready} data-testid="property-correlation-apply">Apply</button>
       </div>
-      {event && property
-        ? <PropertyRows body={{ ...funnel, event, property }} />
-        : <p className="editor-hint">Pick an event and a property to compare its values. The value comes from each person's first matching event in the range.</p>}
+      {applied
+        ? <PropertyRows body={{ ...funnel, event: applied.event, property: applied.property }} />
+        : <p className="editor-hint">Pick an event and a property to compare its values, then press Apply. The value comes from each person's first matching event in the range.</p>}
     </Card>
   )
 }
