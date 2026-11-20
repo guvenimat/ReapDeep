@@ -444,7 +444,8 @@ unread count, while the underlying events stay in the table.
 - **Public rate limit.** The Recommender limits `/recommend` and `/flags` per client IP (6,000 requests
   per minute by default, `Recommender__RequestsPerMinutePerIp`, `0` disables it) and answers `429` with
   `Retry-After: 60`. The local compose sets `0` so the load test can run; use 6,000 in production.
-  `X-Forwarded-For` is honored only from `ForwardedHeaders__TrustedNetworks`.
+  `X-Forwarded-For` is honored only from `ForwardedHeaders__TrustedNetworks`. Server-to-server callers
+  can skip the limit when their networks are listed in `Recommender__RateLimitExemptNetworks`.
 
 ## 8. Deletion requests
 
