@@ -216,6 +216,19 @@ Check "the flags table marks the locked flag" ($html -match "flag-lock[^>]*>Lock
 $null = Owner POST "/experiments/$($lockExperiment.id)/stop"
 $cleaned = (Owner DELETE "/experiments/$($lockExperiment.id)").Status -eq 204 -and (Owner DELETE "/flags/$($lockFlag.id)").Status -eq 204
 Check "the lock check's experiment and flag are deleted" $cleaned
+$html = Dom "#/dashboards" "(function(){const b=document.querySelector('.bell-button');if(b&&!window.__b1){window.__b1=1;b.click();return false}const p=document.querySelector('[data-testid=notification-preferences]');if(p&&!window.__p1){window.__p1=1;p.click();return false}const c=document.querySelector('input[data-kind=alert_fired]');if(c&&!window.__c1){window.__c1=1;c.click();return false}const c2=document.querySelector('input[data-kind=alert_fired]');if(c2&&!c2.checked){document.body.setAttribute('data-muted','1');return true}return false})()"
+$prefs = @((Owner GET "/notifications/preferences").Json.preferences)
+Check "unchecking a kind mutes it" ($html -match 'data-muted="1"' -and @($prefs | Where-Object { $_.kind -eq "alert_fired" -and -not $_.enabled }).Count -eq 1)
+$html = Dom "#/dashboards" "(function(){const b=document.querySelector('.bell-button');if(b&&!window.__b2){window.__b2=1;b.click();return false}const p=document.querySelector('[data-testid=notification-preferences]');if(p&&!window.__p2){window.__p2=1;p.click();return false}const c=document.querySelector('input[data-kind=alert_fired]');if(c&&!window.__c2){window.__c2=1;c.click();return false}const c2=document.querySelector('input[data-kind=alert_fired]');if(c2&&c2.checked){document.body.setAttribute('data-enabled','1');return true}return false})()"
+$prefs = @((Owner GET "/notifications/preferences").Json.preferences)
+Check "checking it again unmutes" ($html -match 'data-enabled="1"' -and @($prefs | Where-Object { $_.kind -eq "alert_fired" -and $_.enabled }).Count -eq 1)
+$guardCohort = (Owner POST "/cohorts" @{ name = "UI guard $tag"; kind = "static"; members = @("guard-$tag") }).Json
+$guardFlag = (Owner POST "/flags" @{ key = "ui-guard-$tag"; name = "UI guard $tag"; enabled = $false; rollout_percentage = 100; variants = @(); conditions = @(@{ property = '$cohort'; op = 'in_cohort'; value = $guardCohort.id }) }).Json
+$html = Dom "#/cohorts/$($guardCohort.id)" "document.querySelector('[data-testid=cohort-detail]') && document.querySelector('.dashboard-bar button.danger') && !document.querySelector('.skeleton')"
+$html = Dom "#/cohorts/$($guardCohort.id)" "(function(){const b=document.querySelector('.dashboard-bar button.danger');if(b&&!window.__gd){window.__gd=1;b.click();return false}return document.querySelector('.form-message.error')?.textContent || false})()"
+Check "deleting a cohort used by a flag shows the guard message" ($html -match 'used by the feature flag' -and $html -match "ui-guard-$tag")
+Check "the guarded cohort is kept" ((Owner GET "/cohorts/$($guardCohort.id)").Status -eq 200)
+Check "the guard check's flag and cohort are deleted" ((Owner DELETE "/flags/$($guardFlag.id)").Status -eq 204 -and (Owner DELETE "/cohorts/$($guardCohort.id)").Status -eq 204)
 $html = Dom "#/experiments" "document.querySelector('[data-testid=experiments-card]') && !document.querySelector('.skeleton')"
 Check "Experiments tab renders for the owner with a 'New experiment' action" ($html -match 'data-testid="experiments-card"' -and $html -match 'data-testid="new-experiment"')
 $html = Dom "#/experiments/new" "document.querySelector('[data-testid=experiment-editor] .suggest input') && !document.querySelector('.skeleton')"
