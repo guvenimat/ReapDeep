@@ -21,6 +21,7 @@ public sealed class CohortRepository(NpgsqlDataSource db)
     internal sealed record CohortRefRecord(long Id, string Name, string Status, long? ActiveVersion);
     internal sealed record UsageRecord(long Id, string Name, string Kind);
     public sealed record ActiveCohortRecord(long Id, string Name, string Kind, long ActiveVersion, DateTime? CalculatedAt);
+    public sealed record DeleteResult(bool Found, List<string> BlockingFlags);
 
     const string Select = """
         SELECT c.id, c.name, c.description, c.kind, c.definition::text AS definition, c.status, c.active_version, c.member_count,
@@ -92,12 +93,52 @@ public sealed class CohortRepository(NpgsqlDataSource db)
             new { Id = id, ProjectId = projectId }) > 0;
     }
 
-    public async Task<bool> DeleteAsync(long projectId, long id, CancellationToken ct)
+    public async Task<DeleteResult> DeleteUnlessTargetedAsync(long projectId, long id, CancellationToken ct)
     {
         await using var conn = await db.OpenConnectionAsync(ct);
-        return await conn.ExecuteAsync(
-            "UPDATE cohorts SET deleted_at = now() WHERE id = @Id AND project_id = @ProjectId AND deleted_at IS NULL",
-            new { Id = id, ProjectId = projectId }) > 0;
+        await using var tx = await conn.BeginTransactionAsync(ct);
+
+        await using (var lockCmd = new NpgsqlCommand(
+            "SELECT id FROM cohorts WHERE id = $1 AND project_id = $2 AND deleted_at IS NULL FOR UPDATE", conn, tx))
+        {
+            lockCmd.Parameters.Add(new NpgsqlParameter<long> { TypedValue = id });
+            lockCmd.Parameters.Add(new NpgsqlParameter<long> { TypedValue = projectId });
+            if (await lockCmd.ExecuteScalarAsync(ct) is null)
+            {
+                await tx.RollbackAsync(ct);
+                return new DeleteResult(false, []);
+            }
+        }
+
+        var keys = new List<string>();
+        await using (var flagsCmd = new NpgsqlCommand("""
+            SELECT f.key FROM feature_flags f
+            WHERE f.project_id = $1 AND EXISTS (
+                SELECT 1 FROM jsonb_array_elements(f.conditions) c
+                WHERE c->>'op' IN ('in_cohort', 'not_in_cohort') AND c->>'value' = $2
+            )
+            ORDER BY f.key
+            """, conn, tx))
+        {
+            flagsCmd.Parameters.Add(new NpgsqlParameter<long> { TypedValue = projectId });
+            flagsCmd.Parameters.Add(new NpgsqlParameter<string> { TypedValue = id.ToString() });
+            await using var reader = await flagsCmd.ExecuteReaderAsync(ct);
+            while (await reader.ReadAsync(ct)) keys.Add(reader.GetString(0));
+        }
+        if (keys.Count > 0)
+        {
+            await tx.RollbackAsync(ct);
+            return new DeleteResult(true, keys);
+        }
+
+        await using (var deleteCmd = new NpgsqlCommand("UPDATE cohorts SET deleted_at = now() WHERE id = $1 AND project_id = $2", conn, tx))
+        {
+            deleteCmd.Parameters.Add(new NpgsqlParameter<long> { TypedValue = id });
+            deleteCmd.Parameters.Add(new NpgsqlParameter<long> { TypedValue = projectId });
+            await deleteCmd.ExecuteNonQueryAsync(ct);
+        }
+        await tx.CommitAsync(ct);
+        return new DeleteResult(true, []);
     }
 
     public async Task<List<CohortUsage>> UsageAsync(long projectId, long id, CancellationToken ct)

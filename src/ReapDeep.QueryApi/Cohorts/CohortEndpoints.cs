@@ -95,12 +95,13 @@ public static class CohortEndpoints
             ? ApiResults.Accepted(c.Row, AppJsonContext.Default.CohortRow)
             : ApiResults.NotFound("Cohort not found");
 
-    static async Task<IResult> Delete(long id, ProjectContext project, CohortRepository cohorts, FlagRepository flags, CancellationToken ct)
+    static async Task<IResult> Delete(long id, ProjectContext project, CohortRepository cohorts, CancellationToken ct)
     {
-        var names = await flags.NamesUsingCohortAsync(project.ProjectId, id, ct);
-        if (names.Count > 0)
-            return ApiResults.Conflict($"The cohort is used by the feature flag{(names.Count > 1 ? "s" : "")} {string.Join(", ", names.Select(n => $"'{n}'"))}; remove the cohort condition first");
-        return await cohorts.DeleteAsync(project.ProjectId, id, ct) ? Results.NoContent() : ApiResults.NotFound("Cohort not found");
+        var result = await cohorts.DeleteUnlessTargetedAsync(project.ProjectId, id, ct);
+        if (!result.Found) return ApiResults.NotFound("Cohort not found");
+        if (result.BlockingFlags.Count > 0)
+            return ApiResults.Conflict($"The cohort is used by the feature flag{(result.BlockingFlags.Count > 1 ? "s" : "")} {string.Join(", ", result.BlockingFlags.Select(n => $"'{n}'"))}; remove the cohort condition first");
+        return Results.NoContent();
     }
 
     static async Task<string> DefinitionJsonAsync(ProjectContext project, CohortDefinition? definition, CohortService service, CancellationToken ct) =>

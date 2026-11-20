@@ -38,7 +38,8 @@ public static class FlagEndpoints
         Ensure.That(await flags.CountAsync(project.ProjectId, ct) < FlagRules.MaxFlagsPerProject,
             $"A project can have at most {FlagRules.MaxFlagsPerProject} flags");
         var salt = Convert.ToHexStringLower(RandomNumberGenerator.GetBytes(8));
-        return await flags.CreateAsync(project.ProjectId, key, values, salt, project.UserId!.Value, ct) is { } created
+        var cohortIds = FlagRules.CohortIds(FlagRules.ParseConditions(values.Conditions)).ToArray();
+        return await flags.CreateAsync(project.ProjectId, key, values, salt, project.UserId!.Value, cohortIds, ct) is { } created
             ? ApiResults.Created(created, AppJsonContext.Default.FeatureFlag)
             : ApiResults.Conflict($"A flag with the key '{key}' already exists in this project");
     }
@@ -52,7 +53,8 @@ public static class FlagEndpoints
         var variantsChanged = !ExperimentRules.SameVariants(FlagRules.ParseVariants(values.Variants), current.Variants);
         if (variantsChanged && await experiments.NamesForFlagAsync(project.ProjectId, id, runningOnly: true, ct) is [var running, ..])
             return VariantsLocked(current.Key, running);
-        if (await flags.UpdateAsync(project.ProjectId, id, values, project.UserId!.Value, ct) is { } updated)
+        var cohortIds = FlagRules.CohortIds(FlagRules.ParseConditions(values.Conditions)).ToArray();
+        if (await flags.UpdateAsync(project.ProjectId, id, values, project.UserId!.Value, cohortIds, ct) is { } updated)
             return ApiResults.Ok(updated, AppJsonContext.Default.FeatureFlag);
         return await experiments.NamesForFlagAsync(project.ProjectId, id, runningOnly: true, ct) is [var started, ..]
             ? VariantsLocked(current.Key, started)

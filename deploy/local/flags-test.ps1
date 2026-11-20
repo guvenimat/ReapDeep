@@ -167,6 +167,9 @@ try {
     $blocked = S DELETE "/cohorts/$($beta.id)"
     Check "a cohort used by an enabled flag cannot be deleted -> 409" ($blocked.Status -eq 409 -and $blocked.Json.error -match $inKey)
     Check "the refused delete leaves the flag targeting intact" ((Value (Flags "beta-$tag-1") $inKey) -eq $true)
+    $gone = (S POST "/cohorts" @{ name = "Gone $tag"; kind = "static"; members = @("gone-$tag-1") }).Json
+    $null = S DELETE "/cohorts/$($gone.id)"
+    Check "a deleted cohort cannot be targeted -> 400" ((S POST "/flags" @{ key = "gone-$tag"; conditions = @(@{ property = '$cohort'; op = "in_cohort"; value = $gone.id }) }).Status -eq 400)
 
     Write-Host "`n9) Project isolation"
     $other = (S POST "/projects" @{ name = "Flags $tag" }).Json
